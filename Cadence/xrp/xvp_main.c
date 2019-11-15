@@ -802,9 +802,9 @@ static int xrp_boot_faceid_firmware(struct xvp *xvp)
 		}
 	}
 
-	//ret = sprd_faceid_secboot_entry(xvp);
-	//(ret < 0)
-	//	return ret;
+	ret = sprd_faceid_secboot_entry(xvp);
+	if(ret < 0)
+		return ret;
 
 	xrp_release_dsp(xvp);
 
