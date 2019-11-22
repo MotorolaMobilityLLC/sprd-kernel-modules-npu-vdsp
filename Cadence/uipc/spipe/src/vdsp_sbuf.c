@@ -98,7 +98,7 @@ static void vdsp_notifier_handler (int event, void *data)
 
 	buf = kzalloc(VDSP_MAX_DATA_LEN, GFP_KERNEL);
 	if (!buf) {
-		kfree(buf);
+		pr_err("vdsp_notifier_handler kzalloc memory falied\n");
 		return;
 	}
 
@@ -118,6 +118,12 @@ static void vdsp_notifier_handler (int event, void *data)
 				0);
 			pr_info("%s read data len =%d\n",__func__, cnt);
 
+			if (cnt < 0) {
+				pr_err("sbuf read cnt[%d] failed\n", cnt);
+				kfree(buf);
+				return;
+			}
+
 			p = strtok(buf, delim);
 			if (p){
 				printk("[VDSP LOG]%s ", p);
@@ -126,12 +132,6 @@ static void vdsp_notifier_handler (int event, void *data)
 			while((p = strtok(NULL, delim))) {
 				printk("[VDSP LOG]%s ", p);
 				printk("\n");
-			}
-
-			if (cnt < 0) {
-				pr_info("sbuf read cnt[%d] invalid\n", cnt);
-				kfree(buf);
-				return;
 			}
 		} while(cnt == VDSP_MAX_DATA_LEN);
 		break;
@@ -650,7 +650,7 @@ int vdsp_sbuf_create(u8 dst, u8 channel, u32 bufnum, u32 txbufsize, u32 rxbufsiz
 {
 	struct sbuf_mgr *sbuf;
 	u8 ch_index;
-	int ret;
+	int i, ret;
 	struct smsg_ipc *sipc = NULL;
 	struct sched_param param = {.sched_priority = 10};
 
@@ -694,7 +694,14 @@ int vdsp_sbuf_create(u8 dst, u8 channel, u32 bufnum, u32 txbufsize, u32 rxbufsiz
 	if (IS_ERR(sbuf->thread)) {
 		pr_err("Failed to create kthread: sbuf-%d-%d\n", dst, channel);
 		if (!sipc->client) {
-			kfree(sbuf->rings);
+			if (sbuf->rings) {
+				for (i = 0; i < sbuf->ringnr; i++) {
+					wakeup_source_trash(&sbuf->rings[i].tx_wake_lock);
+					wakeup_source_trash(&sbuf->rings[i].rx_wake_lock);
+				}
+				kfree(sbuf->rings);
+			}
+
 #ifdef USING_SHARE_MEM
 			vdsp_share_mem_unkmap(sipc->vdsp_mem_desc, &sbuf->smem_ion);
 			vdsp_share_mem_free(sipc->vdsp_mem_desc, &sbuf->smem_ion);
