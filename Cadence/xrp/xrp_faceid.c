@@ -374,7 +374,7 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 	xvp->firmware2_viraddr = (void*)xvp->ion_faceid_fw.addr_k[0];
 	xvp->firmware2_phys = xvp->ion_faceid_fw.addr_p[0];
 	xvp->ion_faceid_fw.dev = xvp->dev;
-	pr_info("%s vaddr:%p phyaddr %X\n",
+	pr_info("%s vaddr:%p phyaddr %llX\n",
 			__func__ , xvp->firmware2_viraddr,xvp->firmware2_phys);
 	return 0;
 }
@@ -474,7 +474,7 @@ int sprd_iommu_map_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf,int fd)
 		return -EFAULT;
 	}
 
-	pr_info("Get faceid ion iova %lX\n",(uint32_t)ion_buf->iova[0]);
+	pr_info("Get faceid ion iova %X\n",(uint32_t)ion_buf->iova[0]);
 	return 0;
 }
 int sprd_iommu_ummap_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf)
@@ -536,26 +536,26 @@ int sprd_faceid_sec_sign(struct xvp *xvp)
 	bool ret;
 	KBC_LOAD_TABLE_V  table;
 	unsigned long mem_addr_v,mem_addr_p;
-	
+
 	ret = trusty_kernelbootcp_connect();
 	if(!ret)
 	{
 		pr_err("bootcp connect fail\n");
 		return -EACCES;
 	}
-	
+
 	memset(&table, 0, sizeof(KBC_LOAD_TABLE_V));
-	
+
 	mem_addr_v = xvp->faceid_pool.ion_fd_mem_pool.addr_k[0];
 	mem_addr_p = xvp->faceid_pool.ion_fd_mem_pool.addr_p[0];
-	
+
 	/*copy fw to continuous physical address*/
 	memcpy((void*)mem_addr_v,xvp->firmware2_sign->data,xvp->firmware2_sign->size);
 
 	table.faceid_fw.img_addr = mem_addr_p;
 	table.faceid_fw.img_len = xvp->firmware2_sign->size;
 
-	pr_info("faceid fw sign paddr %X size %d\n",
+	pr_info("faceid fw sign paddr %lX size %zd\n",
 			mem_addr_p,xvp->firmware2_sign->size);
 #if 0
 	ret = kernel_bootcp_verify_vdsp(&table);
@@ -636,7 +636,7 @@ int sprd_faceid_secboot_init(struct xvp *xvp)
 int sprd_faceid_secboot_deinit(struct xvp *xvp)
 {
 	bool ret;
-	
+
 	if(xvp->secmode)
 	{
 		xvp->secmode = false;
@@ -648,7 +648,7 @@ int sprd_faceid_secboot_deinit(struct xvp *xvp)
 			ret = vdsp_set_sec_mode(&msg);
 			if(!ret)
 				pr_err("sprd_faceid_sec_exit fail\n");
-			
+
 			vdsp_ca_disconnect();
 			xvp->tee_con = false;
 		}
@@ -669,6 +669,7 @@ int sprd_faceid_init(struct xvp *xvp)
 		sprd_free_faceid_fwbuffer(xvp);
 		return ret;
 	}
+
 	sprd_faceid_request_weights(xvp);
     return 0;
 }

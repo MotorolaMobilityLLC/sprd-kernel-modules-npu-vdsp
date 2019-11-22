@@ -572,7 +572,7 @@ bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V  *table)
 	msg->cmd = KERNEL_BOOTCP_UNLOCK_DDR_VDSP;
 
 	memcpy(msg->payload, table, sizeof(KBC_LOAD_TABLE_V));
-	pr_info("bootcp unlock ddr msg_size = %d \n", msg_size);
+	pr_info("bootcp unlock ddr msg_size = %zd \n", msg_size);
 
 	ret = bootcp_ca_write(msg, msg_size);
 	if ( !ret ) {
@@ -609,7 +609,7 @@ bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V  *table)
 	msg->cmd = KERNEL_BOOTCP_VERIFY_VDSP;
 
 	memcpy(msg->payload, table, sizeof(KBC_LOAD_TABLE_V));
-	pr_info("bootcp verify msg_size = %d \n", msg_size);
+	pr_info("bootcp verify msg_size = %zd \n", msg_size);
 
 	ret = bootcp_ca_write(msg, msg_size);
 	if ( !ret ) {

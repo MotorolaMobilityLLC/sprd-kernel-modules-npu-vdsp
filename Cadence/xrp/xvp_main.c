@@ -1752,9 +1752,6 @@ static int xvp_open(struct inode *inode, struct file *filp)
 	if(filp->f_flags & O_RDWR)
 	{
 		pr_err("open faceid mode!!!!!\n");
-		ret = sprd_faceid_sec_sign(xvp);
-		if (ret < 0)
-			return ret;
 
 		ret = sprd_faceid_secboot_init(xvp);
 		if (ret < 0)
