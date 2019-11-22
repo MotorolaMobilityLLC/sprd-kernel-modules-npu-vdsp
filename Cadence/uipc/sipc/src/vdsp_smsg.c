@@ -561,7 +561,7 @@ int vdsp_smsg_ch_open(u8 dst, u8 channel, int timeout)
 		/* guarantee that channel resource isn't used in irq handler  */
 		while (atomic_read(&ipc->busy[ch_index]))
 			;
-
+		wakeup_source_trash(&ch->sipc_wake_lock);
 		kfree(ch);
 
 		return rval;
@@ -590,7 +590,7 @@ int vdsp_smsg_ch_open(u8 dst, u8 channel, int timeout)
 			 */
 			while (atomic_read(&ipc->busy[ch_index]))
 				;
-
+			wakeup_source_trash(&ch->sipc_wake_lock);
 			kfree(ch);
 			return rval;
 		}
@@ -646,7 +646,7 @@ int vdsp_smsg_ch_close(u8 dst, u8 channel,  int timeout)
 		/* guarantee that channel resource isn't used in irq handler */
 		while (atomic_read(&ipc->busy[ch_index]))
 			;
-
+		wakeup_source_trash(&ch->sipc_wake_lock);
 		kfree(ch);
 	}
 
