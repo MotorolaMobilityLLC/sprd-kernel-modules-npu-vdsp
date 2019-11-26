@@ -87,16 +87,12 @@ void vdsp_smsg_init_channel2index(void)
 
 static void vdsp_get_channel_status(u8 dst, char *status, int size)
 {
-	u8 ch_index;
 	int i, len;
 	struct smsg_channel *ch;
 
 	len = strlen(status);
 	for (i = 0;  i < SMSG_VALID_CH_NR && len < size; i++) {
-		ch_index = channel2index[i];
-		if (ch_index == INVALID_CHANEL_INDEX)
-			continue;
-		ch = vdsp_smsg_ipcs[dst]->channels[ch_index];
+		ch = vdsp_smsg_ipcs[dst]->channels[i];
 		if (!ch)
 			continue;
 		if (SIPC_READL(ch->rdptr) < SIPC_READL(ch->wrptr))
