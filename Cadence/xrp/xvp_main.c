@@ -1446,7 +1446,7 @@ static long xrp_ioctl_set_dvfs(
 static long xvp_ioctl(struct file *filp,
 	unsigned int cmd, unsigned long arg)
 {
-	long retval;
+	long retval = -EINVAL;
 
 	pr_info("%s: %x\n", __func__, cmd);
 
@@ -2025,11 +2025,14 @@ static long vdsp_init_common(struct platform_device *pdev,
 		xvp->host_irq_mode = true;
 	platform_set_drvdata(pdev, xvp);
 
-	if (vdsp_init_bufs(pdev, xvp))
+	if (vdsp_init_bufs(pdev, xvp)) {
+		ret = -1;
 		goto err;
-
-	if (sprd_vdsp_parse_soft_dt(xvp, pdev))
+	}
+	if (sprd_vdsp_parse_soft_dt(xvp, pdev)) {
+		ret = -1;
 		goto err;
+	}
 
 	pm_runtime_enable(xvp->dev);
 	if (!pm_runtime_enabled(xvp->dev)) {
