@@ -33,7 +33,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "VDSP_SMSG: %d %d %s : "\
+#define pr_fmt(fmt) "[VDSP]VDSP_SMSG: %d %d %s : "\
 	fmt, current->pid, __LINE__, __func__
 
 #define SMSG_TXBUF_ADDR		(0)

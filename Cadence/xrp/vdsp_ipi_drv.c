@@ -18,7 +18,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "VDSP_IPI %d: %d %s:" \
+#define pr_fmt(fmt) "[VDSP]ipi: %d: %d %s:" \
 	fmt, current->pid, __LINE__, __func__
 
 static irqreturn_t irq_handler(int irq, void *arg);
@@ -96,7 +96,7 @@ static int vdsp_ipi_send_irq(int idx)
 		/* fallthrough */
 	case XRP_IRQ_LEVEL:
 		wmb();
-		pr_info("device_irq_host_offset,hw->device_irq:%x\n" , idx);
+		pr_info("hw->device_irq:%x\n" , idx);
 #if 0
 		reg_write32_setbit(hw,
 				   hw->device_irq_host_offset + hw->ipi,

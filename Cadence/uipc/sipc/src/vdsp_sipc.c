@@ -34,7 +34,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "VDSP_SIPC: %d %d %s : "\
+#define pr_fmt(fmt) "[VDSP]VDSP_SIPC: %d %d %s : "\
 	fmt, current->pid, __LINE__, __func__
 
 #if defined(CONFIG_DEBUG_FS)

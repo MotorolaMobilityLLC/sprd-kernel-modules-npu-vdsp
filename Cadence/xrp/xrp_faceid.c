@@ -47,7 +47,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "xrp_faceid: %d %d %s : "\
+#define pr_fmt(fmt) "[VDSP]xrp_faceid: %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
 

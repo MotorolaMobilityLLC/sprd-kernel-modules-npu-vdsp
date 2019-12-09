@@ -36,7 +36,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "pi_library_load: %d %d %s : "\
+#define pr_fmt(fmt) "[VDSP]pi_library_load: %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
 //#include <string.h>
@@ -198,12 +198,12 @@ get_dyn_info (Elf32_Ehdr * eheader, xt_ptr dst_addr, xt_uint src_offs,
 static int validate_dynamic (Elf32_Ehdr * header)
 {
   if (xtlib_verify_magic (header) != 0) {
-    pr_info("%s xtlib_verify_magic failed\n" , __func__);
+    pr_err("[ERROR]xtlib_verify_magic failed\n");
     return XTLIB_NOT_ELF;
   }
 
   if (xtlib_host_half (header->e_type) != ET_DYN) {
-    pr_info("%s xtlib_host_half failed\n" , __func__);
+    pr_err("[ERROR]xtlib_host_half failed\n");
     return XTLIB_NOT_DYNAMIC;
   }
 
@@ -262,7 +262,7 @@ unsigned int xtlib_pi_library_size(xtlib_packaged_library * library)
 
   int err = validate_dynamic (header);
   if (err != XTLIB_NO_ERR) {
-    pr_info("%s return -1\n" , __func__);
+    pr_err("[ERROR]return -1\n");
     xtlib_globals.err = err;
     return -1;
   }

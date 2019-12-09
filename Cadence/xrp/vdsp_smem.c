@@ -30,7 +30,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "VDSP_SMEM: %d %d %s : "\
+#define pr_fmt(fmt) "[VDSP]VDSP_SMEM: %d %d %s : "\
 	fmt, current->pid, __LINE__, __func__
 
 static int __vdsp_mem_iommu_map(struct ion_buf *pfinfo, int idx)
@@ -48,6 +48,7 @@ static int __vdsp_mem_iommu_map(struct ion_buf *pfinfo, int idx)
 	for (i = 0; i < 2; i++) {
 		if ((pfinfo->size[i] <= 0) || (pfinfo->buf[i] == NULL))
 			continue;
+		pr_info("i[%d], map size - pfinfo->size[%d]\n", i, pfinfo->size[i]);
 		memset(&iommu_data, 0x00, sizeof(iommu_data));
 		if (sprd_iommu_attach_device(pfinfo->dev) == 0) {
 			memset(&iommu_data, 0x00, sizeof(iommu_data));
@@ -157,8 +158,6 @@ static int vdsp_mem_alloc(struct vdsp_mem_desc *ctx,
 	pr_debug("dmabuf_p[%p], ionbuf[%p], size %d, heap %d\n",
 		ion_buf->dmabuf_p[0],
 		ion_buf->buf[0], (int)ion_buf->size[0], heap_type);
-
-	pr_debug("alloc done. %p\n", ion_buf);
 	return 0;
 
 failed:
@@ -330,8 +329,6 @@ static int vdsp_mem_iommu_map(struct vdsp_mem_desc *ctx,
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
-		pr_debug("first pfinfo->iova0 :%x\n",
-				(unsigned int)pfinfo->iova[0]);
 		ret = __vdsp_mem_iommu_map(pfinfo, IOMMU_MSTD);
 		if (ret)
 		{
@@ -340,8 +337,6 @@ static int vdsp_mem_iommu_map(struct vdsp_mem_desc *ctx,
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
-		pr_debug("second pfinfo->iova0 :%x\n",
-				(unsigned int)pfinfo->iova[0]);
 		ret = __vdsp_mem_iommu_map(pfinfo, IOMMU_IDMA);
 		if (ret)
 		{
@@ -365,7 +360,6 @@ static int vdsp_mem_iommu_map(struct vdsp_mem_desc *ctx,
 		break;
 	default:
 		pr_err("fail to get invalid iommu idx %d\n", idx);
-		mutex_unlock(&ctx->iommu_lock);
 		break;
 	}
 	mutex_unlock(&ctx->iommu_lock);
@@ -426,7 +420,6 @@ static int vdsp_mem_iommu_unmap(struct vdsp_mem_desc *ctx,
 		break;
 	default:
 		pr_err("fail to get invalid iommu idx %d\n", idx);
-		mutex_unlock(&ctx->iommu_lock);
 		break;
 	}
 	mutex_unlock(&ctx->iommu_lock);
@@ -464,8 +457,6 @@ static int vdsp_mem_unregister_callback(struct vdsp_mem_desc *ctx,
 
 
 struct vdsp_mem_ops vdsp_mem_ops = {
-//	.ctx_init = ,
-//	.ctx_deinit = ,
 	.mem_alloc = vdsp_mem_alloc,
 	.mem_free = vdsp_mem_free,
 	.mem_kmap = vdsp_mem_kmap,

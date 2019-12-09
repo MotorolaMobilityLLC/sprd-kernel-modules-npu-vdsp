@@ -38,7 +38,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "pil_common: %d %d %s : "\
+#define pr_fmt(fmt) "[VDSP]pil_common: %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
 
@@ -51,31 +51,31 @@ xtlib_verify_magic( Elf32_Ehdr *header )
 
   magic_no =  header->e_ident[EI_MAG0];
   if (magic_no != 0x7f) {
-    pr_info("%s , error 0" , __func__);
+    pr_err("error 0\n");
     return -1;
   }
 
   magic_no = header->e_ident[EI_MAG1];
   if ( magic_no != 'E' ) {
-    pr_info("%s , error 1" , __func__);
+     pr_err("error 1\n");
     return -1;
   }
 
   magic_no = header->e_ident[EI_MAG2];
   if ( magic_no != 'L' ) {
-    pr_info("%s , error 2" , __func__);
+     pr_err("error 2\n");
     return -1;
   }
 
   magic_no = header->e_ident[EI_MAG3];
   if ( magic_no != 'F' ) {
-    pr_info("%s , error 3" , __func__);
+    pr_err("error 3\n");
     return -1;
   }
 
   if (header->e_ident[EI_CLASS] != ELFCLASS32)
   {
-    pr_info("%s , error 4" , __func__);
+    pr_err("error 4\n");
     return -1;
   }
   {
@@ -93,7 +93,7 @@ xtlib_verify_magic( Elf32_Ehdr *header )
       xtlib_globals.byteswap = u.c[0] == 1;
     else
     {
-      pr_info("%s , error 5" , __func__);
+      pr_err("error 5\n");
       return -1;
     }
   }
@@ -112,9 +112,8 @@ xtlib_load_seg(Elf32_Phdr * pheader, void * src_addr, xt_ptr dst_addr,
   char *pindex = (char*)user;
   xt_ptr zero_addr = 0;//(xt_ptr)pindex + bytes_to_copy;//dst_addr + bytes_to_copy;
   void* zero_addr_ap = pindex + bytes_to_copy;
-  pr_info("%s dst addr:%x , user:%p"
-		  "bytes to copy:%d\n",
-		  __func__ , dst_addr , user , bytes_to_copy);
+  pr_info("dst addr:%x , user:%p, bytes to copy:%d\n", 
+  	dst_addr , user , bytes_to_copy); 
   if (bytes_to_copy > 0) {
     mcpy(dst_addr, src_addr, bytes_to_copy, user);
 
