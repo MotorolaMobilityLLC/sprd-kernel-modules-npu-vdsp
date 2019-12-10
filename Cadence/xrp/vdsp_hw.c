@@ -154,7 +154,7 @@ static void set_qos(void *hw_arg)
 	return;
 }
 
-static void *get_hw_sync_data(void *hw_arg, size_t *sz)
+static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 {
 	static const u32 irq_mode[] = {
 		[XRP_IRQ_NONE] = XRP_DSP_SYNC_IRQ_MODE_NONE,
@@ -174,12 +174,12 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz)
 		"host_irq_mode:%d,host_irqoffset:%d , host_irq_bit:%d"
 		"hw->device_irq_mode:%d , device_irq_mode:%d"
 		"device_irq_offset:%d , device_irq_bit:%d"
-		"device_irq:%d, smsg addr:0x%lx\n",
+		"device_irq:%d, smsg addr:0x%lx, log_addr:0x%x\n",
 	       (unsigned int)hw->ahb_phys , hw->host_irq_mode,
 	       hw->host_irq[0] , hw->host_irq[1],hw->device_irq_mode,
 	       irq_mode[hw->device_irq_mode] , hw->device_irq[0],
 	       hw->device_irq[1],
-	       hw->device_irq[2], (unsigned long)*sz);
+	       hw->device_irq[2], (unsigned long)*sz, log_addr);
 	*hw_sync_data = (struct vdsp_side_sync_data){
 			.device_mmio_base = hw->ipi_phys,
 			.host_irq_mode = hw->host_irq_mode,
@@ -190,6 +190,7 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz)
 			.device_irq_bit = hw->device_irq[1],
 			.device_irq = hw->device_irq[2],
 			.vdsp_smsg_addr = (unsigned int)*sz,
+			.vdsp_log_addr = log_addr,
 	};
 	pr_info("vdsp_smsg_addr 0x%x \n",
 		hw_sync_data->vdsp_smsg_addr);

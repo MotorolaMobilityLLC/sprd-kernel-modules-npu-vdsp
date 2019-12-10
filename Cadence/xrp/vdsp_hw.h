@@ -110,6 +110,7 @@ struct vdsp_side_sync_data {
 	__u32 device_irq;
 
 	__u32 vdsp_smsg_addr;
+	__u32 vdsp_log_addr;
 };
 
 /*!
@@ -160,7 +161,7 @@ struct xrp_hw_ops {
 	 * \param sz: return size of sync data here
 	 * \return a buffer allocated with kmalloc that the caller will free
 	 */
-	void *(*get_hw_sync_data)(void *hw_arg, size_t *sz);
+	void *(*get_hw_sync_data)(void *hw_arg, size_t *sz, uint32_t log_addr);
 
 	/*!
 	 * Send IRQ to the core.

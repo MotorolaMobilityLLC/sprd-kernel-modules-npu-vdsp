@@ -29,6 +29,7 @@
 #include <linux/version.h>
 #include <linux/atomic.h>
 #include <linux/acpi.h>
+#include <linux/clk.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
@@ -56,6 +57,8 @@
 #include <linux/semaphore.h>
 #include <linux/slab.h>
 #include <linux/sort.h>
+#include <linux/soc/sprd/sprd_systimer.h>
+#include <linux/timer.h>
 #include <asm/mman.h>
 #include <asm/uaccess.h>
 #include "xrp_cma_alloc.h"
@@ -73,10 +76,10 @@
 #include "vdsp_smem.h"
 #include "vdsp_ipi_drv.h"
 #include "xrp_faceid.h"
-/*add temp for set 512M as default clock*/
-#include <linux/clk.h>
-#include <linux/timer.h>
+#include "vdsp_log.h"
 #include "vdsp_dvfs.h"
+
+
 #ifndef __io_virt
 #define __io_virt(a) ((void __force *)(a))
 #endif
@@ -410,7 +413,7 @@ static int xrp_faceid_run(
 	pr_info("mem pool %X, transfer %x\n",
 			faceid_data.mem_pool_addr,
 			faceid_data.transfer_addr);
-	pr_info("in %X, out %x\n",
+	pr_info("in %X, out %x, log %x\n",
 			faceid_data.in_addr,
 			faceid_data.out_addr);
 
@@ -424,7 +427,7 @@ static int xrp_faceid_run(
 
 	mb();
 	xrp_send_device_irq(xvp);
-
+	pr_info("[%lld]\n",sprd_sysfrt_read());
 	do {
 		mb();
 		v = xrp_comm_read32(&shared_sync->sync);
@@ -473,7 +476,7 @@ static int xrp_synchronize(struct xvp *xvp)
 
 	pr_info("get smsg share memory address: 0x%lx\n",
 			(unsigned long)sz);
-	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz);
+	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz, xvp->ion_vdsp_log.addr_p[0]);
 	if (!hw_sync_data) {
 		ret = -ENOMEM;
 		goto err;
@@ -2054,6 +2057,7 @@ static long vdsp_init_common(struct platform_device *pdev,
 		goto err;
 	}
 	sprd_log_sem_init();
+
 	mutex_init(&(xvp->load_lib.libload_mutex));
 	mutex_init(&map_lock);
 	mutex_init(&xvp->xvp_lock);
@@ -2084,6 +2088,9 @@ static long vdsp_init_common(struct platform_device *pdev,
 		ret = -1;
 		goto err;
 	}
+
+	if(vdsp_log_init(xvp) != 0)
+		pr_err("vdsp log init fail. \n");
 
 	pm_runtime_enable(xvp->dev);
 	if (!pm_runtime_enabled(xvp->dev)) {
@@ -2144,6 +2151,7 @@ int sprd_vdsp_deinit(struct platform_device *pdev)
 	release_firmware(xvp->firmware);
 	sprd_free_commbuffer(xvp);
 	sprd_faceid_deinit(xvp);
+	vdsp_log_deinit(xvp);
 	ida_simple_remove(&xvp_nodeid, xvp->nodeid);
 	return 0;
 }

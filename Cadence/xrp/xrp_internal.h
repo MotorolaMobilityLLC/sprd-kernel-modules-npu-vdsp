@@ -37,6 +37,7 @@
 #include "vdsp_smem.h"
 #include "xrp_library_loader.h"
 #include "vdsp_dvfs.h"
+#include "vdsp_log.h"
 
 struct device;
 struct firmware;
@@ -113,6 +114,8 @@ struct xvp {
 	struct ion_buf ion_faceid_fw;/*faceid fw*/
 	struct faceid_mem_addr faceid_pool;
 	const struct firmware *faceid_fw;
+	struct vdsp_log_state *log_state;
+	struct ion_buf ion_vdsp_log;
 	void *fd_weights_p_viraddr;
 	struct xrp_load_lib_info load_lib;
 	uint32_t open_count;
