@@ -324,10 +324,7 @@ int xrp_request_firmware(struct xvp *xvp)
 	tv1 = ktime_to_us(ktime_get());
 
 	ret = xrp_load_firmware(xvp);
-	if (ret < 0) {
-		pr_err("[ERROR]load firmware fail, release\n");
-		release_firmware(xvp->firmware);
-	}
+	release_firmware(xvp->firmware);
 	tv2 = ktime_to_us(ktime_get());
 	pr_info("[OUT][TIME]request&load firmware, total[%lld], request[%lld], load[%lld]\n",
 		tv2 - tv0, tv1 - tv0, tv2 - tv1);

@@ -36,6 +36,7 @@
 #define XRP_IOCTL_QUEUE_NS	_IO(XRP_IOCTL_MAGIC, 4)
 #define XRP_IOCTL_SET_DVFS      _IO(XRP_IOCTL_MAGIC,5)
 #define XRP_IOCTL_FACEID_CMD    _IO(XRP_IOCTL_MAGIC,6)
+#define XRP_IOCTL_SET_POWERHINT _IO(XRP_IOCTL_MAGIC,7)
 
 struct xrp_ioctl_alloc {
 	__u32 size;
@@ -86,8 +87,15 @@ struct xrp_dvfs_ctrl {
 	__u32 index;
 	};
 };
+
+struct xrp_powerhint_ctrl {
+	int level;
+	__u32 acquire_release;
+};
+
 struct xrp_faceid_ctrl {
 	__u32 in_fd;
 	__u32 out_fd;
 };
+
 #endif

@@ -76,7 +76,7 @@
 /*add temp for set 512M as default clock*/
 #include <linux/clk.h>
 #include <linux/timer.h>
-
+#include "vdsp_dvfs.h"
 #ifndef __io_virt
 #define __io_virt(a) ((void __force *)(a))
 #endif
@@ -87,7 +87,7 @@
 #define pr_fmt(fmt) "[VDSP]xvp_main: %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
-#define VDSP_FIRMWIRE_SIZE    (1024*1024*14)
+#define VDSP_FIRMWIRE_SIZE    (1024*1024*6)
 #define XRP_DEFAULT_TIMEOUT 800000
 
 enum {
@@ -1390,14 +1390,14 @@ retry:
 	 * this memory.
 	 */
 	pr_info("[TIME][CMD](kernel->nsid:%s)total:%lld(us), map:%lld(us), \
-        lib load/unload:%lld(us), irq->reci:%lld(us), unmap:%lld(us)\n",
+        lib load/unload:%lld(us), irq->reci:%lld(us), unmap:%lld(us) ret:%d\n",
 		rq->nsid,
 		tv5 - tv0,/*total cmd process*/
 		tv1,/*map*/
 		tv2,/*lib load/unload*/
 		tv3,/*irq->reci*/
-		tv5 - tv4/*unmap*/
-		);
+		tv5 - tv4,/*unmap*/
+		ret);
 	return ret;
 }
 static long xrp_ioctl_faceid_cmd(
@@ -1437,7 +1437,19 @@ static long xrp_ioctl_set_dvfs(
 	}
 	return 0;
 }
-
+static long xrp_ioctl_set_powerhint(struct file *filp,
+				struct xrp_powerhint_ctrl __user *arg)
+{
+	struct xrp_powerhint_ctrl powerhint;
+	struct xvp_file *xvp_file = filp->private_data;
+	struct xvp *xvp = xvp_file->xvp;
+	if (copy_from_user(&powerhint , arg, sizeof(struct xrp_powerhint_ctrl))) {
+		pr_err("func:%s copy_from_user failed\n");
+		return -EFAULT;
+	}
+	set_powerhint_flag(xvp , powerhint.level , powerhint.acquire_release);
+	return 0;
+}
 static long xvp_ioctl(struct file *filp,
 	unsigned int cmd, unsigned long arg)
 {
@@ -1451,12 +1463,18 @@ static long xvp_ioctl(struct file *filp,
 		break;
 	case XRP_IOCTL_QUEUE:
 	case XRP_IOCTL_QUEUE_NS:
+		preprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
 		retval = xrp_ioctl_submit_sync(filp,
 				(struct xrp_ioctl_queue __user *)arg);
+		postprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
 		break;
 	case XRP_IOCTL_SET_DVFS:
 		retval = xrp_ioctl_set_dvfs(filp,
 				(struct xrp_dvfs_ctrl __user *)arg);
+		break;
+	case XRP_IOCTL_SET_POWERHINT:
+		retval = xrp_ioctl_set_powerhint(filp,
+					(struct xrp_powerhint_ctrl __user *)arg);
 		break;
 	case XRP_IOCTL_FACEID_CMD:
 		retval = xrp_ioctl_faceid_cmd(filp,
@@ -1733,23 +1751,48 @@ static int xvp_open(struct inode *inode, struct file *filp)
 						struct xvp, miscdev);
 	struct xvp_file *xvp_file;
 	int ret;
-
+	uint32_t opentype = 0xffffffff;
 	s64 tv0, tv1, tv2, tv3;
 	tv0 = ktime_to_us(ktime_get());
 
 	pr_info("[IN]xvp is:%p, flags:%x, fmode:%x\n",
 		xvp , filp->f_flags , filp->f_mode);
+	mutex_lock(&xvp->xvp_lock);
 	if(filp->f_flags & O_RDWR)
 	{
-		pr_err("[ERROR]open faceid mode!!!!!\n");
-		ret = sprd_faceid_secboot_init(xvp);
-		if (ret < 0)
-			return ret;
+		/*check cur open type*/
+		if((xvp->cur_opentype == 0xffffffff) || (xvp->cur_opentype == 1)) {
+			pr_err("open faceid mode!!!!!\n");
+			ret = sprd_faceid_sec_sign(xvp);
+			if (ret < 0) {
+				mutex_unlock(&xvp->xvp_lock);
+				return ret;
+			}
+			ret = sprd_faceid_secboot_init(xvp);
+			if (ret < 0) {
+				mutex_unlock(&xvp->xvp_lock);
+				return ret;
+			}
+			opentype = 1;
+		}
+		else {
+			pr_err("open faceid mode but refused by curr opentype:%u\n" , xvp->cur_opentype);
+			mutex_unlock(&xvp->xvp_lock);
+			return -EINVAL;
+		}
+	} else {
+		if((xvp->cur_opentype != 0xffffffff) && (xvp->cur_opentype != 0)) {
+			pr_err("open failed refused by curr opentype:%u\n" , xvp->cur_opentype);
+			mutex_unlock(&xvp->xvp_lock);
+			return -EINVAL;
+		}
+		opentype = 0;
 	}
-
 	xvp_file = devm_kzalloc(xvp->dev, sizeof(*xvp_file),
 		GFP_KERNEL);
 	if (!xvp_file) {
+		pr_err("func:%s devm_kzalloc failed\n" , __func__);
+		mutex_unlock(&xvp->xvp_lock);
 		return -ENOMEM;
 	}
 	tv1 = ktime_to_us(ktime_get());
@@ -1758,19 +1801,26 @@ static int xvp_open(struct inode *inode, struct file *filp)
 		//TBD enable function can not return failed status
 		if (ret < 0) {
 			pr_err("[ERROR]couldn't enable DSP\n");
-			goto enable_fault;
+			goto devmalloc_fault;
 		}
 		ret = sprd_vdsp_alloc_map(xvp);
 		if (ret < 0) {
 			pr_err("[ERROR]open alloc or map failed\n");
 			goto enable_fault;
 		}
+		ret = vdsp_dvfs_init(xvp);
+		if(ret < 0) {
+			pr_err("vdsp_dvfs_init failed\n");
+			goto map_fault;
+		}
 	}
 	tv2 = ktime_to_us(ktime_get());
 	ret = pm_runtime_get_sync(xvp->dev);
 	if (ret < 0) {
 		pr_err("[ERROR]pm_runtime_get_sync failed\n");
-		goto map_fault;
+		goto dvfs_fault;
+	} else {
+		ret = 0;
 	}
 
 	if (!xvp->open_count) {
@@ -1789,22 +1839,27 @@ static int xvp_open(struct inode *inode, struct file *filp)
 	spin_lock_init(&xvp_file->busy_list_lock);
 	filp->private_data = xvp_file;
 	xrp_add_known_file(filp);
-	xvp->open_count++;
-
 	tv3 = ktime_to_us(ktime_get());
 	/*total - map*/
 	pr_info("[OUT][TIME]VDSP Boot total(xvp->sync done):%lld (us), map firmware:%lld (us)\n",
 		tv3 - tv0, tv2 - tv1);
+	xvp->open_count ++;
+	xvp->cur_opentype = opentype;
+	mutex_unlock(&xvp->xvp_lock);
 	return ret;
 
 err_pm_runtime:
 	pm_runtime_put_sync(xvp->dev);
+dvfs_fault:
+	vdsp_dvfs_deinit(xvp);
 map_fault:
-	xvp_disable_dsp(xvp);
 	sprd_vdsp_clear_buff(xvp);
-
 enable_fault:
-	pr_err("[OUT][ERROR]ret = %ld\n", ret);
+	xvp_disable_dsp(xvp);
+devmalloc_fault:
+	devm_kfree(xvp->dev , xvp_file);
+	pr_err("%s: ret = %ld\n", __func__, ret);
+	mutex_unlock(&xvp->xvp_lock);
 	return ret;
 }
 
@@ -1812,7 +1867,9 @@ static int xvp_close(struct inode *inode, struct file *filp)
 {
 	struct xvp_file *xvp_file = filp->private_data;
 	int ret = 0;
+	struct xvp *xvp = (struct xvp*)(xvp_file->xvp);
 	pr_info("[IN]\n");
+	mutex_lock(&xvp->xvp_lock);
 	xrp_remove_known_file(filp);
 	pm_runtime_put_sync(xvp_file->xvp->dev);
 	xvp_file->xvp->open_count--;
@@ -1823,10 +1880,13 @@ static int xvp_close(struct inode *inode, struct file *filp)
 		ret = xrp_library_release_all(xvp_file->xvp);
 		sprd_vdsp_clear_buff(xvp_file->xvp);
 		xvp_disable_dsp(xvp_file->xvp);
+		xvp_file->xvp->cur_opentype = 0xffffffff;
+		vdsp_dvfs_deinit(xvp_file->xvp);
 	}
 	sprd_faceid_secboot_deinit(xvp_file->xvp);
 	devm_kfree(xvp_file->xvp->dev, xvp_file);
 	pr_info("[OUT]ret:%d\n", ret);
+	mutex_unlock(&xvp->xvp_lock);
 	return ret;
 }
 
@@ -1996,8 +2056,9 @@ static long vdsp_init_common(struct platform_device *pdev,
 	sprd_log_sem_init();
 	mutex_init(&(xvp->load_lib.libload_mutex));
 	mutex_init(&map_lock);
-
+	mutex_init(&xvp->xvp_lock);
 	xvp->open_count = 0;
+	xvp->cur_opentype = 0xffffffff; /*0 is normal type , 1 is faceid , 0xffffffff is initialized value*/
 	xvp->dev = &pdev->dev;
 	xvp->hw_ops = hw_ops;
 	xvp->hw_arg = hw_arg;
@@ -2039,20 +2100,6 @@ static long vdsp_init_common(struct platform_device *pdev,
 	xvp->nodeid = nodeid;
 	sprintf(nodename, "vdsp%u", nodeid);
 
-/*workaround now , may be remove later because 936 m is default freq,
-* we may use 512m for stability temperary
-*/
-	{
-		struct clk *vdspclk , *vdspparentclk;
-		vdspclk = devm_clk_get(xvp->dev , "vdsp_clk_set");
-		vdspparentclk = devm_clk_get(xvp->dev , "vdsp_clk_512");
-		if((vdspclk != NULL) && (vdspparentclk != NULL)) {
-			pr_info("set vdsp clk\n");
-			clk_set_parent(vdspclk , vdspparentclk);
-			clk_prepare_enable(vdspclk);
-		}
-	}
-/*workaround end*/
 
 	xvp->miscdev = (struct miscdevice){
 		.minor = MISC_DYNAMIC_MINOR,

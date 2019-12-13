@@ -36,6 +36,7 @@
 #include "xrp_address_map.h"
 #include "vdsp_smem.h"
 #include "xrp_library_loader.h"
+#include "vdsp_dvfs.h"
 
 struct device;
 struct firmware;
@@ -53,6 +54,7 @@ struct xrp_comm {
 	struct completion completion;
 	u32 priority;
 };
+
 struct faceid_mem_addr {
 	struct ion_buf ion_fd_weights_p;
 	struct ion_buf ion_fd_weights_r;
@@ -66,6 +68,7 @@ struct faceid_mem_addr {
 	struct ion_buf ion_face_in;
 	struct ion_buf ion_face_out;
 };
+
 struct xvp {
 	struct device *dev;
 	const char *firmware_name;
@@ -113,6 +116,9 @@ struct xvp {
 	void *fd_weights_p_viraddr;
 	struct xrp_load_lib_info load_lib;
 	uint32_t open_count;
+	struct mutex xvp_lock;
+	uint32_t cur_opentype;
+	struct vdsp_dvfs_info dvfs_info;
 	struct vdsp_mem_desc *vdsp_mem_desc;
 };
 

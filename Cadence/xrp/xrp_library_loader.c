@@ -368,6 +368,7 @@ static int32_t xrp_library_decrease(struct xvp *xvp , const char *libname)
 		libinfo->load_count--;
 	} else
 		return -EINVAL;
+	pr_info("func:%s , loadcount:%d libname:%s\n" , __func__ , libinfo->load_count , libname);
 	return libinfo->load_count;
 
 }
@@ -375,6 +376,7 @@ static int32_t xrp_library_increase(struct xvp *xvp , const char *libname)
 {
 	int i;
 	struct loadlib_info *libinfo = NULL;
+
 	for(i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)) ; i++) {
 		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list),i);
 		if(0 == strcmp(libinfo->libname , libname)) {
@@ -382,10 +384,12 @@ static int32_t xrp_library_increase(struct xvp *xvp , const char *libname)
 		}
 	}
 	/*find , and decrease*/
-	if(i < libinfo_list_size(&(xvp->load_lib.lib_list))) {
+	if(i < libinfo_list_size(&(xvp->load_lib.lib_list)))
 		libinfo->load_count++;
-	} else
+	else
 		return -EINVAL;
+
+	pr_info("func:%s , loadcount:%d , libname:%s\n" , __func__ , libinfo->load_count , libname);
 	return libinfo->load_count;
 }
 int32_t xrp_library_decrelease(struct xvp *xvp , const char *libname)
@@ -628,14 +632,13 @@ static int32_t xrp_library_load(struct xvp *xvp , struct xrp_request *rq , char 
 #if 1
 int32_t xrp_library_release_all(struct xvp *xvp)
 {
-	int i;
 	int ret = 0;
 	struct loadlib_info *libinfo = NULL;
 	mutex_lock(&xvp->load_lib.libload_mutex);
-	for(i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)) ; i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list),i);
+	while(0 != libinfo_list_size(&(xvp->load_lib.lib_list))) {
+		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list),0);
 		/*unmap iommu and release ion buffer*/
-		if((libinfo != NULL) /*&& (libinfo->load_count <=0)*/) {
+		if((libinfo != NULL)) {
 			xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo->ionhandle);
 			xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, libinfo->ionhandle , IOMMU_ALL);
 			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo->ionhandle);
@@ -647,8 +650,11 @@ int32_t xrp_library_release_all(struct xvp *xvp)
 			vfree(libinfo->pil_ionhandle);
 			if(libinfo->code_back_kaddr != NULL)
 				vfree(libinfo->code_back_kaddr);
-			libinfo_list_remove(&(xvp->load_lib.lib_list) , i);
-			pr_info("release ion handle, pil handle\n");
+			libinfo_list_remove(&(xvp->load_lib.lib_list) , 0);
+			pr_info("%s , release ion handle, pil handle current:%p\n" , __func__ , get_current());
+		} else {
+			pr_err("%s , libinfo is NULL may be error but also remove node\n" , __func__);
+			libinfo_list_remove(&(xvp->load_lib.lib_list) , 0);
 		}
 	}
 	mutex_unlock(&xvp->load_lib.libload_mutex);
