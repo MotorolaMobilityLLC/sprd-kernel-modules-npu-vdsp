@@ -1202,7 +1202,7 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 	bool rebootflag = 0;
 	int32_t lib_result = 0;
 	s64 tv0, tv1, tv2, tv3, tv4, tv5;
-
+	tv2 = tv3 = tv0 = tv1 = tv4 = tv5 = 0;
 	pr_info("[CMD][IN]\n");
 	tv0 = ktime_to_us(ktime_get());
 

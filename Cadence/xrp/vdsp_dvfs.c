@@ -96,11 +96,12 @@ int32_t set_powerhint_flag(void *data , int32_t power , uint32_t acq_rel)
 	enum sprd_vdsp_kernel_powerhint_acquire_release acquire_release;
 
 	level = translate_powerlevel_fromuser(power);
-	acquire_release = translate_acquire_release_fromuser(acq_rel);
-	if(level == SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS) {
-		pr_err("func:%s , level is error" , __func__);
+	if((level == SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX) ||
+		(level == SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS)) {
+		pr_err("func:%s , level:%d is error" , __func__ , level);
 		return -1;
 	}
+	acquire_release = translate_acquire_release_fromuser(acq_rel);
 	mutex_lock(&xvp->dvfs_info.powerhint_lock);
 	if(acquire_release == SPRD_VDSP_KERNEL_POWERHINT_ACQUIRE) {
 		xvp->dvfs_info.powerhint_count_level[level]++;
