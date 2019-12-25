@@ -112,6 +112,7 @@ struct xvp {
 	bool secmode;/*used for faceID*/
 	bool tee_con;/*the status of connect TEE*/
 	struct ion_buf ion_faceid_fw;/*faceid fw*/
+	struct ion_buf ion_faceid_fw_sign;/*faceid fw ion which used to sign*/
 	struct faceid_mem_addr faceid_pool;
 	const struct firmware *faceid_fw;
 	struct vdsp_log_state *log_state;

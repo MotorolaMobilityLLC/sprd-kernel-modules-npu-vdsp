@@ -356,6 +356,25 @@ void sprd_faceid_release_weights(struct xvp *xvp)
 static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 {
 	int ret;
+
+	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
+		&xvp->ion_faceid_fw_sign,
+		ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
+		VDSP_FACEID_FIRMWIRE_SIZE);
+	if(0 != ret) {
+		pr_err("%s  failed,ret %d\n" , __func__,ret);
+		return -ENOMEM;
+	}
+	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc,
+			&xvp->ion_faceid_fw_sign);
+	if(0 != ret) {
+		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
+				&xvp->ion_faceid_fw_sign);
+		return -EFAULT;
+	}
+	xvp->ion_faceid_fw_sign.dev = xvp->dev;
+
+
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
 			&xvp->ion_faceid_fw,
 			ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
@@ -385,6 +404,11 @@ static int sprd_free_faceid_fwbuffer(struct xvp *xvp)
 			__func__ , xvp->firmware2_viraddr);
 	if(xvp->firmware2_viraddr) {
 		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
+				&xvp->ion_faceid_fw_sign);
+		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
+				&xvp->ion_faceid_fw_sign);
+
+		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
 				&xvp->ion_faceid_fw);
 		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
 				&xvp->ion_faceid_fw);
@@ -402,13 +426,13 @@ int sprd_request_faceid_firmware(struct xvp *xvp)
 	int ret = request_firmware(&xvp->firmware2, FACEID_FIRMWARE, xvp->dev);
 #else
 	int ret = request_firmware(&xvp->firmware2_sign, FACEID_FIRMWARE, xvp->dev);
-	xvp->firmware2.data = (void*)xvp->firmware2_sign->data + SIGN_HEAD_SIZE;
-	xvp->firmware2.size = xvp->firmware2_sign->size - SIGN_HEAD_SIZE - SIGN_TAIL_SIZE;
-#endif
+
 	if (ret < 0)
 	{
 		pr_err("%s ret:%d\n" , __func__ ,ret);
+		return ret;
 	}
+#endif
 	pr_info("%s done.", __func__);
 	return ret;
 }
@@ -535,7 +559,14 @@ int sprd_faceid_sec_sign(struct xvp *xvp)
 {
 	bool ret;
 	KBC_LOAD_TABLE_V  table;
-	unsigned long mem_addr_v,mem_addr_p;
+	unsigned long mem_addr_p;
+	size_t img_len;
+
+	/*copy fw to continuous physical address*/
+	memcpy((void*)xvp->ion_faceid_fw_sign.addr_k[0],(void*)xvp->firmware2_sign->data,xvp->firmware2_sign->size);
+
+	xvp->firmware2.data = (void*)xvp->ion_faceid_fw_sign.addr_k[0] + SIGN_HEAD_SIZE;
+	xvp->firmware2.size = xvp->firmware2_sign->size - SIGN_HEAD_SIZE - SIGN_TAIL_SIZE;
 
 	ret = trusty_kernelbootcp_connect();
 	if(!ret)
@@ -546,25 +577,22 @@ int sprd_faceid_sec_sign(struct xvp *xvp)
 
 	memset(&table, 0, sizeof(KBC_LOAD_TABLE_V));
 
-	mem_addr_v = xvp->faceid_pool.ion_fd_mem_pool.addr_k[0];
-	mem_addr_p = xvp->faceid_pool.ion_fd_mem_pool.addr_p[0];
-
-	/*copy fw to continuous physical address*/
-	memcpy((void*)mem_addr_v,xvp->firmware2_sign->data,xvp->firmware2_sign->size);
+	mem_addr_p = xvp->ion_faceid_fw_sign.addr_p[0];
+	img_len = xvp->firmware2_sign->size;
 
 	table.faceid_fw.img_addr = mem_addr_p;
-	table.faceid_fw.img_len = xvp->firmware2_sign->size;
+	table.faceid_fw.img_len = img_len;
 
 	pr_info("faceid fw sign paddr %lX size %zd\n",
-			mem_addr_p,xvp->firmware2_sign->size);
-#if 0
+			mem_addr_p,img_len);
+
 	ret = kernel_bootcp_verify_vdsp(&table);
 	if(!ret)
 	{
 		pr_err("bootcp verify fail\n");
 		return -EACCES;
 	}
-
+#if 0
 	ret = kernel_bootcp_unlock_ddr(&table);
 	if(!ret)
 	{
@@ -629,7 +657,7 @@ int sprd_faceid_secboot_init(struct xvp *xvp)
 	if(!xvp->tee_con)
 	{
 		pr_err("vdsp_ca_connect fail\n");
-		//return -EACCES;
+		return -EACCES;
 	}
 	return 0;
 }
