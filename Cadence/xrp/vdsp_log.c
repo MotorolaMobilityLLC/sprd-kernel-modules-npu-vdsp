@@ -236,18 +236,20 @@ int vdsp_log_deinit(struct xvp *xvp)
 
 	s = xvp->log_state;
 
-	for_each_possible_cpu(cpu) {
-		struct vdsp_log_work *vlw  = per_cpu_ptr(s->nop_works, cpu);
+	if(s)
+	{
+		for_each_possible_cpu(cpu) {
+			struct vdsp_log_work *vlw  = per_cpu_ptr(s->nop_works, cpu);
 
-		flush_work(&vlw->work);
-	}
-	free_percpu(s->nop_works);
-	destroy_workqueue(s->nop_wq);
+			flush_work(&vlw->work);
+		}
+		free_percpu(s->nop_works);
+		destroy_workqueue(s->nop_wq);
 
-	vdsp_log_free_buffer(xvp);
-	if(!s)
+		vdsp_log_free_buffer(xvp);
+
 		kfree(s);
-
+	}
 	pr_info("%s done.\n",__func__);
 	return 0;
 }
