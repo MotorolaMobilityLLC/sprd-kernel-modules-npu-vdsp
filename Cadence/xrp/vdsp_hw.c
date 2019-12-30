@@ -229,7 +229,9 @@ static int enable(void *hw_arg)
 
 	pr_info("%s entry\n" , __func__);
 	/*pd_ap_vdsp_force_shutdown bit */
+	reg_write32_clearbit(hw_arg , hw->pmu + 0x07f8 , ~(0x1));
 	reg_write32(hw_arg, hw->pmu+0x07e4, 0x204004);
+	reg_write32_clearbit(hw_arg , hw->pmu+0x0804 , ~(0x1));
 	/*vdsp_stop_en*/
 	reg_write32_clearbit(hw_arg, hw->ahb+REG_LP_CTL , ~(1<<2));
 	reg_write32_setbit(hw_arg, hw->ahb+REG_LP_CTL, 1<<3);
@@ -256,9 +258,18 @@ static void disable(void *hw_arg)
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	pr_debug("%s arg:%p ,offset:%x , value:0\n" ,
 		__func__ , hw->ahb , REG_LP_CTL);
+	/*vdma disable*/
+	reg_write32_clearbit(hw_arg, hw->ahb, ~(1<<3));
+	/*IPI disbale*/
+	reg_write32_clearbit(hw_arg , hw->ahb, ~(1<<6));
+	/*vdsp_stop_en = 1*/
 	reg_write32_setbit(hw_arg, hw->ahb+REG_LP_CTL , 1<<2);
-	reg_write32_setbit(hw_arg, hw->ahb+REG_RESET , 0x3<<9);
-
+	/*pmu ap_vdsp_core_int_disable set 1*/
+	reg_write32_setbit(hw_arg , hw->pmu + 0x07f8 , 1);
+	/*pmu auto shutdown by vdsp core*/
+	reg_write32_clearbit(hw_arg , hw->pmu+0x07e4 , ~(1 << 27));
+	reg_write32_setbit(hw_arg , hw->pmu+0x07e4 , (1<<24));
+	reg_write32_setbit(hw_arg , hw->pmu+0x0804 , 1);
 }
 
 static void enable_dvfs(void *hw_arg)
