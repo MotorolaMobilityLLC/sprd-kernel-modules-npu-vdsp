@@ -14,7 +14,7 @@
 
 #include <linux/delay.h>
 #include "vdsp_ipi_drv.h"
-
+#include "vdsp_hw.h"
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -27,7 +27,6 @@ static int vdsp_ipi_unreg_irq_handle(int idx);
 static int vdsp_ipi_send_irq(int idx);
 static int vdsp_ipi_ctx_init(struct vdsp_ipi_ctx_desc * ctx);
 static int vdsp_ipi_ctx_deinit(struct vdsp_ipi_ctx_desc * ctx);
-
 struct vdsp_ipi_ops ipi_ops = {
 	.ctx_init =vdsp_ipi_ctx_init,
 	.ctx_deinit = vdsp_ipi_ctx_deinit,
@@ -61,7 +60,7 @@ static void *ipi_isr_param[IPI_IDX_MAX] = {
 static int vdsp_ipi_reg_irq_handle(int idx,
 		irq_handler_t handler, void *param)
 {
-	pr_info("vdsp register handler[%d] = 0x%p, param = 0x%p\n",
+	pr_debug("vdsp register handler[%d] = 0x%p, param = 0x%p\n",
 		idx, handler, param);
 	ipi_isr_handler[idx] = handler;
 	ipi_isr_param[idx] = param;
@@ -96,7 +95,7 @@ static int vdsp_ipi_send_irq(int idx)
 		/* fallthrough */
 	case XRP_IRQ_LEVEL:
 		wmb();
-		pr_info("hw->device_irq:%x\n" , idx);
+		pr_debug("hw->device_irq:%x\n" , idx);
 #if 0
 		reg_write32_setbit(hw,
 				   hw->device_irq_host_offset + hw->ipi,
@@ -107,10 +106,10 @@ static int vdsp_ipi_send_irq(int idx)
                 __raw_writel(value, hw->regs + addr);
 #endif
 		if (s_ipi_desc.ipi_addr) {
-			pr_info("s_ipi_desc.ipi_addr 0x%p\n", s_ipi_desc.ipi_addr);
+			pr_debug("s_ipi_desc.ipi_addr 0x%p\n", s_ipi_desc.ipi_addr);
 		IPI_HREG_OWR(s_ipi_desc.ipi_addr, 0x1 << idx);
 		} else
-			pr_info("s_ipi_desc.vir_addr 0x%p\n", s_ipi_desc.vir_addr);
+			pr_debug("s_ipi_desc.vir_addr 0x%p\n", s_ipi_desc.vir_addr);
 		break;
 	default:
 		break;
@@ -125,22 +124,31 @@ static irqreturn_t irq_handler(int irq, void *arg)
 	int irq_val = 0;
 	int irq_mask = 0;
 	int i = 0;
+	unsigned long flags;
+	struct vdsp_hw *hw = (struct vdsp_hw*) arg;
+	struct vdsp_ipi_ctx_desc *ctx = hw->vdsp_ipi_desc;
 
+	spin_lock_irqsave(&ctx->ipi_spinlock , flags);
+	/*if irq active is 0 ,the ipi may be disabled ,so return here*/
+	if(ctx->ipi_active == 0) {
+		spin_unlock_irqrestore(&ctx->ipi_spinlock , flags);
+		pr_warn("irq_handler ipi_active is 0 return\n");
+		return IRQ_HANDLED;
+	}
 	irq_val = IPI_HREG_RD(s_ipi_desc.ipi_addr) & 0xF;
 	irq_mask = irq_val;
-	pr_info("irq_handler reg val = 0x%x\n", irq_mask);
 
 	/* clear the interrupt */
 	IPI_HREG_OWR((s_ipi_desc.ipi_addr + 8), irq_val & 0xF);
-
+	spin_unlock_irqrestore(&ctx->ipi_spinlock , flags);
 	/* dispatch the interrupt */
 	for (i = 0; i < IPI_IDX_MAX; i++) {
 		if (irq_mask & (1 << i)) {
-			pr_info("irq_handler ipi %d triggle\n", i);
+			pr_debug("irq_handler ipi %d triggle\n", i);
 			if (ipi_isr_handler[i]) {
 				ret = ipi_isr_handler[i](irq, ipi_isr_param[i]);
 			} else {
-				pr_info("no irq function\n");
+				pr_warn("no irq function\n");
 			}
 		}
 		irq_val  &= ~(1 << i);
@@ -153,20 +161,30 @@ static irqreturn_t irq_handler(int irq, void *arg)
 
 static int vdsp_ipi_ctx_init(struct vdsp_ipi_ctx_desc * ctx)
 {
+	unsigned long flags;
+
 	IPI_HREG_OWR(ctx->vir_addr, 0x1 << 6);
 	udelay(1);
 	IPI_HREG_WR((ctx->vir_addr + 0x3094), 0xd85f);
 	IPI_HREG_OWR((ctx->ipi_addr +8), 0xFF);
-
+	spin_lock_init(&ctx->ipi_spinlock);
+	spin_lock_irqsave(&ctx->ipi_spinlock , flags);
+	ctx->ipi_active = 1;
+	spin_unlock_irqrestore(&ctx->ipi_spinlock , flags);
 	return 0;
 }
 
 
 static int vdsp_ipi_ctx_deinit(struct vdsp_ipi_ctx_desc * ctx)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&ctx->ipi_spinlock , flags);
+	ctx->ipi_active = 0;
 	IPI_HREG_OWR((ctx->ipi_addr +8), 0xFF);
 	IPI_HREG_WR(ctx->vir_addr , (IPI_HREG_RD(ctx->vir_addr) & (~(0x1<<6))));
 	IPI_HREG_WR((ctx->vir_addr + 0x3094), 0x1ffff);
+	spin_unlock_irqrestore(&ctx->ipi_spinlock , flags);
 	return 0;
 }
 

@@ -28,8 +28,6 @@ struct vdsp_dvfs_info {
 	struct mutex timepiece_lock;
 	struct mutex powerhint_lock;
 	uint32_t workingcount;
-	struct mutex deinitmutex;
-	uint32_t monitor_exit;
 	ktime_t  starttime;
 	ktime_t cycle_totaltime;
 	ktime_t piece_starttime;

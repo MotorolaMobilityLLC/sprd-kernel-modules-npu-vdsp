@@ -82,7 +82,7 @@ void postprocess_work_piece(void *data)
 					? xvp->dvfs_info.piece_starttime : xvp->dvfs_info.starttime;
 		xvp->dvfs_info.cycle_totaltime += ktime_sub(ktime_get() , realstarttime);
 	}
-	pr_info("func:%s , workingcount:%d" , __func__ , xvp->dvfs_info.workingcount);
+	pr_debug("func:%s , workingcount:%d\n" , __func__ , xvp->dvfs_info.workingcount);
 	mutex_unlock(&xvp->dvfs_info.timepiece_lock);
 }
 
@@ -114,13 +114,14 @@ int32_t set_powerhint_flag(void *data , int32_t power , uint32_t acq_rel)
 		}
 	}
 
-	pr_info("%s acquire_release:%d , level:%d , i:%d , last_powerhint_level:%d\n" , __func__ , acquire_release , level,
+	pr_debug("%s acquire_release:%d , level:%d , i:%d , last_powerhint_level:%d\n" ,
+		 __func__ , acquire_release , level,
 		i , xvp->dvfs_info.last_powerhint_level);
 	if((i != -1) && (xvp->dvfs_info.last_powerhint_level != i)) {
 		/*set power hint*/
 		index = i;
 		if (xvp->hw_ops->setdvfs) {
-			pr_info("func:%s before setdvfs index:%d\n" , __func__ , index);
+			pr_debug("func:%s before setdvfs index:%d\n" , __func__ , index);
 			xvp->hw_ops->setdvfs(xvp->hw_arg , index);
 		}
 		xvp->dvfs_info.last_powerhint_level = i;
@@ -148,7 +149,7 @@ static uint32_t calculate_vdsp_usage(void *data , ktime_t fromtime)
 		}
 	}
 	percent = (xvp->dvfs_info.cycle_totaltime*100) / ktime_sub(current_time , fromtime);
-	pr_info("func:%s , cycle_totaltime:%d ms , timeeclapse:%d ms , percent:%d" ,
+	pr_debug("func:%s,cycle_totaltime:%d ms,timeeclapse:%d ms,percent:%d" ,
 		__func__ ,
 		(int)(xvp->dvfs_info.cycle_totaltime/1000000),
 		(int)(ktime_sub(current_time , fromtime)/1000000),
@@ -198,24 +199,18 @@ int vdsp_dvfs_thread(void* data)
 {
 	uint32_t percentage;
 	int32_t index;
+	long ret = 0;
 	struct xvp *xvp = (struct xvp *)data;
 
 	while(!kthread_should_stop()) {
-		mutex_lock(&xvp->dvfs_info.deinitmutex);
-		if(0 != xvp->dvfs_info.monitor_exit) {
-			mutex_unlock(&xvp->dvfs_info.deinitmutex);
-			pr_info("%s exit\n" , __func__);
-			break;
-		}
-		mutex_unlock(&xvp->dvfs_info.deinitmutex);
 		mutex_lock(&xvp->dvfs_info.powerhint_lock);
 		if(SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS == xvp->dvfs_info.last_powerhint_level) {
 			percentage = calculate_vdsp_usage(xvp , xvp->dvfs_info.starttime);
-			pr_info("%s percentage:%d\n" , __func__ , percentage);
+			pr_debug("%s percentage:%d\n" , __func__ , percentage);
 			/*dvfs set freq*/
 			index = calculate_dvfs_index(percentage);
 			if(index != xvp->dvfs_info.last_dvfs_index) {
-				pr_info("%s dvfs index:%d , last index:%d\n" , __func__ , index , xvp->dvfs_info.last_dvfs_index);
+				pr_debug("%s dvfs index:%d , last index:%d\n" , __func__ , index , xvp->dvfs_info.last_dvfs_index);
 				if (xvp->hw_ops->setdvfs){
 					xvp->hw_ops->setdvfs(xvp->hw_arg , index);
 					xvp->dvfs_info.last_dvfs_index = index;
@@ -223,13 +218,10 @@ int vdsp_dvfs_thread(void* data)
 			}
 		}
 		mutex_unlock(&xvp->dvfs_info.powerhint_lock);//.unlock();
-		mutex_lock(&xvp->dvfs_info.deinitmutex);
-		pr_info("func:%s before wait_event_interruptible_timeout\n" , __func__);
-		wait_event_interruptible_timeout(xvp->dvfs_info.wait_q,(xvp->dvfs_info.monitor_exit == 1) , msecs_to_jiffies(1000));
-		pr_info("func:%s after wait_event_interruptible_timeout\n" , __func__);
-		mutex_unlock(&xvp->dvfs_info.deinitmutex);
+		ret = wait_event_interruptible_timeout(xvp->dvfs_info.wait_q, kthread_should_stop() , msecs_to_jiffies(1000));
+		pr_debug("func:%s after wait_event_interruptible_timeout ret:%ld\n" , __func__ , ret);
 	}
-	pr_info("func:%s exit\n" , __func__);
+	pr_debug("func:%s exit\n" , __func__);
 	return 0;
 }
 
@@ -239,9 +231,7 @@ int vdsp_dvfs_init(void *data) {
 
 	mutex_init(&xvp->dvfs_info.timepiece_lock);
 	mutex_init(&xvp->dvfs_info.powerhint_lock);
-	mutex_init(&xvp->dvfs_info.deinitmutex);
 	init_waitqueue_head(&xvp->dvfs_info.wait_q);
-	xvp->dvfs_info.monitor_exit = 0;
 	xvp->dvfs_info.starttime = 0;
 	xvp->dvfs_info.cycle_totaltime = 0;
 	xvp->dvfs_info.piece_starttime = 0;
@@ -260,7 +250,7 @@ int vdsp_dvfs_init(void *data) {
 		pr_err("func:%s kthread_run err\n" , __func__);
 		return -1;
 	}
-	pr_info("func:%s return ok\n" , __func__);
+	pr_debug("func:%s return ok\n" , __func__);
 	return 0;
 }
 
@@ -268,17 +258,15 @@ void vdsp_dvfs_deinit(void *data) {
 	struct xvp* xvp = (struct xvp*)data;
 
 	if(xvp->dvfs_info.dvfs_thread) {
-		xvp->dvfs_info.monitor_exit = 1;
-		wake_up_interruptible_all(&xvp->dvfs_info.wait_q);
 		kthread_stop(xvp->dvfs_info.dvfs_thread);
-		pr_info("func:%s after kthread_stop\n" , __func__);
+		xvp->dvfs_info.dvfs_thread = NULL;
+		pr_debug("func:%s after kthread_stop\n" , __func__);
 	}
 	if (xvp->hw_ops->setdvfs) {
 		xvp->hw_ops->setdvfs(xvp->hw_arg , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_0);
 	}
 	mutex_destroy(&xvp->dvfs_info.timepiece_lock);
 	mutex_destroy(&xvp->dvfs_info.powerhint_lock);
-	mutex_destroy(&xvp->dvfs_info.deinitmutex);
-	pr_info("func:%s exit\n" , __func__);
+	pr_debug("func:%s exit\n" , __func__);
 	return;
 }

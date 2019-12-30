@@ -45,6 +45,8 @@ struct vdsp_ipi_ctx_desc {
 	/* how IRQ is used to notify the device of incoming data */
 	enum xrp_irq_mode irq_mode;
 	struct vdsp_ipi_ops *ops;
+	spinlock_t ipi_spinlock;
+	uint32_t ipi_active;
 };
 
 struct vdsp_ipi_ops {
