@@ -30,7 +30,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "[VDSP]VDSP_SMEM: %d %d %s : "\
+#define pr_fmt(fmt) "sprd-vdsp: smem %d %d %s : "\
 	fmt, current->pid, __LINE__, __func__
 
 static int __vdsp_mem_iommu_map(struct ion_buf *pfinfo, int idx)
@@ -39,16 +39,13 @@ static int __vdsp_mem_iommu_map(struct ion_buf *pfinfo, int idx)
 	struct sprd_iommu_map_data iommu_data;
 
 	if (!pfinfo || !pfinfo->dev) {
-		pr_err("fail to get valid input pt"
-				"pinfo:%p , pinfo dev:%p , num:%d\n",
-		       pfinfo , pfinfo->dev,pfinfo->num);
+		pr_err("invalid input ptr\n");
 		return -EINVAL;
 	}
 
 	for (i = 0; i < 2; i++) {
 		if ((pfinfo->size[i] <= 0) || (pfinfo->buf[i] == NULL))
 			continue;
-		pr_info("i[%d], map size - pfinfo->size[%d]\n", i, pfinfo->size[i]);
 		memset(&iommu_data, 0x00, sizeof(iommu_data));
 		if (sprd_iommu_attach_device(pfinfo->dev) == 0) {
 			memset(&iommu_data, 0x00, sizeof(iommu_data));
@@ -62,20 +59,17 @@ static int __vdsp_mem_iommu_map(struct ion_buf *pfinfo, int idx)
 				pr_err("fail to get iommu kaddr %d\n", i);
 				return ret;
 			}
-
-			pfinfo->iova[i] = iommu_data.iova_addr
-				+ pfinfo->offset[i];
-		} else {
+			pfinfo->iova[i] = iommu_data.iova_addr + pfinfo->offset[i];
+		}else {
 			ret = sprd_ion_get_phys_addr(pfinfo->mfd[i],
-						     NULL,
-						     &pfinfo->iova[i],
-						     &pfinfo->size[i]);
+				NULL,
+				&pfinfo->iova[i],
+				&pfinfo->size[i]);
 			if (ret) {
 				pr_err("fail to get iommu phy addr %d mfd 0x%x\n",
-				       i, pfinfo->mfd[i]);
+					i, pfinfo->mfd[i]);
 				return ret;
 			}
-			pr_info("may be error path\n");
 			pfinfo->iova[i] += pfinfo->offset[i];
 		}
 	}
@@ -89,7 +83,7 @@ static int __vdsp_mem_iommu_unmap(struct ion_buf *pfinfo, int idx)
 	struct sprd_iommu_unmap_data iommu_data;
 
 	if (!pfinfo || !pfinfo->dev) {
-		pr_err("fail to get valid input ptr\n");
+		pr_err("invalid input ptr\n");
 		return -EINVAL;
 	}
 
@@ -104,7 +98,7 @@ static int __vdsp_mem_iommu_unmap(struct ion_buf *pfinfo, int idx)
 			iommu_data.buf = NULL;
 
 			ret = sprd_iommu_unmap_with_idx(pfinfo->dev,
-							&iommu_data, idx);
+				&iommu_data, idx);
 			if (ret) {
 				pr_err("failed to free iommu %d\n", i);
 				return ret;
@@ -117,14 +111,11 @@ static int __vdsp_mem_iommu_unmap(struct ion_buf *pfinfo, int idx)
 
 
 static int vdsp_mem_alloc(struct vdsp_mem_desc *ctx,
-		struct ion_buf *ion_buf, int heap_type, size_t size)
+	struct ion_buf *ion_buf, int heap_type, size_t size)
 {
 	int ret = 0;
 
-	pr_debug("ion_alloc buffer entry\n");
-
 	memset(ion_buf, 0x00, sizeof(*ion_buf));
-
 	ion_buf->dmabuf_p[0] = ion_new_alloc(size, heap_type, 0);
 	if (IS_ERR_OR_NULL(ion_buf->dmabuf_p[0])) {
 		pr_err("ion_alloc buffer fail\n");
@@ -132,30 +123,27 @@ static int vdsp_mem_alloc(struct vdsp_mem_desc *ctx,
 		return ret;
 	}
 	ret = sprd_ion_get_buffer(-1,
-				  ion_buf->dmabuf_p[0],
-				  &ion_buf->buf[0],
-				  &ion_buf->size[0]);
+		ion_buf->dmabuf_p[0],
+		&ion_buf->buf[0],
+		&ion_buf->size[0]);
 	if (ret) {
-		pr_err("failed to get ionbuf for kernel buffer %p\n",
-		       ion_buf->dmabuf_p[0]);
+		pr_err("fail to get ionbuf dmabuf_p[0x%p]\n", ion_buf->dmabuf_p[0]);
 		ret = -EFAULT;
 		goto failed;
 	}
 	/*At vdsp faceid,we need phys addr,not iommu */
-	if(ION_HEAP_ID_MASK_VDSP == heap_type)
-	{
+	if (ION_HEAP_ID_MASK_VDSP == heap_type){
 		ret = sprd_ion_get_phys_addr(-1,
-				     ion_buf->dmabuf_p[0],
-				     &ion_buf->addr_p[0],
-				     &ion_buf->size[0]);
+			ion_buf->dmabuf_p[0],
+			&ion_buf->addr_p[0],
+			&ion_buf->size[0]);
 		if (ret) {
-			pr_err("fail to get phy addr dmabuf_p %p\n",
-					ion_buf->dmabuf_p[0]);
+			pr_err("fail to get phy addr dmabuf_p [0x%p]\n", ion_buf->dmabuf_p[0]);
 			ret = -EFAULT;
 			goto failed;
 		}
 	}
-	pr_debug("dmabuf_p[%p], ionbuf[%p], size %d, heap %d\n",
+	pr_debug("dmabuf_p[0x%p], ionbuf[0x%p], size %d, heap %d\n",
 		ion_buf->dmabuf_p[0],
 		ion_buf->buf[0], (int)ion_buf->size[0], heap_type);
 	return 0;
@@ -171,13 +159,12 @@ failed:
 
 
 static int vdsp_mem_free(struct vdsp_mem_desc *ctx,
-		struct ion_buf *ion_buf)
+	struct ion_buf *ion_buf)
 {
-	int rtn = 0;
 	struct dma_buf *dmabuf = NULL;
 
 	if (!ion_buf) {
-		pr_err("error: input ptr is NULL\n");
+		pr_err("invalid input ptr\n");
 		return -EFAULT;
 	}
 
@@ -191,48 +178,46 @@ static int vdsp_mem_free(struct vdsp_mem_desc *ctx,
 		ion_buf->addr_p[0] = 0;
 	}
 
-	pr_debug("free done: %p, dmabuf[%p]\n", ion_buf, dmabuf);
-	return rtn;
+	pr_debug("free done[0x%p], dmabuf[0x%p]\n", ion_buf, dmabuf);
+	return 0;
 }
 
 
 static int vdsp_mem_kmap(struct vdsp_mem_desc *ctx,
-		struct ion_buf *buf_info)
+	struct ion_buf *buf_info)
 {
 	int i;
 	int ret = 0;
 
 	if (!buf_info) {
-		pr_err("error: input ptr is NULL\n");
+		pr_err("invalid input ptr\n");
 		return -EFAULT;
 	}
 
 	for (i = 0; i < 3; i++) {
 		if ((buf_info->size[i] <= 0) ||
-		    (buf_info->dmabuf_p[i] == NULL))
+			(buf_info->dmabuf_p[i] == NULL))
 			continue;
 
 		buf_info->addr_k[i] = (unsigned long)
 			sprd_ion_map_kernel(buf_info->dmabuf_p[i], 0);
 		if (IS_ERR_OR_NULL((void *)buf_info->addr_k[i])) {
 			pr_err("fail to map k_addr for dmabuf[0x%p]\n",
-			       buf_info->dmabuf_p[i]);
+				buf_info->dmabuf_p[i]);
 			buf_info->addr_k[i] = 0;
 			ret = -EINVAL;
 			goto map_fail;
 		}
 
-		pr_debug("buf%d, addr_k 0x%p, dmabuf[0x%p]\n", i,
+		pr_debug("buf%d, addr_k[0x%p], dmabuf[0x%p]\n", i,
 			(void *)buf_info->addr_k[i], buf_info->dmabuf_p[i]);
 	}
-
-	pr_debug("done: 0x%p\n", (void *)buf_info->addr_k[0]);
 	return 0;
 
 map_fail:
 	for (i = 0; i < 3; i++) {
 		if ((buf_info->size[i] <= 0) ||
-		    (buf_info->dmabuf_p[i] == NULL))
+			(buf_info->dmabuf_p[i] == NULL))
 			continue;
 		sprd_ion_unmap_kernel(buf_info->dmabuf_p[i], 0);
 		buf_info->addr_k[i] = 0;
@@ -240,9 +225,8 @@ map_fail:
 	return ret;
 }
 
-
 static int vdsp_mem_kunmap(struct vdsp_mem_desc *ctx,
-		struct ion_buf *buf_info)
+	struct ion_buf *buf_info)
 {
 	int i;
 	int ret = 0;
@@ -254,10 +238,10 @@ static int vdsp_mem_kunmap(struct vdsp_mem_desc *ctx,
 
 	for (i = 0; i < 3; i++) {
 		if ((buf_info->size[i] <= 0) ||
-		    (buf_info->dmabuf_p[i] == NULL))
+			(buf_info->dmabuf_p[i] == NULL))
 			continue;
 
-		pr_debug("buf%d, addr_k %p, dmabuf[%p]\n", i,
+		pr_debug("buf%d, addr_k[0x%p], dmabuf[0x%p]\n", i,
 			(void *)buf_info->addr_k[i], buf_info->dmabuf_p[i]);
 
 		sprd_ion_unmap_kernel(buf_info->dmabuf_p[i], 0);
@@ -270,17 +254,17 @@ static int vdsp_mem_kunmap(struct vdsp_mem_desc *ctx,
 
 
 static int vdsp_mem_get_ionbuf(struct vdsp_mem_desc *ctx,
-		struct ion_buf *pfinfo)
+	struct ion_buf *pfinfo)
 {
 	int i = 0, ret = 0;
 
+	pr_debug("mfd value:%d,%d\n", pfinfo->mfd[0], pfinfo->mfd[1]);
 	for (i = 0; i < 2; i++) {
-		pr_debug("mfd i:%d, value:%d\n" , i , pfinfo->mfd[i]);
 		if (pfinfo->mfd[i] > 0) {
 			ret = sprd_ion_get_buffer(pfinfo->mfd[i],
-						  NULL,
-						  &pfinfo->buf[i],
-						  &pfinfo->size[i]);
+				NULL,
+				&pfinfo->buf[i],
+				&pfinfo->size[i]);
 			if (ret) {
 				pr_err("fail to get ion buffer\n");
 				return -EFAULT;
@@ -292,15 +276,15 @@ static int vdsp_mem_get_ionbuf(struct vdsp_mem_desc *ctx,
 
 
 static int vdsp_mem_iommu_map(struct vdsp_mem_desc *ctx,
-		struct ion_buf *pfinfo, int idx)
+	struct ion_buf *pfinfo, int idx)
 {
 	int ret = 0;
 
 	if (!pfinfo) {
 		pr_err("invalid pfinfo\n");
 		return -EINVAL;
-	} else {
-		if (!pfinfo->dev) {
+	}else {
+		if (!pfinfo->dev){
 			pfinfo->dev = ctx->dev;
 			pr_debug("set default dev!\n");
 		}
@@ -313,33 +297,28 @@ static int vdsp_mem_iommu_map(struct vdsp_mem_desc *ctx,
 	case IOMMU_IDMA:
 	case IOMMU_VDMA:
 		ret = __vdsp_mem_iommu_map(pfinfo, idx);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to map iommu: %d\n", idx);
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
-
 		break;
 	case IOMMU_ALL:
 		ret = __vdsp_mem_iommu_map(pfinfo, IOMMU_MSTI);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to map iommu: %d\n", IOMMU_MSTI);
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
 		ret = __vdsp_mem_iommu_map(pfinfo, IOMMU_MSTD);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to map iommu: %d\n", IOMMU_MSTD);
 			__vdsp_mem_iommu_unmap(pfinfo, IOMMU_MSTI);
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
 		ret = __vdsp_mem_iommu_map(pfinfo, IOMMU_IDMA);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to map iommu: %d\n", IOMMU_IDMA);
 			__vdsp_mem_iommu_unmap(pfinfo, IOMMU_MSTI);
 			__vdsp_mem_iommu_unmap(pfinfo, IOMMU_MSTD);
@@ -348,8 +327,7 @@ static int vdsp_mem_iommu_map(struct vdsp_mem_desc *ctx,
 		}
 #if 0
 		ret = __vdsp_mem_iommu_map(pfinfo, IOMMU_VDMA);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to map iommu: %d\n", IOMMU_VDMA);
 			__vdsp_mem_iommu_unmap(pfinfo, IOMMU_MSTI);
 			__vdsp_mem_iommu_unmap(pfinfo, IOMMU_MSTD);
@@ -367,7 +345,7 @@ static int vdsp_mem_iommu_map(struct vdsp_mem_desc *ctx,
 }
 
 static int vdsp_mem_iommu_unmap(struct vdsp_mem_desc *ctx,
-		struct ion_buf *pfinfo, int idx)
+	struct ion_buf *pfinfo, int idx)
 {
 	int ret = 0;
 
@@ -379,40 +357,34 @@ static int vdsp_mem_iommu_unmap(struct vdsp_mem_desc *ctx,
 	case IOMMU_IDMA:
 	case IOMMU_VDMA:
 		ret = __vdsp_mem_iommu_unmap(pfinfo, idx);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to unmap iommu: %d\n", idx);
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
-
 		break;
 	case IOMMU_ALL:
 		ret = __vdsp_mem_iommu_unmap(pfinfo, IOMMU_MSTI);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to unmap iommu: %d\n", IOMMU_MSTI);
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
 		ret = __vdsp_mem_iommu_unmap(pfinfo, IOMMU_MSTD);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to map iommu: %d\n", IOMMU_MSTD);
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
 		ret = __vdsp_mem_iommu_unmap(pfinfo, IOMMU_IDMA);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to unmap iommu: %d\n", IOMMU_IDMA);
 			mutex_unlock(&ctx->iommu_lock);
 			return ret;
 		}
 #if 0
 		ret = __vdsp_mem_iommu_unmap(pfinfo, IOMMU_VDMA);
-		if (ret)
-		{
+		if (ret){
 			pr_err("fail to map iommu: %d\n", IOMMU_VDMA);
 			return ret;
 		}
@@ -428,13 +400,12 @@ static int vdsp_mem_iommu_unmap(struct vdsp_mem_desc *ctx,
 
 
 static int vdsp_mem_register_callback(struct vdsp_mem_desc *ctx,
-					  unsigned int idx,
-					  mem_cb_t cb, void *arg)
+	unsigned int idx, mem_cb_t cb, void *arg)
 {
 	if (idx < CB_MAX) {
 		ctx->cb_func[idx] = cb;
 		ctx->cb_args[idx] = arg;
-	} else {
+	}else {
 		pr_err("error idx[%d]\n", idx);
 	}
 
@@ -443,12 +414,12 @@ static int vdsp_mem_register_callback(struct vdsp_mem_desc *ctx,
 
 
 static int vdsp_mem_unregister_callback(struct vdsp_mem_desc *ctx,
-					    unsigned int idx)
+	unsigned int idx)
 {
 	if (idx < CB_MAX) {
 		ctx->cb_func[idx] = NULL;
 		ctx->cb_args[idx] = NULL;
-	} else {
+	}else {
 		pr_err("error idx[%d]\n", idx);
 	}
 

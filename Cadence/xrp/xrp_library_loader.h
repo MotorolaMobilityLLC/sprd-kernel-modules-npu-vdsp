@@ -9,7 +9,7 @@
 enum load_unload_flag
 {
 	XRP_NOT_LOAD_UNLOAD = 0,
-	XRP_LOAD_LIB_FLAG ,
+	XRP_LOAD_LIB_FLAG,
 	XRP_UNLOAD_LIB_FLAG,
 	XRP_LOAD_LIB_FLAG_MAX,
 };
@@ -42,14 +42,14 @@ struct loadlib_info
 
 /*node*/
 struct libinfo_node{
-    struct libinfo_node *next;       //next node
-    struct loadlib_info *element;      //pointer of elt
+	struct libinfo_node *next;       //next node
+	struct loadlib_info *element;      //pointer of elt
 };
- 
+
 /*list*/
 struct libinfo_list{
-    int number;        //number of element of list
-    struct libinfo_node *node;      //head pointer
+	int number;        //number of element of list
+	struct libinfo_node *node;      //head pointer
 };
 struct xrp_load_lib_info
 {
@@ -60,11 +60,11 @@ struct xrp_request;
 struct xvp;
 struct xrp_comm;
 
-enum load_unload_flag xrp_check_load_unload(struct xvp *xvp , struct xrp_request *rq);
-int32_t xrp_pre_process_request(struct xvp *xvp , struct xrp_request *rq , enum load_unload_flag loadflag, char *libname);
-int post_process_request(struct xvp *xvp , struct xrp_request *rq , const char* libname , enum load_unload_flag load_flag , int32_t resultflag);
+enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request *rq);
+int32_t xrp_pre_process_request(struct xvp *xvp, struct xrp_request *rq, enum load_unload_flag loadflag, char *libname);
+int post_process_request(struct xvp *xvp, struct xrp_request *rq, const char* libname, enum load_unload_flag load_flag, int32_t resultflag);
 int32_t xrp_library_release_all(struct xvp *xvp);
-int32_t xrp_library_decrelease(struct xvp *xvp , const char *libname);
+int32_t xrp_library_decrelease(struct xvp *xvp, const char *libname);
 int32_t xrp_library_setall_missstate(struct xvp *xvp);
 
 #endif

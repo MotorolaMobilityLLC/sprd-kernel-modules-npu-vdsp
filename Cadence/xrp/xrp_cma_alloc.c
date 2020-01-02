@@ -45,10 +45,10 @@ struct xrp_cma_pool {
 };
 
 static long xrp_cma_alloc(struct xrp_allocation_pool *allocation_pool,
-			  u32 size, u32 align, struct xrp_allocation **alloc)
+	u32 size, u32 align, struct xrp_allocation **alloc)
 {
 	struct xrp_cma_pool *pool = container_of(allocation_pool,
-						 struct xrp_cma_pool, pool);
+		struct xrp_cma_pool, pool);
 	struct xrp_cma_allocation *new_cma;
 	struct xrp_allocation *new;
 	dma_addr_t dma_addr;
@@ -67,11 +67,11 @@ static long xrp_cma_alloc(struct xrp_allocation_pool *allocation_pool,
 
 		dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &attrs);
 		kvaddr = dma_alloc_attrs(pool->dev, size, &dma_addr,
-					 GFP_KERNEL, &attrs);
+			GFP_KERNEL, &attrs);
 	}
 #else
 	kvaddr = dma_alloc_attrs(pool->dev, size, &dma_addr, GFP_KERNEL,
-				 DMA_ATTR_NO_KERNEL_MAPPING);
+		DMA_ATTR_NO_KERNEL_MAPPING);
 #endif
 	if (!kvaddr) {
 		kfree(new_cma);
@@ -91,24 +91,24 @@ static long xrp_cma_alloc(struct xrp_allocation_pool *allocation_pool,
 static void xrp_cma_free(struct xrp_allocation *xrp_allocation)
 {
 	struct xrp_cma_pool *pool = container_of(xrp_allocation->pool,
-						 struct xrp_cma_pool, pool);
+		struct xrp_cma_pool, pool);
 	struct xrp_cma_allocation *a = container_of(xrp_allocation,
-						    struct xrp_cma_allocation,
-						    allocation);
+		struct xrp_cma_allocation,
+		allocation);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0)
 	DEFINE_DMA_ATTRS(attrs);
 
 	dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &attrs);
 	dma_free_attrs(pool->dev, xrp_allocation->size,
-		       a->kvaddr,
-		       phys_to_dma(pool->dev, xrp_allocation->start),
-		       &attrs);
+		a->kvaddr,
+		phys_to_dma(pool->dev, xrp_allocation->start),
+		&attrs);
 #else
 	dma_free_attrs(pool->dev, xrp_allocation->size,
-		       a->kvaddr,
-		       phys_to_dma(pool->dev, xrp_allocation->start),
-		       DMA_ATTR_NO_KERNEL_MAPPING);
+		a->kvaddr,
+		phys_to_dma(pool->dev, xrp_allocation->start),
+		DMA_ATTR_NO_KERNEL_MAPPING);
 #endif
 	kfree(a);
 }
@@ -116,7 +116,7 @@ static void xrp_cma_free(struct xrp_allocation *xrp_allocation)
 static void xrp_cma_free_pool(struct xrp_allocation_pool *allocation_pool)
 {
 	struct xrp_cma_pool *pool = container_of(allocation_pool,
-						 struct xrp_cma_pool, pool);
+		struct xrp_cma_pool, pool);
 
 	kfree(pool);
 }

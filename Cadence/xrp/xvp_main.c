@@ -87,7 +87,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "[VDSP]xvp_main: %d %d %s : "\
+#define pr_fmt(fmt) "sprd-vdsp: xvp_main %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
 #define VDSP_FIRMWIRE_SIZE    (1024*1024*6)
@@ -125,7 +125,7 @@ static DEFINE_HASHTABLE(xrp_known_files, 10);
 static DEFINE_SPINLOCK(xrp_known_files_lock);
 static DEFINE_IDA(xvp_nodeid);
 static int xrp_boot_firmware(struct xvp *xvp);
-static inline void xvp_dsp_setdvfs(struct xvp *xvp , uint32_t index);
+static inline void xvp_dsp_setdvfs(struct xvp *xvp, uint32_t index);
 static inline void xvp_dsp_enable_dvfs(struct xvp *xvp);
 static inline void xvp_dsp_disable_dvfs(struct xvp *xvp);
 
@@ -160,21 +160,21 @@ void sprd_log_sem_down(void)
 EXPORT_SYMBOL_GPL(sprd_log_sem_down);
 
 static inline void xrp_comm_write32(
-		volatile void __iomem *addr, u32 v)
+	volatile void __iomem *addr, u32 v)
 {
 	__raw_writel(v, addr);
 }
 
 static inline u32 xrp_comm_read32(
-		volatile void __iomem *addr)
+	volatile void __iomem *addr)
 {
 	return __raw_readl(addr);
 }
 
 static inline void __iomem *xrp_comm_put_tlv(
-		void __iomem **addr,
-		uint32_t type,
-		uint32_t length)
+	void __iomem **addr,
+	uint32_t type,
+	uint32_t length)
 {
 	struct xrp_dsp_tlv __iomem *tlv = *addr;
 
@@ -186,9 +186,9 @@ static inline void __iomem *xrp_comm_put_tlv(
 }
 
 static inline void __iomem *xrp_comm_get_tlv(
-		void __iomem **addr,
-		uint32_t *type,
-		uint32_t *length)
+	void __iomem **addr,
+	uint32_t *type,
+	uint32_t *length)
 {
 	struct xrp_dsp_tlv __iomem *tlv = *addr;
 
@@ -200,9 +200,9 @@ static inline void __iomem *xrp_comm_get_tlv(
 }
 
 static inline void xrp_comm_write(
-		volatile void __iomem *addr,
-		const void *p,
-		size_t sz)
+	volatile void __iomem *addr,
+	const void *p,
+	size_t sz)
 {
 	size_t sz32 = sz & ~3;
 	u32 v = 0;
@@ -224,9 +224,9 @@ static inline void xrp_comm_write(
 }
 
 static inline void xrp_comm_read(
-		volatile void __iomem *addr,
-		void *p,
-		size_t sz)
+	volatile void __iomem *addr,
+	void *p,
+	size_t sz)
 {
 	size_t sz32 = sz & ~3;
 	u32 v = 0;
@@ -281,8 +281,8 @@ static void xrp_remove_known_file(struct file *filp)
 
 	spin_lock(&xrp_known_files_lock);
 	hash_for_each_possible(
-			xrp_known_files, p, node,
-			(unsigned long)filp) {
+		xrp_known_files, p, node,
+		(unsigned long)filp) {
 		if (p->filp == filp) {
 			hash_del(&p->node);
 			pf = p;
@@ -295,7 +295,7 @@ static void xrp_remove_known_file(struct file *filp)
 }
 
 static void xrp_sync_v2(struct xvp *xvp,
-			void *hw_sync_data, size_t sz)
+	void *hw_sync_data, size_t sz)
 {
 	unsigned i;
 	struct xrp_dsp_sync_v2 __iomem *queue_sync;
@@ -303,18 +303,18 @@ static void xrp_sync_v2(struct xvp *xvp,
 	void __iomem *addr = shared_sync->hw_sync_data;
 
 	xrp_comm_write(xrp_comm_put_tlv(&addr,
-				XRP_DSP_SYNC_TYPE_HW_SPEC_DATA, sz),
-			hw_sync_data, sz);
+		XRP_DSP_SYNC_TYPE_HW_SPEC_DATA, sz),
+		hw_sync_data, sz);
 	if (xvp->n_queues > 1) {
 		xrp_comm_write(xrp_comm_put_tlv(&addr,
-						XRP_DSP_SYNC_TYPE_HW_QUEUES,
-						xvp->n_queues * sizeof(u32)),
-					xvp->queue_priority,
-					xvp->n_queues * sizeof(u32));
+			XRP_DSP_SYNC_TYPE_HW_QUEUES,
+			xvp->n_queues * sizeof(u32)),
+			xvp->queue_priority,
+			xvp->n_queues * sizeof(u32));
 		for (i = 1; i < xvp->n_queues; ++i) {
 			queue_sync = xvp->queue[i].comm;
 			xrp_comm_write32(&queue_sync->sync,
-					 XRP_DSP_SYNC_IDLE);
+				XRP_DSP_SYNC_IDLE);
 		}
 	}
 	xrp_comm_put_tlv(&addr, XRP_DSP_SYNC_TYPE_LAST, 0);
@@ -343,8 +343,8 @@ static int xrp_sync_complete_v2(struct xvp *xvp, size_t sz)
 		}
 		if (type & XRP_DSP_SYNC_TYPE_ACCEPT) {
 			xrp_comm_read(p, xvp->queue_priority,
-					xvp->n_queues * sizeof(u32));
-		} else {
+				xvp->n_queues * sizeof(u32));
+		}else {
 			pr_err("Queue priority data not recognized by the DSP\n");
 			xvp->n_queues = 1;
 		}
@@ -352,90 +352,70 @@ static int xrp_sync_complete_v2(struct xvp *xvp, size_t sz)
 	return 0;
 }
 
-static int xrp_faceid_run(
-		struct xvp *xvp,
-		struct xrp_faceid_ctrl *faceid)
+static int xrp_faceid_run(struct xvp *xvp, struct xrp_faceid_ctrl *faceid)
 {
+	u32 v;
+	int ret = -1, ret2;
 	unsigned long deadline = jiffies + 5 * HZ;
 	struct xrp_dsp_sync_v1 __iomem *shared_sync = xvp->comm;
-	u32 v;
-	__u32 ret = -1,ret2;
-
 	struct faceid_hw_sync_data faceid_data;
-	faceid_data.fd_p_coffe_addr =
-		xvp->faceid_pool.ion_fd_weights_p.addr_p[0];
-	faceid_data.fd_r_coffe_addr =
-		xvp->faceid_pool.ion_fd_weights_r.addr_p[0];
-	faceid_data.fd_o_coffe_addr =
-		xvp->faceid_pool.ion_fd_weights_o.addr_p[0];
-	faceid_data.fp_coffe_addr =
-		xvp->faceid_pool.ion_fp_weights.addr_p[0];
-	faceid_data.flv_coffe_addr =
-		xvp->faceid_pool.ion_flv_weights.addr_p[0];
-	faceid_data.fv_coffe_addr =
-		xvp->faceid_pool.ion_fv_weights.addr_p[0];
-	faceid_data.mem_pool_addr =
-		xvp->faceid_pool.ion_fd_mem_pool.addr_p[0];
-	faceid_data.transfer_addr =
-		xvp->faceid_pool.ion_face_transfer.addr_p[0];
+
+	faceid_data.fd_p_coffe_addr = xvp->faceid_pool.ion_fd_weights_p.addr_p[0];
+	faceid_data.fd_r_coffe_addr = xvp->faceid_pool.ion_fd_weights_r.addr_p[0];
+	faceid_data.fd_o_coffe_addr = xvp->faceid_pool.ion_fd_weights_o.addr_p[0];
+	faceid_data.fp_coffe_addr = xvp->faceid_pool.ion_fp_weights.addr_p[0];
+	faceid_data.flv_coffe_addr = xvp->faceid_pool.ion_flv_weights.addr_p[0];
+	faceid_data.fv_coffe_addr = xvp->faceid_pool.ion_fv_weights.addr_p[0];
+	faceid_data.mem_pool_addr = xvp->faceid_pool.ion_fd_mem_pool.addr_p[0];
+	faceid_data.transfer_addr = xvp->faceid_pool.ion_face_transfer.addr_p[0];
 
 	/*iommmu map ion*/
 	ret2 = sprd_iommu_map_faceid_ion(
-			xvp,
-			&(xvp->faceid_pool.ion_face_in),
-			faceid->in_fd);
-	if(ret2 < 0)
-	{
+		xvp,
+		&(xvp->faceid_pool.ion_face_in),
+		faceid->in_fd);
+	if (ret2 < 0){
 		pr_err("iommu map faceid in fail.\n");
 		goto err;
 	}
 
 	ret2 = sprd_iommu_map_faceid_ion(
-			xvp,
-			&(xvp->faceid_pool.ion_face_out),
-			faceid->out_fd);
-	if(ret2 < 0)
-	{
+		xvp,
+		&(xvp->faceid_pool.ion_face_out),
+		faceid->out_fd);
+	if (ret2 < 0){
 		pr_err("iommu map faceid out fail.\n");
 		goto err;
 	}
 
 	faceid_data.in_addr = xvp->faceid_pool.ion_face_in.iova[0];
 	faceid_data.out_addr = xvp->faceid_pool.ion_face_out.iova[0];
-	pr_info("fd_p %X,fd_r %X,fd_o %X,\n",
-			faceid_data.fd_p_coffe_addr,
-			faceid_data.fd_r_coffe_addr,
-			faceid_data.fd_o_coffe_addr);
-	pr_info("fp %X,flv %X,fv %X\n",
-			faceid_data.fp_coffe_addr,
-			faceid_data.flv_coffe_addr,
-			faceid_data.fv_coffe_addr);
-	pr_info("mem pool %X, transfer %x\n",
-			faceid_data.mem_pool_addr,
-			faceid_data.transfer_addr);
-	pr_info("in %X, out %x, log %x\n",
-			faceid_data.in_addr,
-			faceid_data.out_addr);
+
+	pr_debug("fd_p %X,fd_r %X,fd_o %X,fp %X,flv %X,fv %X,mem pool %X",
+		"transfer %X,in %X,out %X\n",
+		faceid_data.fd_p_coffe_addr, faceid_data.fd_r_coffe_addr,
+		faceid_data.fd_o_coffe_addr, faceid_data.fp_coffe_addr,
+		faceid_data.flv_coffe_addr, faceid_data.fv_coffe_addr,
+		faceid_data.mem_pool_addr, faceid_data.transfer_addr,
+		faceid_data.in_addr, faceid_data.out_addr);
 
 	mb();
-	xrp_comm_write32(&shared_sync->sync,
-			XRP_DSP_SYNC_HOST_TO_DSP);
+	xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_HOST_TO_DSP);
 	mb();
 	xrp_comm_write(&shared_sync->hw_sync_data,
-			&faceid_data,
-			sizeof(struct faceid_hw_sync_data));
+		&faceid_data,
+		sizeof(struct faceid_hw_sync_data));
 
 	mb();
 	xrp_send_device_irq(xvp);
-	pr_info("[%lld]\n",sprd_sysfrt_read());
+	pr_debug("32k timer[%lld]\n", sprd_sysfrt_read());
 	do {
 		mb();
 		v = xrp_comm_read32(&shared_sync->sync);
-		if (v == XRP_DSP_SYNC_DSP_TO_HOST)
-		{
+		if (v == XRP_DSP_SYNC_DSP_TO_HOST){
 			mb();
 			ret = xrp_comm_read32(&shared_sync->hw_sync_data);
-			pr_info("vdsp faceid ret %X\n",ret);
+			pr_info("vdsp faceid ret %X\n", ret);
 			break;
 		}
 		if (xrp_panic_check(xvp))
@@ -445,10 +425,8 @@ static int xrp_faceid_run(
 
 err:
 	xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_IDLE);
-	sprd_iommu_ummap_faceid_ion(xvp,
-			&(xvp->faceid_pool.ion_face_in));
-	sprd_iommu_ummap_faceid_ion(xvp,
-			&(xvp->faceid_pool.ion_face_out));
+	sprd_iommu_ummap_faceid_ion(xvp, &(xvp->faceid_pool.ion_face_in));
+	sprd_iommu_ummap_faceid_ion(xvp, &(xvp->faceid_pool.ion_face_out));
 
 	return 0;
 }
@@ -457,8 +435,7 @@ static int xrp_synchronize(struct xvp *xvp)
 {
 	size_t sz = 0;
 	void *hw_sync_data;
-	unsigned long deadline =
-		jiffies + firmware_command_timeout * HZ;
+	unsigned long deadline = jiffies + firmware_command_timeout * HZ;
 	struct xrp_dsp_sync_v1 __iomem *shared_sync = xvp->comm;
 	int ret;
 	u32 v, v1;
@@ -470,13 +447,13 @@ static int xrp_synchronize(struct xvp *xvp)
 	 */
 	if (xvp->vdsp_mem_desc->cb_func[CB_MSG])
 		sz = (size_t)xvp->vdsp_mem_desc->cb_func[CB_MSG](
-					xvp->vdsp_mem_desc->cb_args[CB_MSG]);
+		xvp->vdsp_mem_desc->cb_args[CB_MSG]);
 	else
 		pr_err("get smsg share memory address failed\n");
 
-	pr_info("get smsg share memory address: 0x%lx\n",
-			(unsigned long)sz);
-	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz, xvp->ion_vdsp_log.addr_p[0]);
+	pr_debug("get smsg share memory address: 0x%lx\n", (unsigned long)sz);
+	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz,
+		xvp->ion_vdsp_log.addr_p[0]);
 	if (!hw_sync_data) {
 		ret = -ENOMEM;
 		goto err;
@@ -484,8 +461,8 @@ static int xrp_synchronize(struct xvp *xvp)
 	ret = -ENODEV;
 	xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_START);
 	pr_info("start sync:%d\n", XRP_DSP_SYNC_START);
-	mb();
 
+	mb();
 	do {
 		v = xrp_comm_read32(&shared_sync->sync);
 		if (v != XRP_DSP_SYNC_START)
@@ -494,7 +471,7 @@ static int xrp_synchronize(struct xvp *xvp)
 			goto err;
 		schedule();
 	} while (time_before(jiffies, deadline));
-	pr_info("sync:%d\n", v);
+	pr_debug("sync:%d\n", v);
 
 	switch (v) {
 	case XRP_DSP_SYNC_DSP_READY_V1:
@@ -502,16 +479,13 @@ static int xrp_synchronize(struct xvp *xvp)
 			pr_err("[ERROR]Queue priority data not recognized\n");
 			xvp->n_queues = 1;
 		}
-		xrp_comm_write(&shared_sync->hw_sync_data,
-				hw_sync_data, sz);
+		xrp_comm_write(&shared_sync->hw_sync_data, hw_sync_data, sz);
 		break;
 	case XRP_DSP_SYNC_DSP_READY_V2:
-		pr_info("XRP_DSP_SYNC_DSP_READY_V2\n");
 		xrp_sync_v2(xvp, hw_sync_data, sz);
 		break;
 	case XRP_DSP_SYNC_START:
 		pr_err("[ERROR]DSP is not ready for synchronization\n");
-
 		goto err;
 	default:
 		pr_err("[ERROR]DSP response to XRP_DSP_SYNC_START is not recognized\n");
@@ -519,7 +493,6 @@ static int xrp_synchronize(struct xvp *xvp)
 	}
 
 	mb();
-	pr_info("write XRP_DSP_SYNC_HOST_TO_DSP\n");
 	xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_HOST_TO_DSP);
 
 	do {
@@ -531,7 +504,6 @@ static int xrp_synchronize(struct xvp *xvp)
 			goto err;
 		schedule();
 	} while (time_before(jiffies, deadline));
-	pr_info("read XRP_DSP_SYNC_DSP_TO_HOST success %d\n" ,v1);
 	if (v1 != XRP_DSP_SYNC_DSP_TO_HOST) {
 		pr_err("[ERROR]DSP haven't confirmed initialization data reception\n");
 		goto err;
@@ -542,21 +514,18 @@ static int xrp_synchronize(struct xvp *xvp)
 		if (ret < 0)
 			goto err;
 	}
-	pr_info("completev2 end call send devie irq\n");
 	xrp_send_device_irq(xvp);
+	pr_debug("completev2 end, send devie irq-32k timer[%lld]\n", sprd_sysfrt_read());
 
 	if (xvp->host_irq_mode) {
 		int res = wait_for_completion_timeout(&xvp->queue[0].completion,
-						firmware_command_timeout * HZ);
-		if (res)
-			pr_info("received host irq lefttime%d\n", res);
-		else
-			pr_info("wait dsp send irq to host timeout\n" );
+			firmware_command_timeout * HZ);
+
 		ret = -ENODEV;
 		if (xrp_panic_check(xvp))
 			goto err;
 		if (res == 0) {
-			pr_err("[ERROR]DSP couldn't deliver IRQ during synchronization\n");
+			pr_err("wait dsp send irq to host timeout\n");
 			goto err;
 		}
 	}
@@ -565,7 +534,8 @@ err:
 	if (hw_sync_data)
 		kfree(hw_sync_data);
 	xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_IDLE);
-	pr_info("sync end %d\n", ret);
+	pr_info("sync end ret:%d\n", ret);
+
 	return ret;
 }
 
@@ -576,9 +546,9 @@ static bool xrp_cmd_complete(struct xrp_comm *xvp)
 
 	rmb();
 	return (flags & (XRP_DSP_CMD_FLAG_REQUEST_VALID |
-			 XRP_DSP_CMD_FLAG_RESPONSE_VALID)) ==
+		XRP_DSP_CMD_FLAG_RESPONSE_VALID)) ==
 		(XRP_DSP_CMD_FLAG_REQUEST_VALID |
-		 XRP_DSP_CMD_FLAG_RESPONSE_VALID);
+		XRP_DSP_CMD_FLAG_RESPONSE_VALID);
 }
 
 irqreturn_t xrp_irq_handler(int irq, struct xvp *xvp)
@@ -589,7 +559,6 @@ irqreturn_t xrp_irq_handler(int irq, struct xvp *xvp)
 
 	for (i = 0; i < xvp->n_queues; ++i) {
 		if (xrp_cmd_complete(xvp->queue + i)) {
-			pr_debug("  completing queue %d\n", i);
 			complete(&xvp->queue[i].completion);
 			++n;
 		}
@@ -608,47 +577,42 @@ static inline void xvp_file_unlock(struct xvp_file *xvp_file)
 	spin_unlock(&xvp_file->busy_list_lock);
 }
 
-static long xvp_complete_cmd_irq(
-	struct xvp *xvp,
-	struct xrp_comm *comm,
-	bool (*cmd_complete)(struct xrp_comm *p))
+static long xvp_complete_cmd_irq(struct xvp *xvp, struct xrp_comm *comm,
+	bool(*cmd_complete)(struct xrp_comm *p))
 {
 	long timeout = firmware_command_timeout * HZ;
 
-	pr_info("xvp_complete_cmd_irq %ld\n", timeout);
 	if (cmd_complete(comm))
 		return 0;
 	if (xrp_panic_check(xvp)) {
-		pr_err("[error]xvp_complete_cmd_irq panic 1\n");
+		pr_err("[error]xrp panic\n");
 		return -EBUSY;
 	}
 	do {
-		timeout =
-			wait_for_completion_interruptible_timeout(
+		timeout = wait_for_completion_interruptible_timeout(
 			&comm->completion,
 			timeout);
 		if (cmd_complete(comm))
 			return 0;
 		if (xrp_panic_check(xvp)) {
-			pr_err("[error]xvp_complete_cmd_irq panic 2\n");
+			pr_err("[error]xrp panic\n");
 			return -EBUSY;
 		}
 	} while (timeout > 0);
 
 	if (timeout == 0) {
-		pr_err("[error]xvp_complete_cmd_irq timeout\n");
+		pr_err("[error]vdsp timeout\n");
 		return -EBUSY;
 	}
+
+	pr_debug("xvp_complete_cmd_irq %ld\n", timeout);
 	return timeout;
 }
 
-static long xvp_complete_cmd_poll(
-	struct xvp *xvp,
-	struct xrp_comm *comm,
-	bool (*cmd_complete)(struct xrp_comm *p))
+static long xvp_complete_cmd_poll(struct xvp *xvp, struct xrp_comm *comm,
+	bool(*cmd_complete)(struct xrp_comm *p))
 {
-	unsigned long deadline =
-		jiffies + firmware_command_timeout * HZ;
+	unsigned long deadline = jiffies + firmware_command_timeout * HZ;
 
 	do {
 		if (cmd_complete(comm))
@@ -709,11 +673,11 @@ static inline void xvp_dsp_disable_dvfs(struct xvp *xvp)
 		xvp->hw_ops->disable_dvfs)
 		xvp->hw_ops->disable_dvfs(xvp->hw_arg);
 }
-static inline void xvp_dsp_setdvfs(struct xvp *xvp , uint32_t index)
+static inline void xvp_dsp_setdvfs(struct xvp *xvp, uint32_t index)
 {
 	if (loopback < LOOPBACK_NOMMIO &&
 		xvp->hw_ops->setdvfs)
-		xvp->hw_ops->setdvfs(xvp->hw_arg , index);
+		xvp->hw_ops->setdvfs(xvp->hw_arg, index);
 }
 
 static inline void xvp_set_qos(struct xvp *xvp)
@@ -727,15 +691,13 @@ static int xrp_boot_firmware(struct xvp *xvp)
 {
 	int ret;
 	struct xrp_dsp_sync_v1 __iomem *shared_sync = xvp->comm;
-
 	s64 tv0, tv1, tv2;
-	tv0 = ktime_to_us(ktime_get());
 
+	tv0 = ktime_to_us(ktime_get());
 	xrp_halt_dsp(xvp);
 	xrp_reset_dsp(xvp);
 
-	pr_info("firmware name:%s , loopback:%d\n",
-		xvp->firmware_name , loopback);
+	pr_debug("firmware name:%s, loopback:%d\n", xvp->firmware_name, loopback);
 	if (xvp->firmware_name) {
 		if (loopback < LOOPBACK_NOFIRMWARE) {
 			ret = xrp_request_firmware(xvp);
@@ -744,8 +706,7 @@ static int xrp_boot_firmware(struct xvp *xvp)
 		}
 
 		if (loopback < LOOPBACK_NOIO) {
-			xrp_comm_write32(&shared_sync->sync,
-				XRP_DSP_SYNC_IDLE);
+			xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_IDLE);
 			mb();
 		}
 	}
@@ -764,8 +725,8 @@ static int xrp_boot_firmware(struct xvp *xvp)
 	}
 	tv2 = ktime_to_us(ktime_get());
 	/*request firmware - sync*/
-	pr_info("[TIME]request firmware:%lld (us), sync:%lld (us)\n",
-		tv1 - tv0, tv2 - tv1);
+	pr_info("[TIME]request firmware(%s):%lld (us), sync:%lld (us)\n",
+		xvp->firmware_name, tv1 - tv0, tv2 - tv1);
 	return 0;
 }
 
@@ -774,13 +735,14 @@ static int xrp_boot_faceid_firmware(struct xvp *xvp)
 	int ret;
 	struct xrp_dsp_sync_v1 __iomem *shared_sync = xvp->comm;
 	s64 tv0, tv1, tv2;
+
 	tv0 = ktime_to_us(ktime_get());
 
 	xrp_halt_dsp(xvp);
 	xrp_reset_dsp(xvp);
 
-	pr_info("faceid_fw_viraddr %p , loopback:%d\n" ,
-		xvp->firmware2_viraddr,loopback);
+	pr_debug("faceid_fw_viraddr %p , loopback:%d\n",
+		xvp->firmware2_viraddr, loopback);
 	if (xvp->firmware2_viraddr) {
 		if (loopback < LOOPBACK_NOFIRMWARE) {
 			ret = sprd_load_faceid_firmware(xvp);
@@ -789,14 +751,13 @@ static int xrp_boot_faceid_firmware(struct xvp *xvp)
 		}
 
 		if (loopback < LOOPBACK_NOIO) {
-			xrp_comm_write32(&shared_sync->sync,
-				XRP_DSP_SYNC_IDLE);
+			xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_IDLE);
 			mb();
 		}
 	}
 
 	ret = sprd_faceid_secboot_entry(xvp);
-	if(ret < 0)
+	if (ret < 0)
 		return ret;
 
 	xrp_release_dsp(xvp);
@@ -818,30 +779,26 @@ static int xrp_boot_faceid_firmware(struct xvp *xvp)
 	return 0;
 }
 
-static int sprd_unmap_request(
-	struct file *filp,
-	struct xrp_request *rq)
+static int sprd_unmap_request(struct file *filp, struct xrp_request *rq)
 {
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
 	size_t n_buffers = rq->n_buffers;
 	size_t i;
 	long ret = 0;
-	pr_info("[UNMAP][IN]\n");
-	if (rq->ioctl_queue.in_data_size >
-		XRP_DSP_CMD_INLINE_DATA_SIZE) {
+
+	if (rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
 			xvp->vdsp_mem_desc,
 			&rq->ion_in_buf,
 			IOMMU_ALL);
 	}
-	if (rq->ioctl_queue.out_data_size >
-		XRP_DSP_CMD_INLINE_DATA_SIZE) {
+	if (rq->ioctl_queue.out_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
 			xvp->vdsp_mem_desc,
 			&rq->ion_out_buf,
 			IOMMU_ALL);
-	} else {
+	}else {
 		if (copy_to_user(
 			(void __user *)(unsigned long)rq->ioctl_queue.out_data_addr,
 			rq->out_data,
@@ -867,24 +824,21 @@ static int sprd_unmap_request(
 				xvp->vdsp_mem_desc,
 				&rq->ion_dsp_pool[i],
 				IOMMU_ALL);
-			if (ret < 0) {
+			if (ret < 0)
 				pr_err("[ERROR]buffer %d could not be unshared\n", i);
-			}
 		}
 		kfree(rq->ion_dsp_pool);
 
-		if (n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT) {
+		if (n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT)
 			kfree(rq->dsp_buffer);
-		}
+
 		rq->n_buffers = 0;
 	}
-	pr_info("[UNMAP][OUT]\n");
+
 	return ret;
 }
 
-static int sprd_map_request(
-	struct file *filp,
-	struct xrp_request *rq)
+static int sprd_map_request(struct file *filp, struct xrp_request *rq)
 {
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
@@ -896,7 +850,6 @@ static int sprd_map_request(
 	struct ion_buf *p_dsp_buf;
 	int i;
 	long ret = 0;
-	pr_info("[MAP][IN]\n");
 
 	memset((void *)&rq->ion_in_buf, 0x00, sizeof(struct ion_buf));
 	memset((void *)&rq->ion_out_buf, 0x00, sizeof(struct ion_buf));
@@ -911,11 +864,9 @@ static int sprd_map_request(
 
 	rq->n_buffers = n_buffers;
 	if (n_buffers) {
-		rq->dsp_buf =
-			kmalloc(sizeof(*rq->dsp_buf),
-				GFP_KERNEL);
+		rq->dsp_buf = kmalloc(sizeof(*rq->dsp_buf), GFP_KERNEL);
 		if (!rq->dsp_buf) {
-			pr_err("[ERROR]fail to alloc buffer.\n");
+			pr_err("[ERROR]fail to kmalloc buffer.\n");
 			return -ENOMEM;
 		}
 		xvp->vdsp_mem_desc->ops->mem_alloc(
@@ -924,71 +875,66 @@ static int sprd_map_request(
 			ION_HEAP_ID_MASK_SYSTEM,
 			n_buffers * sizeof(*rq->dsp_buffer));
 		if (!rq->dsp_buf) {
+			pr_err("[ERROR]fail to mem alloc buffer.\n");
 			return -ENOMEM;
 		}
 		xvp->vdsp_mem_desc->ops->mem_kmap(
-				xvp->vdsp_mem_desc,
-				rq->dsp_buf);
+			xvp->vdsp_mem_desc,
+			rq->dsp_buf);
 		rq->dsp_buf->dev = xvp->dev;
 		xvp->vdsp_mem_desc->ops->mem_iommu_map(
-				xvp->vdsp_mem_desc,
-				rq->dsp_buf,
-				IOMMU_ALL);
+			xvp->vdsp_mem_desc,
+			rq->dsp_buf,
+			IOMMU_ALL);
 		rq->dsp_buffer_phys = (phys_addr_t)rq->dsp_buf->iova[0];
 
 		rq->ion_dsp_pool =
 			kmalloc(n_buffers * sizeof(*rq->ion_dsp_pool),
-				GFP_KERNEL);
-		if (!rq->ion_dsp_pool) {
+			GFP_KERNEL);
+		if (!rq->ion_dsp_pool)
 			return -ENOMEM;
-		}
 		memset((void *)rq->ion_dsp_pool,
 			0x00, n_buffers * sizeof(*rq->ion_dsp_pool));
 		if (n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT) {
 			rq->dsp_buffer =
 				kmalloc(n_buffers * sizeof(*rq->dsp_buffer),
-					GFP_KERNEL);
-			if (!rq->dsp_buffer) {
+				GFP_KERNEL);
+			if (!rq->dsp_buffer)
 				return -ENOMEM;
-			}
-		} else {
+		}else {
 			rq->dsp_buffer = rq->buffer_data;
 		}
 	}
 
 	//in_data addr
-	if ((rq->ioctl_queue.in_data_size >
-				XRP_DSP_CMD_INLINE_DATA_SIZE)) {
-		if(rq->ioctl_queue.in_data_fd < 0) {
-			pr_err("[ERROR]in data fd is:%d\n" ,
-					rq->ioctl_queue.in_data_fd);
+	if ((rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)) {
+		if (rq->ioctl_queue.in_data_fd < 0) {
+			pr_err("[ERROR]in data fd is:%d\n", rq->ioctl_queue.in_data_fd);
 			return -EFAULT;
 		}
 		p_in_buf->mfd[0] = rq->ioctl_queue.in_data_fd;
 		p_in_buf->dev = xvp->dev;
-		pr_info("get_ionbuf (input) fd:%d, %d, fd1:%d\n",
-			(int)p_in_buf->mfd[0] ,
-			(int)rq->ioctl_queue.in_data_fd,
-			p_in_buf->mfd[1]);
 		ret = xvp->vdsp_mem_desc->ops->mem_get_ionbuf(
-				xvp->vdsp_mem_desc,
-				p_in_buf);
+			xvp->vdsp_mem_desc,
+			p_in_buf);
 		if (ret) {
 			pr_err("[ERROR]fail to get in_ion_buf\n");
 			return -EFAULT;
 		}
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
-				xvp->vdsp_mem_desc,
-				p_in_buf,
-				IOMMU_ALL);
+			xvp->vdsp_mem_desc,
+			p_in_buf,
+			IOMMU_ALL);
 		if (ret) {
 			pr_err("[ERROR]fail to get in_data addr!!!!\n");
 			return -EFAULT;
 		}
 		rq->in_data_phys = (uint32_t)p_in_buf->iova[0];
-		pr_info("rq->in_data_phys=0x%x\n",
-				(uint32_t)rq->in_data_phys);
-	} else {
+
+		pr_debug("in_data_fd=%d, in_data_phys=0x%x size=%d\n",
+			(int)rq->ioctl_queue.in_data_fd, (uint32_t)rq->in_data_phys,
+			(uint32_t)p_in_buf->size[0]);
+	}else {
 		if (copy_from_user(
 			rq->in_data,
 			(void __user *)(unsigned long)rq->ioctl_queue.in_data_addr,
@@ -999,15 +945,10 @@ static int sprd_map_request(
 	}
 
 	//out_data addr
-	if ((rq->ioctl_queue.out_data_size >
-		XRP_DSP_CMD_INLINE_DATA_SIZE)
-		&&(rq->ioctl_queue.out_data_fd >= 0)) {
+	if ((rq->ioctl_queue.out_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
+		&& (rq->ioctl_queue.out_data_fd >= 0)) {
 		p_out_buf->mfd[0] = rq->ioctl_queue.out_data_fd;
 		p_out_buf->dev = xvp->dev;
-		pr_info("get_ionbuf (output) fd:%d,%d , fd1:%d\n",
-			(int)p_out_buf->mfd[0] ,
-			(int)rq->ioctl_queue.out_data_fd,
-			p_out_buf->mfd[1]);
 		ret = xvp->vdsp_mem_desc->ops->mem_get_ionbuf(
 			xvp->vdsp_mem_desc,
 			p_out_buf);
@@ -1026,11 +967,14 @@ static int sprd_map_request(
 			goto share_err;
 		}
 		rq->out_data_phys = (uint32_t)p_out_buf->iova[0];
-		pr_info("rq->out_data_phys=0x%x\n",(uint32_t)rq->out_data_phys);
+
+		pr_debug("out_data_fd=%d, out_data_phys=0x%x, size=%d\n",
+			(int)rq->ioctl_queue.out_data_fd, (uint32_t)rq->out_data_phys,
+			(uint32_t)p_out_buf->size[0]);
 	}
 
 	//bufer addr
-	pr_info("n_buffers [%d]\n", n_buffers);
+	pr_debug("n_buffers [%d]\n", n_buffers);
 	if (n_buffers) {
 		if (n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT) {
 			buffer = (void __user *)(unsigned long)rq->ioctl_queue.buffer_addr;
@@ -1039,8 +983,9 @@ static int sprd_map_request(
 				struct xrp_ioctl_buffer ioctl_buffer;
 
 				if (copy_from_user(&ioctl_buffer, buffer + i,
-						sizeof(ioctl_buffer))) {
+					sizeof(ioctl_buffer))) {
 					ret = -EFAULT;
+					pr_err("[ERROR]copy from user failed\n");
 					goto share_err;
 				}
 				if (ioctl_buffer.fd >= 0) {
@@ -1070,14 +1015,19 @@ static int sprd_map_request(
 						.addr = (uint32_t)p_dsp_buf->iova[0],
 						.fd = ioctl_buffer.fd,
 					};
+					pr_debug("dsp_buffer[%d] addr:0x%x, size:%d, fd:%d, flags:%d\n",
+						i, rq->dsp_buffer[i].addr, rq->dsp_buffer[i].size,
+						rq->dsp_buffer[i].fd, rq->dsp_buffer[i].flags);
 				}
 			}
 		}else {
 			struct xrp_ioctl_buffer ioctl_buffer;
+
 			buffer = (void __user *)(unsigned long)rq->ioctl_queue.buffer_addr;
 			if (copy_from_user(&ioctl_buffer, buffer,
-					sizeof(ioctl_buffer))) {
+				sizeof(ioctl_buffer))) {
 				ret = -EFAULT;
+				pr_err("[ERROR]copy from user failed\n");
 				goto share_err;
 			}
 
@@ -1103,15 +1053,13 @@ static int sprd_map_request(
 					goto share_err;
 				}
 
-				rq->dsp_buffer->addr =  (uint32_t)p_dsp_buf->iova[0];
+				rq->dsp_buffer->addr = (uint32_t)p_dsp_buf->iova[0];
 				rq->dsp_buffer->fd = ioctl_buffer.fd;
 				rq->dsp_buffer->size = ioctl_buffer.size;
 				rq->dsp_buffer->flags = ioctl_buffer.flags;
-				pr_info("Only one dsp_buffer addr:%x, size:%d, fd:%d, flags:%d\n",
-					rq->dsp_buffer->addr,
-					rq->dsp_buffer->size,
-					rq->dsp_buffer->fd,
-					rq->dsp_buffer->flags);
+				pr_debug("Only one dsp_buffer addr:0x%x, size:%d, fd:%d, flags:%d\n",
+					rq->dsp_buffer->addr, rq->dsp_buffer->size,
+					rq->dsp_buffer->fd, rq->dsp_buffer->flags);
 			}
 		}
 		memcpy((void *)rq->dsp_buf->addr_k[0],
@@ -1120,49 +1068,33 @@ static int sprd_map_request(
 share_err:
 	if (ret < 0)
 		sprd_unmap_request(filp, rq);
-	pr_info("[MAP][OUT]\n");
+
 	return ret;
 }
 
 static void sprd_fill_hw_request(struct xrp_dsp_cmd __iomem *cmd,
-				struct xrp_request *rq)
+	struct xrp_request *rq)
 {
-	xrp_comm_write32(&cmd->in_data_size,
-		rq->ioctl_queue.in_data_size);
-	xrp_comm_write32(&cmd->out_data_size,
-		rq->ioctl_queue.out_data_size);
-	xrp_comm_write32(&cmd->buffer_size,
-		rq->n_buffers * sizeof(struct xrp_dsp_buffer));
+	xrp_comm_write32(&cmd->in_data_size, rq->ioctl_queue.in_data_size);
+	xrp_comm_write32(&cmd->out_data_size, rq->ioctl_queue.out_data_size);
+	xrp_comm_write32(&cmd->buffer_size, rq->n_buffers * sizeof(struct xrp_dsp_buffer));
 
 	if (rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
-		xrp_comm_write32(&cmd->in_data_addr,
-			rq->in_data_phys);
+		xrp_comm_write32(&cmd->in_data_addr, rq->in_data_phys);
 	else
-		xrp_comm_write(&cmd->in_data, rq->in_data,
-			rq->ioctl_queue.in_data_size);
+		xrp_comm_write(&cmd->in_data, rq->in_data, rq->ioctl_queue.in_data_size);
 
 	if (rq->ioctl_queue.out_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
-		xrp_comm_write32(&cmd->out_data_addr,
-			rq->out_data_phys);
+		xrp_comm_write32(&cmd->out_data_addr, rq->out_data_phys);
 
 	if (rq->n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT)
-		xrp_comm_write32(&cmd->buffer_addr,
-			rq->dsp_buffer_phys);
+		xrp_comm_write32(&cmd->buffer_addr, rq->dsp_buffer_phys);
 	else
 		xrp_comm_write(&cmd->buffer_data, rq->dsp_buffer,
-			rq->n_buffers * sizeof(struct xrp_dsp_buffer));
+		rq->n_buffers * sizeof(struct xrp_dsp_buffer));
 
 	if (rq->ioctl_queue.flags & XRP_QUEUE_FLAG_NSID)
 		xrp_comm_write(&cmd->nsid, rq->nsid, sizeof(rq->nsid));
-
-#ifdef DEBUG
-	{
-		struct xrp_dsp_cmd dsp_cmd;
-		xrp_comm_read(cmd, &dsp_cmd, sizeof(dsp_cmd));
-		pr_info("cmd[%s] for DSP: %p: %*ph\n",
-			cmd->nsid, cmd, (int)sizeof(dsp_cmd), &dsp_cmd);
-	}
-#endif
 
 	wmb();
 	/* update flags */
@@ -1171,25 +1103,24 @@ static void sprd_fill_hw_request(struct xrp_dsp_cmd __iomem *cmd,
 		XRP_DSP_CMD_FLAG_REQUEST_VALID);
 }
 
-static long sprd_complete_hw_request(
-	struct xrp_dsp_cmd __iomem *cmd,
+static long sprd_complete_hw_request(struct xrp_dsp_cmd __iomem *cmd,
 	struct xrp_request *rq)
 {
 	u32 flags = xrp_comm_read32(&cmd->flags);
 
 	if (rq->ioctl_queue.out_data_size <= XRP_DSP_CMD_INLINE_DATA_SIZE)
 		xrp_comm_read(&cmd->out_data, rq->out_data,
-			rq->ioctl_queue.out_data_size);
+		rq->ioctl_queue.out_data_size);
 	if (rq->n_buffers <= XRP_DSP_CMD_INLINE_BUFFER_COUNT)
 		xrp_comm_read(&cmd->buffer_data, rq->dsp_buffer,
-			rq->n_buffers * sizeof(struct xrp_dsp_buffer));
+		rq->n_buffers * sizeof(struct xrp_dsp_buffer));
 	xrp_comm_write32(&cmd->flags, 0);
 
 	return (flags & XRP_DSP_CMD_FLAG_RESPONSE_DELIVERY_FAIL) ? -ENXIO : 0;
 }
 
 static long xrp_ioctl_submit_sync(struct file *filp,
-				struct xrp_ioctl_queue __user *p)
+	struct xrp_ioctl_queue __user *p)
 {
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
@@ -1202,15 +1133,15 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 	bool rebootflag = 0;
 	int32_t lib_result = 0;
 	s64 tv0, tv1, tv2, tv3, tv4, tv5;
+
 	tv2 = tv3 = tv0 = tv1 = tv4 = tv5 = 0;
-	pr_info("[CMD][IN]\n");
 	tv0 = ktime_to_us(ktime_get());
-
-	if (copy_from_user(&rq->ioctl_queue, p, sizeof(*p)))
+	if (copy_from_user(&rq->ioctl_queue, p, sizeof(*p))){
+		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
-
+	}
 	if (rq->ioctl_queue.flags & ~XRP_QUEUE_VALID_FLAGS) {
-		pr_debug("invalid flags 0x%08x\n", rq->ioctl_queue.flags);
+		pr_err("invalid flags 0x%08x\n", rq->ioctl_queue.flags);
 		return -EINVAL;
 	}
 
@@ -1220,7 +1151,7 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 		if (n >= xvp->n_queues)
 			n = xvp->n_queues - 1;
 		queue = xvp->queue_ordered[n];
-		pr_info("queue index:%d, priority: %d\n" , n, queue->priority);
+		pr_debug("queue index:%d, priority: %d\n", n, queue->priority);
 	}
 	tv1 = ktime_to_us(ktime_get());
 	ret = sprd_map_request(filp, rq);
@@ -1233,7 +1164,8 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 
 	if (loopback < LOOPBACK_NOIO) {
 		int reboot_cycle;
-retry:
+
+	retry:
 		mutex_lock(&queue->lock);
 		reboot_cycle = atomic_read(&xvp->reboot_cycle);
 		if (reboot_cycle != atomic_read(&xvp->reboot_cycle_complete)) {
@@ -1243,71 +1175,70 @@ retry:
 
 		if (xvp->off) {
 			ret = -ENODEV;
-		} else {
+		}else {
 			/*check whether libload command and if it is, do load*/
 			tv2 = ktime_to_us(ktime_get());
-			load_flag = xrp_check_load_unload(xvp , rq);
-			pr_info("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d\n",rq->nsid, load_flag);
+			load_flag = xrp_check_load_unload(xvp, rq);
+			pr_info("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d\n",
+				rq->nsid, load_flag);
 			mutex_lock(&(xvp->load_lib.libload_mutex));
-			lib_result = xrp_pre_process_request(
-				xvp , rq , load_flag , libname);
+			lib_result = xrp_pre_process_request(xvp, rq, load_flag, libname);
 			tv2 = ktime_to_us(ktime_get()) - tv2;//lib load/unload
-			if(lib_result != 0) {
+			if (lib_result != 0) {
 				mutex_unlock(&queue->lock);
 				mutex_unlock(&(xvp->load_lib.libload_mutex));
-				ret = sprd_unmap_request(filp , rq);
-				if(lib_result == -ENXIO) {
+				ret = sprd_unmap_request(filp, rq);
+				if (lib_result == -ENXIO){
+					pr_info("skip this lib command");
 					return 0;
-				} else {
+				}else {
+					pr_err("xrp pre process failed");
 					return -EFAULT;
 				}
-			}else if((load_flag != XRP_UNLOAD_LIB_FLAG)
-			&&(load_flag != XRP_LOAD_LIB_FLAG)) {
+
+			}else if ((load_flag != XRP_UNLOAD_LIB_FLAG)
+				&& (load_flag != XRP_LOAD_LIB_FLAG)) {
 				mutex_unlock(&(xvp->load_lib.libload_mutex));
 			}
 
 			sprd_fill_hw_request(queue->comm, rq);
 			tv3 = ktime_to_us(ktime_get());
 			xrp_send_device_irq(xvp);
+			pr_debug("send vdsp cmd-32k time[%lld]\n", sprd_sysfrt_read());
 
-			if (xvp->host_irq_mode) {
-				ret = xvp_complete_cmd_irq(xvp, queue,
-						xrp_cmd_complete);
-			} else {
-				ret = xvp_complete_cmd_poll(xvp, queue,
-						xrp_cmd_complete);
-			}
+			if (xvp->host_irq_mode)
+				ret = xvp_complete_cmd_irq(xvp, queue, xrp_cmd_complete);
+			else
+				ret = xvp_complete_cmd_poll(xvp, queue, xrp_cmd_complete);
+
 			tv3 = ktime_to_us(ktime_get()) - tv3;//send irq->reci
 
 			xrp_panic_check(xvp);
 			/* copy back inline data */
 			if (ret == 0) {
 				ret = sprd_complete_hw_request(queue->comm, rq);
-				if(load_flag == XRP_LOAD_LIB_FLAG) {
+				if (load_flag == XRP_LOAD_LIB_FLAG) {
 					/*check wheter ok flag if not ok ,
 					 * release ion mem allocated for lib code
 					 * release lib info struce*/
-					if(ret < 0) {
+					if (ret < 0) {
 						pr_err("[ERROR]vdsp side failed load lib\n");
-						lib_result =
-							xrp_library_decrelease(xvp , libname);
-					}
-				} else if(load_flag == XRP_UNLOAD_LIB_FLAG) {
-					if(ret < 0) {
-						pr_err("[ERROR]vdsp side failed unload lib\n");
-					} else {
-						/*unload lib ,
-						  * release lib info ion buffer
-						  * allocated for code & data*/
-						lib_result =
-						xrp_library_decrelease(xvp , libname);
+						lib_result = xrp_library_decrelease(xvp, libname);
 					}
 				}
-			} else if (ret == -EBUSY && firmware_reboot &&
-					atomic_inc_return(&xvp->reboot_cycle) ==
-					reboot_cycle + 1) {
+				else if (load_flag == XRP_UNLOAD_LIB_FLAG) {
+					if (ret < 0)
+						pr_err("[ERROR]vdsp side failed unload lib\n");
+					else
+						/*unload lib,release libinfo ion buffer allocated for code&data*/
+						lib_result = xrp_library_decrelease(xvp, libname);
+				}
+			}else if (ret == -EBUSY && firmware_reboot &&
+				atomic_inc_return(&xvp->reboot_cycle) ==
+				reboot_cycle + 1) {
 				int rc;
 				unsigned i;
+
 				pr_info("###enter reboot flow!###\n");
 				for (i = 0; i < xvp->n_queues; ++i)
 					if (xvp->queue + i != queue)
@@ -1316,28 +1247,24 @@ retry:
 #ifdef USE_RE_REGISTER_LIB
 				if(rc == 0) {
 					if((load_flag != XRP_LOAD_LIB_FLAG)
-						&& (load_flag != XRP_UNLOAD_LIB_FLAG)) {
+						&& (load_flag != XRP_UNLOAD_LIB_FLAG))
 						mutex_lock(&(xvp->load_lib.libload_mutex));
-					}
+
 					/*re-register all */
-					lib_result = xrp_register_libs(xvp , queue);
+					lib_result = xrp_register_libs(xvp, queue);
 					rc = lib_result;
-					pr_info("xrp_register_libs result:%d\n", lib_result);
 					if((load_flag != XRP_LOAD_LIB_FLAG)
-						&& (load_flag != XRP_UNLOAD_LIB_FLAG)) {
+						&& (load_flag != XRP_UNLOAD_LIB_FLAG))
 						mutex_unlock(&(xvp->load_lib.libload_mutex));
-					}
 				}
 #else
-				if((load_flag != XRP_LOAD_LIB_FLAG)
-					&& (load_flag != XRP_UNLOAD_LIB_FLAG)) {
+				if ((load_flag != XRP_LOAD_LIB_FLAG)
+					&& (load_flag != XRP_UNLOAD_LIB_FLAG))
 					mutex_lock(&(xvp->load_lib.libload_mutex));
-				}
 				xrp_library_setall_missstate(xvp);
-				if((load_flag != XRP_LOAD_LIB_FLAG)
-					&& (load_flag != XRP_UNLOAD_LIB_FLAG)) {
+				if ((load_flag != XRP_LOAD_LIB_FLAG)
+					&& (load_flag != XRP_UNLOAD_LIB_FLAG))
 					mutex_unlock(&(xvp->load_lib.libload_mutex));
-				}
 #endif
 
 				atomic_set(&xvp->reboot_cycle_complete,
@@ -1352,26 +1279,24 @@ retry:
 				pr_info("###reboot flow end!###\n");
 				rebootflag = 1;
 			}
-			if(0 == rebootflag) {
-				if((load_flag != XRP_LOAD_LIB_FLAG)
-					&& (load_flag != XRP_UNLOAD_LIB_FLAG)) {
+			if (0 == rebootflag) {
+				if ((load_flag != XRP_LOAD_LIB_FLAG)
+					&& (load_flag != XRP_UNLOAD_LIB_FLAG))
 					mutex_lock(&(xvp->load_lib.libload_mutex));
-				}
+
 				lib_result = post_process_request(
-					xvp , rq , libname , load_flag , ret);
-				if((load_flag == XRP_LOAD_LIB_FLAG)
+					xvp, rq, libname, load_flag, ret);
+				if ((load_flag == XRP_LOAD_LIB_FLAG)
 					|| (load_flag == XRP_UNLOAD_LIB_FLAG)) {
 					mutex_unlock(&(xvp->load_lib.libload_mutex));
-				}
-				else {
-					if(lib_result != 0) {
+				}else {
+					if (lib_result != 0) {
 						mutex_unlock(&queue->lock);
 						mutex_unlock(&(xvp->load_lib.libload_mutex));
-						sprd_unmap_request(filp , rq);
+						sprd_unmap_request(filp, rq);
 						pr_err("[ERROR]lib result error\n");
 						return -EFAULT;
-					}
-					else {
+					}else {
 						mutex_unlock(&(xvp->load_lib.libload_mutex));
 					}
 				}
@@ -1392,75 +1317,73 @@ retry:
 	 * going on with the DSP; the DSP may still be reading and writing
 	 * this memory.
 	 */
-	pr_info("[TIME][CMD](kernel->nsid:%s)total:%lld(us), map:%lld(us), \
-        lib load/unload:%lld(us), irq->reci:%lld(us), unmap:%lld(us) ret:%d\n",
-		rq->nsid,
-		tv5 - tv0,/*total cmd process*/
-		tv1,/*map*/
-		tv2,/*lib load/unload*/
-		tv3,/*irq->reci*/
-		tv5 - tv4,/*unmap*/
-		ret);
+	pr_info("[TIME](cmd->nsid:%s)total:%lld(us),map:%lld(us),load/unload:%lld(us),"
+		"vdsp:%lld(us),unmap:%lld(us),ret:%d\n",
+		rq->nsid, tv5 - tv0, tv1, tv2, tv3, tv5 - tv4, ret);
+
 	return ret;
 }
-static long xrp_ioctl_faceid_cmd(
-	struct file *filp,
+static long xrp_ioctl_faceid_cmd(struct file *filp,
 	struct xrp_faceid_ctrl __user *arg)
 {
 	struct xrp_faceid_ctrl faceid;
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
 
-	if (copy_from_user(&faceid, arg, sizeof(struct xrp_faceid_ctrl)))
+	if (copy_from_user(&faceid, arg, sizeof(struct xrp_faceid_ctrl))){
+		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
-
-	pr_info("faceid in_fd %d, out_fd %d\n",
-		faceid.in_fd ,faceid.out_fd);
-	xrp_faceid_run(xvp,&faceid);
+	}
+	pr_debug("faceid:in_fd %d, out_fd %d\n", faceid.in_fd, faceid.out_fd);
+	xrp_faceid_run(xvp, &faceid);
 
 	return 0;
 }
 
-static long xrp_ioctl_set_dvfs(
-	struct file *filp,
+static long xrp_ioctl_set_dvfs(struct file *filp,
 	struct xrp_dvfs_ctrl __user *arg)
 {
 	struct xrp_dvfs_ctrl dvfs;
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
-	if (copy_from_user(&dvfs, arg, sizeof(struct xrp_dvfs_ctrl)))
+
+	if (copy_from_user(&dvfs, arg, sizeof(struct xrp_dvfs_ctrl))){
+		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
-	if(0 == dvfs.en_ctl_flag) {
-		xvp_dsp_setdvfs(xvp , dvfs.index);
-	} else {
-		if(dvfs.enable)
+	}
+	if (0 == dvfs.en_ctl_flag) {
+		xvp_dsp_setdvfs(xvp, dvfs.index);
+	}else {
+		if (dvfs.enable)
 			xvp_dsp_enable_dvfs(xvp);
 		else
 			xvp_dsp_disable_dvfs(xvp);
 	}
 	return 0;
 }
+
 static long xrp_ioctl_set_powerhint(struct file *filp,
-				struct xrp_powerhint_ctrl __user *arg)
+	struct xrp_powerhint_ctrl __user *arg)
 {
 	struct xrp_powerhint_ctrl powerhint;
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
-	if (copy_from_user(&powerhint , arg, sizeof(struct xrp_powerhint_ctrl))) {
-		pr_err("func:%s copy_from_user failed\n");
+
+	if (copy_from_user(&powerhint, arg, sizeof(struct xrp_powerhint_ctrl))) {
+		pr_err("copy_from_user failed\n");
 		return -EFAULT;
 	}
-	set_powerhint_flag(xvp , powerhint.level , powerhint.acquire_release);
+	set_powerhint_flag(xvp, powerhint.level, powerhint.acquire_release);
 	return 0;
 }
+
 static long xvp_ioctl(struct file *filp,
 	unsigned int cmd, unsigned long arg)
 {
 	long retval = -EINVAL;
 
-	pr_info("cmd:%x\n", cmd);
-
-	switch(cmd){
+	pr_debug("cmd:%x\n", cmd);
+	switch (cmd){
 	case XRP_IOCTL_ALLOC:
 	case XRP_IOCTL_FREE:
 		break;
@@ -1468,20 +1391,20 @@ static long xvp_ioctl(struct file *filp,
 	case XRP_IOCTL_QUEUE_NS:
 		preprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
 		retval = xrp_ioctl_submit_sync(filp,
-				(struct xrp_ioctl_queue __user *)arg);
+			(struct xrp_ioctl_queue __user *)arg);
 		postprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
 		break;
 	case XRP_IOCTL_SET_DVFS:
 		retval = xrp_ioctl_set_dvfs(filp,
-				(struct xrp_dvfs_ctrl __user *)arg);
+			(struct xrp_dvfs_ctrl __user *)arg);
 		break;
 	case XRP_IOCTL_SET_POWERHINT:
 		retval = xrp_ioctl_set_powerhint(filp,
-					(struct xrp_powerhint_ctrl __user *)arg);
+			(struct xrp_powerhint_ctrl __user *)arg);
 		break;
 	case XRP_IOCTL_FACEID_CMD:
 		retval = xrp_ioctl_faceid_cmd(filp,
-				(struct xrp_faceid_ctrl __user *)arg);
+			(struct xrp_faceid_ctrl __user *)arg);
 		break;
 	default:
 		retval = -EINVAL;
@@ -1494,57 +1417,60 @@ static long xvp_ioctl(struct file *filp,
 static int32_t sprd_alloc_commbuffer(struct xvp *xvp)
 {
 	int ret;
+
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
-						&xvp->ion_comm,
-						ION_HEAP_ID_MASK_SYSTEM,
-						PAGE_SIZE);
-	if(0 != ret) {
+		&xvp->ion_comm,
+		ION_HEAP_ID_MASK_SYSTEM,
+		PAGE_SIZE);
+	if (0 != ret) {
 		pr_err("[ERROR]alloc comm buffer failed\n");
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(
 		xvp->vdsp_mem_desc, &xvp->ion_comm);
-	if(0 != ret) {
+	if (0 != ret) {
 		xvp->vdsp_mem_desc->ops->mem_free(
 			xvp->vdsp_mem_desc, &xvp->ion_comm);
 		return -EFAULT;
 	}
 	xvp->comm = (void*)xvp->ion_comm.addr_k[0];
 	xvp->ion_comm.dev = xvp->dev;
-	pr_info("xvp alloc comm vaddr:%p\n", xvp->comm);
+	pr_debug("xvp alloc comm vaddr:%p\n", xvp->comm);
+
 	return 0;
 }
 
 static int32_t sprd_free_commbuffer(struct xvp *xvp)
 {
-	pr_info("xvp free comm vaddr:%p\n", xvp->comm);
-	if(xvp->comm) {
+	pr_debug("xvp free comm vaddr:%p\n", xvp->comm);
+	if (xvp->comm) {
 		xvp->vdsp_mem_desc->ops->mem_kunmap(
 			xvp->vdsp_mem_desc, &xvp->ion_comm);
 		xvp->vdsp_mem_desc->ops->mem_free(
 			xvp->vdsp_mem_desc, &xvp->ion_comm);
 		xvp->comm = NULL;
 	}
+
 	return 0;
 }
 
 static int32_t sprd_alloc_extrabuffer(struct xvp *xvp)
 {
 	int ret;
-	pr_info("[IN]alloc firmware buffer, size[VDSP_FIRMWIRE_SIZE]\n");
-	ret = xvp->vdsp_mem_desc->ops->mem_alloc(
-			xvp->vdsp_mem_desc,
-			&xvp->ion_firmware,
-			ION_HEAP_ID_MASK_SYSTEM,
-			VDSP_FIRMWIRE_SIZE);
 
-	if(ret != 0){
+	ret = xvp->vdsp_mem_desc->ops->mem_alloc(
+		xvp->vdsp_mem_desc,
+		&xvp->ion_firmware,
+		ION_HEAP_ID_MASK_SYSTEM,
+		VDSP_FIRMWIRE_SIZE);
+
+	if (ret != 0){
 		pr_err("[ERROR]alloc firmware fail\n");
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(
 		xvp->vdsp_mem_desc, &xvp->ion_firmware);
-	if(ret){
+	if (ret){
 		xvp->vdsp_mem_desc->ops->mem_kunmap(
 			xvp->vdsp_mem_desc, &xvp->ion_firmware);
 		xvp->vdsp_mem_desc->ops->mem_free(
@@ -1556,17 +1482,16 @@ static int32_t sprd_alloc_extrabuffer(struct xvp *xvp)
 	xvp->firmware_viraddr = (void*)xvp->ion_firmware.addr_k[0];
 	xvp->ion_firmware.dev = xvp->dev;
 
-	pr_info("[OUT]firmware kernel vaddr:0x%p \n",
-		xvp->firmware_viraddr);
+	pr_debug("alloc firmware virvaddr:0x%p, size:%d\n",
+		xvp->firmware_viraddr, VDSP_FIRMWIRE_SIZE);
 
 	return ret;
 }
 
 static int sprd_free_extrabuffer(struct xvp *xvp)
 {
-	pr_info("free firmwareaddr:%p\n",
-		xvp->firmware_viraddr);
-	if(xvp->firmware_viraddr) {
+	pr_debug("free firmwareaddr:%p\n", xvp->firmware_viraddr);
+	if (xvp->firmware_viraddr) {
 		xvp->vdsp_mem_desc->ops->mem_kunmap(
 			xvp->vdsp_mem_desc, &xvp->ion_firmware);
 		xvp->vdsp_mem_desc->ops->mem_free(
@@ -1580,62 +1505,62 @@ static int sprd_free_extrabuffer(struct xvp *xvp)
 static int32_t sprd_iommu_map_commbuffer(struct xvp *xvp)
 {
 	int ret = -EFAULT;
-	if(xvp->comm == NULL) {
+
+	if (xvp->comm == NULL) {
 		pr_err("[ERROR]null comm addr\n");
 		return ret;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
 		xvp->vdsp_mem_desc, &xvp->ion_comm, IOMMU_ALL);
-	if(ret) {
+	if (ret) {
 		pr_err("[ERROR]map ion_comm failed\n");
 		return ret;
 	}
 	xvp->dsp_comm_addr = xvp->ion_comm.iova[0];
+
 	return ret;
 }
 
 static int32_t sprd_iommu_unmap_commbuffer(struct xvp *xvp)
 {
 	int ret;
-	if(xvp->comm) {
+
+	if (xvp->comm) {
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
 			xvp->vdsp_mem_desc,
 			&xvp->ion_comm,
 			IOMMU_ALL);
-		if(ret) {
+		if (ret) {
 			pr_err("[ERROR]unmap ion_comm failed\n");
 			return -EFAULT;
 		}
-	} else {
+	}else {
 		pr_err("[ERROR]xvp->comm is NULL\n");
 		return -EINVAL;
 	}
-	pr_info("xvp->comm:%p\n", xvp->comm);
+	pr_debug("xvp->comm:%p\n", xvp->comm);
+
 	return 0;
 }
 
 static int sprd_iommu_map_extrabuffer(struct xvp *xvp)
 {
 	int ret = -EFAULT;
+
 	if (xvp->firmware_viraddr == NULL) {
-		pr_err("[ERROR]map some addr is NULL firmware:%p\n",
-			xvp->firmware_viraddr);
+		pr_err("[ERROR]NULL firmware viraddr\n");
 		return ret;
 	}
-	{
-		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
-			xvp->vdsp_mem_desc,
-			&xvp->ion_firmware,
-			IOMMU_ALL);
-		if (ret) {
-			pr_err("[ERROR]map firmware failed\n");
-			return ret;
-		}
-		xvp->dsp_firmware_addr = xvp->ion_firmware.iova[0];
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
+		xvp->vdsp_mem_desc,
+		&xvp->ion_firmware,
+		IOMMU_ALL);
+	if (ret){
+		pr_err("[ERROR]map firmware failed\n");
+		return ret;
 	}
-
-	pr_info("dsp firmware addr:%lx\n" ,
-		(unsigned long)xvp->dsp_firmware_addr);
+	xvp->dsp_firmware_addr = xvp->ion_firmware.iova[0];
+	pr_debug("dsp fw addr:%lx\n", (unsigned long)xvp->dsp_firmware_addr);
 
 	return ret;
 }
@@ -1645,22 +1570,17 @@ static int sprd_iommu_unmap_extrabuffer(struct xvp *xvp)
 	int ret = -EFAULT;
 
 	if (xvp->firmware_viraddr == NULL) {
-		pr_err("[ERROR]unmap some addr is NULL firmware:%p\n" ,
-			xvp->firmware_viraddr);
+		pr_err("[ERROR]NULL firmware viraddr\n");
 		return ret;
 	}
-	if (xvp->firmware_viraddr) {
-		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
-			xvp->vdsp_mem_desc,
-			&xvp->ion_firmware,
-			IOMMU_ALL);
-		if(ret) {
-			pr_err("[ERROR]iommu unmap ion_firmware failed\n");
-			return ret;
-		}
-	}
-	pr_info("unmap extrabuffer frimwarddr:%p, ret:%d\n" ,
-		xvp->firmware_viraddr, ret);
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
+		xvp->vdsp_mem_desc,
+		&xvp->ion_firmware,
+		IOMMU_ALL);
+	if (ret)
+		pr_err("[ERROR]iommu unmap failed\n");
+
+	pr_debug("unmap fw vddr:%p, ret:%d\n", xvp->firmware_viraddr, ret);
 
 	return ret;
 }
@@ -1669,32 +1589,30 @@ static int sprd_vdsp_alloc_map(struct xvp *xvp)
 {
 	int ret = 0;
 
-	pr_info("[IN]\n");
-
 	if (xvp->secmode) {
 		ret = sprd_iommu_map_faceid_fwbuffer(xvp);
-		if(ret != 0) {
+		if (ret != 0) {
 			pr_err("[ERROR]map faceid fw failed\n");
 			return  ret;
 		}
-	} else {
+	}else {
 		ret = sprd_alloc_extrabuffer(xvp);
-		if(ret != 0) {
+		if (ret != 0) {
 			pr_err("[ERROR]sprd_alloc_extrabuffer failed\n");
 			return ret;
 		}
 		ret = sprd_iommu_map_extrabuffer(xvp);
-		if(ret != 0) {
+		if (ret != 0) {
 			pr_err("[ERROR]sprd_iommu_map_extrabuffer failed\n");
 			sprd_free_extrabuffer(xvp);
 			return ret;
 		}
 	}
 	ret = sprd_iommu_map_commbuffer(xvp);
-	if(ret != 0) {
+	if (ret != 0) {
 		if (xvp->secmode) {
 			sprd_iommu_unmap_faceid_fwbuffer(xvp);
-		} else {
+		}else {
 			sprd_iommu_unmap_extrabuffer(xvp);
 			sprd_free_extrabuffer(xvp);
 		}
@@ -1709,63 +1627,53 @@ static int sprd_vdsp_clear_buff(struct xvp *xvp)
 {
 	int ret = 0;
 
-	pr_info("[IN]\n");
 	if (xvp->secmode) {
 		ret = sprd_iommu_unmap_faceid_fwbuffer(xvp);
-		if(ret != 0) {
+		if (ret != 0) {
 			pr_err("[ERROR]unmap faceid fw failed\n");
 		}
-	} else {
+	}else {
 		ret = sprd_iommu_unmap_extrabuffer(xvp);
-		if(ret != 0) {
+		if (ret != 0)
 			pr_err("[ERROR]sprd_iommu_unmap_extrabuffer failed\n");
-		}
+
 		ret = sprd_free_extrabuffer(xvp);
-		if(ret != 0) {
+		if (ret != 0)
 			pr_err("[ERROR]sprd_free_extrabuffer failed \n");
-		}
 	}
 
 	ret = sprd_iommu_unmap_commbuffer(xvp);
-	if(ret != 0) {
+	if (ret != 0)
 		pr_err("[ERROR]sprd_iommu_unmap_commbuffer failed\n");
-	}
 
 	return ret;
 }
 
 static int sprd_vdsp_boot_firmware(struct xvp *xvp)
 {
-	int ret = 0;
-	pr_info("[IN]\n");
-
-	if (xvp->secmode) {
-		ret = xrp_boot_faceid_firmware(xvp);
-	} else {
-		ret = xrp_boot_firmware(xvp);
-	}
-
-	return ret;
+	if (xvp->secmode)
+		return xrp_boot_faceid_firmware(xvp);
+	else
+		return xrp_boot_firmware(xvp);
 }
 
 static int xvp_open(struct inode *inode, struct file *filp)
 {
 	struct xvp *xvp = container_of(filp->private_data,
-						struct xvp, miscdev);
+		struct xvp, miscdev);
 	struct xvp_file *xvp_file;
 	int ret;
 	uint32_t opentype = 0xffffffff;
 	s64 tv0, tv1, tv2, tv3;
+
 	tv0 = ktime_to_us(ktime_get());
 
-	pr_info("[IN]xvp is:%p, flags:%x, fmode:%x\n",
-		xvp , filp->f_flags , filp->f_mode);
+	pr_debug("xvp is:%p, flags:%x, fmode:%x\n", xvp, filp->f_flags, filp->f_mode);
 	mutex_lock(&xvp->xvp_lock);
-	if(filp->f_flags & O_RDWR)
-	{
+	if (filp->f_flags & O_RDWR){
 		/*check cur open type*/
-		if((xvp->cur_opentype == 0xffffffff) || (xvp->cur_opentype == 1)) {
-			pr_err("open faceid mode!!!!!\n");
+		if ((xvp->cur_opentype == 0xffffffff) || (xvp->cur_opentype == 1)) {
+			pr_err("[ERROR]open faceid mode!!!!!\n");
 			ret = sprd_faceid_sec_sign(xvp);
 			if (ret < 0) {
 				mutex_unlock(&xvp->xvp_lock);
@@ -1777,24 +1685,24 @@ static int xvp_open(struct inode *inode, struct file *filp)
 				return ret;
 			}
 			opentype = 1;
-		}
-		else {
-			pr_err("open faceid mode but refused by curr opentype:%u\n" , xvp->cur_opentype);
+		}else {
+			pr_err("open faceid mode but refused by curr opentype:%u\n",
+				xvp->cur_opentype);
 			mutex_unlock(&xvp->xvp_lock);
 			return -EINVAL;
 		}
-	} else {
-		if((xvp->cur_opentype != 0xffffffff) && (xvp->cur_opentype != 0)) {
-			pr_err("open failed refused by curr opentype:%u\n" , xvp->cur_opentype);
+	}else {
+		if ((xvp->cur_opentype != 0xffffffff) && (xvp->cur_opentype != 0)) {
+			pr_err("open failed refused by curr opentype:%u\n",
+				xvp->cur_opentype);
 			mutex_unlock(&xvp->xvp_lock);
 			return -EINVAL;
 		}
 		opentype = 0;
 	}
-	xvp_file = devm_kzalloc(xvp->dev, sizeof(*xvp_file),
-		GFP_KERNEL);
+	xvp_file = devm_kzalloc(xvp->dev, sizeof(*xvp_file), GFP_KERNEL);
 	if (!xvp_file) {
-		pr_err("func:%s devm_kzalloc failed\n" , __func__);
+		pr_err("devm_kzalloc failed\n");
 		mutex_unlock(&xvp->xvp_lock);
 		return -ENOMEM;
 	}
@@ -1812,7 +1720,7 @@ static int xvp_open(struct inode *inode, struct file *filp)
 			goto enable_fault;
 		}
 		ret = vdsp_dvfs_init(xvp);
-		if(ret < 0) {
+		if (ret < 0) {
 			pr_err("vdsp_dvfs_init failed\n");
 			goto map_fault;
 		}
@@ -1822,7 +1730,7 @@ static int xvp_open(struct inode *inode, struct file *filp)
 	if (ret < 0) {
 		pr_err("[ERROR]pm_runtime_get_sync failed\n");
 		goto dvfs_fault;
-	} else {
+	}else {
 		ret = 0;
 	}
 
@@ -1832,7 +1740,7 @@ static int xvp_open(struct inode *inode, struct file *filp)
 			pr_err("[ERROR]vdsp boot firmware failed\n");
 			goto err_pm_runtime;
 		}
-		if(!ret && (log_counter == 0)) {
+		if (!ret && (log_counter == 0)) {
 			log_counter++;
 			sprd_log_sem_up();
 		}
@@ -1844,9 +1752,9 @@ static int xvp_open(struct inode *inode, struct file *filp)
 	xrp_add_known_file(filp);
 	tv3 = ktime_to_us(ktime_get());
 	/*total - map*/
-	pr_info("[OUT][TIME]VDSP Boot total(xvp->sync done):%lld (us), map firmware:%lld (us)\n",
+	pr_info("[TIME]VDSP Boot total(xvp->sync done):%lld(us), map firmware:%lld(us)\n",
 		tv3 - tv0, tv2 - tv1);
-	xvp->open_count ++;
+	xvp->open_count++;
 	xvp->cur_opentype = opentype;
 	mutex_unlock(&xvp->xvp_lock);
 	return ret;
@@ -1860,8 +1768,8 @@ map_fault:
 enable_fault:
 	xvp_disable_dsp(xvp);
 devmalloc_fault:
-	devm_kfree(xvp->dev , xvp_file);
-	pr_err("%s: ret = %ld\n", __func__, ret);
+	devm_kfree(xvp->dev, xvp_file);
+	pr_err("[ERROR]ret = %ld\n", ret);
 	mutex_unlock(&xvp->xvp_lock);
 	return ret;
 }
@@ -1871,14 +1779,13 @@ static int xvp_close(struct inode *inode, struct file *filp)
 	struct xvp_file *xvp_file = filp->private_data;
 	int ret = 0;
 	struct xvp *xvp = (struct xvp*)(xvp_file->xvp);
-	pr_info("[IN]\n");
+
 	mutex_lock(&xvp->xvp_lock);
 	xrp_remove_known_file(filp);
 	pm_runtime_put_sync(xvp_file->xvp->dev);
 	xvp_file->xvp->open_count--;
-	pr_info("open_count is:%d\n",
-		xvp_file->xvp->open_count);
-	if(0 == xvp_file->xvp->open_count) {
+	pr_debug("open_count is:%d\n", xvp_file->xvp->open_count);
+	if (0 == xvp_file->xvp->open_count) {
 		/*release xvp load_lib info*/
 		ret = xrp_library_release_all(xvp_file->xvp);
 		sprd_vdsp_clear_buff(xvp_file->xvp);
@@ -1888,13 +1795,13 @@ static int xvp_close(struct inode *inode, struct file *filp)
 	}
 	sprd_faceid_secboot_deinit(xvp_file->xvp);
 	devm_kfree(xvp_file->xvp->dev, xvp_file);
-	pr_info("[OUT]ret:%d\n", ret);
+	pr_debug("[OUT]ret:%d\n", ret);
 	mutex_unlock(&xvp->xvp_lock);
 	return ret;
 }
 
 static const struct file_operations xvp_fops = {
-	.owner  = THIS_MODULE,
+	.owner = THIS_MODULE,
 	.llseek = no_llseek,
 	.unlocked_ioctl = xvp_ioctl,
 #ifdef CONFIG_COMPAT
@@ -1909,14 +1816,13 @@ int vdsp_runtime_resume(struct device *dev)
 	struct vdsp_ipi_ctx_desc *ipidesc = NULL;
 	struct xvp *xvp = dev_get_drvdata(dev);
 
-	pr_info("enter\n");
 	if (xvp->off) {
 		//TBD CHECK
 	}
 
 	ipidesc = get_vdsp_ipi_ctx_desc();
-	if(ipidesc) {
-		pr_info("ipi init called\n");
+	if (ipidesc) {
+		pr_debug("ipi init called\n");
 		ipidesc->ops->ctx_init(ipidesc);
 	}
 
@@ -1934,8 +1840,8 @@ int vdsp_runtime_suspend(struct device *dev)
 
 	xrp_halt_dsp(xvp);
 	ipidesc = get_vdsp_ipi_ctx_desc();
-	if(ipidesc) {
-		pr_info("ipi deinit called\n");
+	if (ipidesc) {
+		pr_debug("ipi deinit called\n");
 		ipidesc->ops->ctx_deinit(ipidesc);
 	}
 
@@ -1944,7 +1850,7 @@ int vdsp_runtime_suspend(struct device *dev)
 EXPORT_SYMBOL(vdsp_runtime_suspend);
 
 static int sprd_vdsp_init_buffer(
-	struct platform_device *pdev, struct xvp *xvp)
+struct platform_device *pdev, struct xvp *xvp)
 {
 	if (sprd_alloc_commbuffer(xvp) != 0){
 		pr_err("sprd_alloc_commbuffer failed\n");
@@ -1959,17 +1865,17 @@ static int sprd_vdsp_init_buffer(
 }
 
 static int sprd_vdsp_parse_soft_dt(struct xvp *xvp,
-	struct platform_device *pdev)
+struct platform_device *pdev)
 {
-	int i,ret = 0;
+	int i, ret = 0;
 
 	ret = device_property_read_u32_array(xvp->dev,
 		"queue-priority", NULL, 0);
 	if (ret > 0) {
 		xvp->n_queues = ret;
 		xvp->queue_priority = devm_kmalloc(&pdev->dev,
-							ret * sizeof(u32),
-							GFP_KERNEL);
+			ret * sizeof(u32),
+			GFP_KERNEL);
 		if (xvp->queue_priority == NULL) {
 			pr_err("failed to kmalloc queue priority \n");
 			ret = -EFAULT;
@@ -1977,35 +1883,34 @@ static int sprd_vdsp_parse_soft_dt(struct xvp *xvp,
 		}
 
 		ret = device_property_read_u32_array(xvp->dev,
-							"queue-priority",
-							xvp->queue_priority,
-							xvp->n_queues);
+			"queue-priority",
+			xvp->queue_priority,
+			xvp->n_queues);
 		if (ret < 0){
 			pr_err("failed to read queue priority \n");
 			ret = -EFAULT;
 			return ret;
 		}
 
-		pr_info("multiqueue (%d) configuration, queue priorities:\n",
-			xvp->n_queues);
+		pr_debug("multiqueue (%d) configuration, queue priorities:\n", xvp->n_queues);
 		for (i = 0; i < xvp->n_queues; ++i)
-			pr_info("  %d\n", xvp->queue_priority[i]);
-	} else {
+			pr_debug("  %d\n", xvp->queue_priority[i]);
+	}else {
 		xvp->n_queues = 1;
 	}
 
 	xvp->queue = devm_kmalloc(&pdev->dev,
-					xvp->n_queues * sizeof(*xvp->queue),
-					GFP_KERNEL);
+		xvp->n_queues * sizeof(*xvp->queue),
+		GFP_KERNEL);
 	xvp->queue_ordered = devm_kmalloc(&pdev->dev,
-						xvp->n_queues * sizeof(*xvp->queue_ordered),
-						GFP_KERNEL);
+		xvp->n_queues * sizeof(*xvp->queue_ordered),
+		GFP_KERNEL);
 	if (xvp->queue == NULL ||
 		xvp->queue_ordered == NULL){
-			pr_err("failed to kmalloc queue ordered \n");
-			ret = -EFAULT;
-			return ret;
-		}
+		pr_err("failed to kmalloc queue ordered \n");
+		ret = -EFAULT;
+		return ret;
+	}
 
 	for (i = 0; i < xvp->n_queues; ++i) {
 		mutex_init(&xvp->queue[i].lock);
@@ -2014,37 +1919,25 @@ static int sprd_vdsp_parse_soft_dt(struct xvp *xvp,
 		if (xvp->queue_priority)
 			xvp->queue[i].priority = xvp->queue_priority[i];
 		xvp->queue_ordered[i] = xvp->queue + i;
-		pr_info("queue i:%d, comm:0x%x\n" ,
-			i ,xvp->queue[i].comm);
+		pr_debug("queue i:%d, comm:0x%x\n", i, xvp->queue[i].comm);
 	}
 	sort(xvp->queue_ordered, xvp->n_queues,
 		sizeof(*xvp->queue_ordered),
 		compare_queue_priority, NULL);
-
-	if (xvp->n_queues > 1) {
-		pr_debug("SW -> HW queue priority mapping:\n");
-		for (i = 0; i < xvp->n_queues; ++i) {
-			pr_debug("  %d -> %d\n",
-				i, xvp->queue_ordered[i]->priority);
-		}
-	}
-
-	ret = device_property_read_string(xvp->dev, "firmware-name",
-							&xvp->firmware_name);
-	if (ret == -EINVAL || ret == -ENODATA) {
+	ret = device_property_read_string(xvp->dev, "firmware-name", &xvp->firmware_name);
+	if (ret == -EINVAL || ret == -ENODATA)
 		pr_err("no firmware-name property, not loading firmware");
-	} else if (ret < 0) {
+	else if (ret < 0)
 		pr_err("invalid firmware name (%ld)", ret);
-	}
 
 	return ret;
 }
 
 static long vdsp_init_common(struct platform_device *pdev,
-				enum vdsp_init_flags init_flags,
-				const struct xrp_hw_ops *hw_ops, void *hw_arg,
-				int (*vdsp_init_bufs)(struct platform_device *pdev,
-						 struct xvp *xvp))
+	enum vdsp_init_flags init_flags,
+	const struct xrp_hw_ops *hw_ops, void *hw_arg,
+	int(*vdsp_init_bufs)(struct platform_device *pdev,
+	struct xvp *xvp))
 {
 	long ret;
 	char nodename[sizeof("vdsp") + 3 * sizeof(int)];
@@ -2057,7 +1950,6 @@ static long vdsp_init_common(struct platform_device *pdev,
 		goto err;
 	}
 	sprd_log_sem_init();
-
 	mutex_init(&(xvp->load_lib.libload_mutex));
 	mutex_init(&map_lock);
 	mutex_init(&xvp->xvp_lock);
@@ -2089,7 +1981,7 @@ static long vdsp_init_common(struct platform_device *pdev,
 		goto err;
 	}
 
-	if(vdsp_log_init(xvp) != 0)
+	if (vdsp_log_init(xvp) != 0)
 		pr_err("vdsp log init fail. \n");
 
 	pm_runtime_enable(xvp->dev);
@@ -2110,9 +2002,9 @@ static long vdsp_init_common(struct platform_device *pdev,
 
 	xvp->miscdev = (struct miscdevice){
 		.minor = MISC_DYNAMIC_MINOR,
-		.name = devm_kstrdup(&pdev->dev, nodename, GFP_KERNEL),
-		.nodename = devm_kstrdup(&pdev->dev,nodename, GFP_KERNEL),
-		.fops = &xvp_fops,
+			.name = devm_kstrdup(&pdev->dev, nodename, GFP_KERNEL),
+			.nodename = devm_kstrdup(&pdev->dev, nodename, GFP_KERNEL),
+			.fops = &xvp_fops,
 	};
 
 	ret = misc_register(&xvp->miscdev);
@@ -2124,7 +2016,7 @@ err_free_id:
 err_pm_disable:
 	pm_runtime_disable(xvp->dev);
 err:
-	pr_err("ret = %ld\n", ret);
+	pr_err("error, ret = %ld\n", ret);
 	return ret;
 }
 
@@ -2133,9 +2025,9 @@ long sprd_vdsp_init(struct platform_device *pdev,
 	const struct xrp_hw_ops *hw_ops, void *hw_arg)
 {
 	return vdsp_init_common(
-			pdev, flags, hw_ops,
-			hw_arg,
-			sprd_vdsp_init_buffer);
+		pdev, flags, hw_ops,
+		hw_arg,
+		sprd_vdsp_init_buffer);
 }
 EXPORT_SYMBOL(sprd_vdsp_init);
 
@@ -2153,6 +2045,7 @@ int sprd_vdsp_deinit(struct platform_device *pdev)
 	sprd_faceid_deinit(xvp);
 	vdsp_log_deinit(xvp);
 	ida_simple_remove(&xvp_nodeid, xvp->nodeid);
+
 	return 0;
 }
 EXPORT_SYMBOL(sprd_vdsp_deinit);

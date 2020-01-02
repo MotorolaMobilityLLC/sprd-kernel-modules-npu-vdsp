@@ -115,35 +115,34 @@ static inline void xrp_pool_unlock(struct xrp_private_pool *pool)
 static void xrp_private_free(struct xrp_allocation *xrp_allocation)
 {
 	struct xrp_private_pool *pool = container_of(xrp_allocation->pool,
-						     struct xrp_private_pool,
-						     pool);
+		struct xrp_private_pool,
+		pool);
 	struct xrp_allocation **pcur;
 
-	pr_debug("%s: %pap x %d\n", __func__,
-		 &xrp_allocation->start, xrp_allocation->size);
+	pr_debug("%pap x %d\n", &xrp_allocation->start, xrp_allocation->size);
 
 	xrp_pool_lock(pool);
 
-	for (pcur = &pool->free_list; ; pcur = &(*pcur)->next) {
+	for (pcur = &pool->free_list;; pcur = &(*pcur)->next) {
 		struct xrp_allocation *cur = *pcur;
 
 		if (cur && cur->start + cur->size == xrp_allocation->start) {
 			struct xrp_allocation *next = cur->next;
 
 			pr_debug("merging block tail: %pap x 0x%x ->\n",
-				 &cur->start, cur->size);
+				&cur->start, cur->size);
 			cur->size += xrp_allocation->size;
 			pr_debug("... -> %pap x 0x%x\n",
-				 &cur->start, cur->size);
+				&cur->start, cur->size);
 			kfree(xrp_allocation);
 
 			if (next && cur->start + cur->size == next->start) {
 				pr_debug("merging with next block: %pap x 0x%x ->\n",
-					 &cur->start, cur->size);
+					&cur->start, cur->size);
 				cur->size += next->size;
 				cur->next = next->next;
 				pr_debug("... -> %pap x 0x%x\n",
-					 &cur->start, cur->size);
+					&cur->start, cur->size);
 				kfree(next);
 			}
 			break;
@@ -151,15 +150,15 @@ static void xrp_private_free(struct xrp_allocation *xrp_allocation)
 
 		if (!cur || xrp_allocation->start < cur->start) {
 			if (cur && xrp_allocation->start + xrp_allocation->size ==
-			    cur->start) {
+				cur->start) {
 				pr_debug("merging block head: %pap x 0x%x ->\n",
-					 &cur->start, cur->size);
+					&cur->start, cur->size);
 				cur->size += xrp_allocation->size;
 				cur->start = xrp_allocation->start;
 				pr_debug("... -> %pap x 0x%x\n",
-					 &cur->start, cur->size);
+					&cur->start, cur->size);
 				kfree(xrp_allocation);
-			} else {
+			}else {
 				pr_debug("inserting new free block\n");
 				xrp_allocation->next = cur;
 				*pcur = xrp_allocation;
@@ -172,12 +171,11 @@ static void xrp_private_free(struct xrp_allocation *xrp_allocation)
 }
 
 static long xrp_private_alloc(struct xrp_allocation_pool *pool,
-			      u32 size, u32 align,
-			      struct xrp_allocation **alloc)
+	u32 size, u32 align, struct xrp_allocation **alloc)
 {
 	struct xrp_private_pool *ppool = container_of(pool,
-						      struct xrp_private_pool,
-						      pool);
+		struct xrp_private_pool,
+		pool);
 	struct xrp_allocation **pcur;
 	struct xrp_allocation *cur = NULL;
 	struct xrp_allocation *new;
@@ -204,32 +202,32 @@ static long xrp_private_alloc(struct xrp_allocation_pool *pool,
 		aligned_start = ALIGN(cur->start, align);
 
 		if (aligned_start >= cur->start &&
-		    aligned_start - cur->start + size <= cur->size) {
+			aligned_start - cur->start + size <= cur->size) {
 			if (aligned_start == cur->start) {
 				if (aligned_start + size == cur->start + cur->size) {
 					pr_debug("reusing complete block: %pap x %x\n",
-						 &cur->start, cur->size);
+						&cur->start, cur->size);
 					*pcur = cur->next;
-				} else {
+				}else {
 					pr_debug("cutting block head: %pap x %x ->\n",
-						 &cur->start, cur->size);
+						&cur->start, cur->size);
 					cur->size -= aligned_start + size - cur->start;
 					cur->start = aligned_start + size;
 					pr_debug("... -> %pap x %x\n",
-						 &cur->start, cur->size);
+						&cur->start, cur->size);
 					cur = NULL;
 				}
-			} else {
+			}else {
 				if (aligned_start + size == cur->start + cur->size) {
 					pr_debug("cutting block tail: %pap x %x ->\n",
-						 &cur->start, cur->size);
+						&cur->start, cur->size);
 					cur->size = aligned_start - cur->start;
 					pr_debug("... -> %pap x %x\n",
-						 &cur->start, cur->size);
+						&cur->start, cur->size);
 					cur = NULL;
-				} else {
+				}else {
 					pr_debug("splitting block into two: %pap x %x ->\n",
-						 &cur->start, cur->size);
+						&cur->start, cur->size);
 					new->start = aligned_start + size;
 					new->size = cur->start +
 						cur->size - new->start;
@@ -239,8 +237,8 @@ static long xrp_private_alloc(struct xrp_allocation_pool *pool,
 					new->next = cur->next;
 					cur->next = new;
 					pr_debug("... -> %pap x %x + %pap x %x\n",
-						 &cur->start, cur->size,
-						 &new->start, new->size);
+						&cur->start, cur->size,
+						&new->start, new->size);
 
 					cur = NULL;
 					new = NULL;
@@ -248,7 +246,7 @@ static long xrp_private_alloc(struct xrp_allocation_pool *pool,
 			}
 			found = true;
 			break;
-		} else {
+		}else {
 			cur = NULL;
 		}
 	}
@@ -287,8 +285,8 @@ static long xrp_private_alloc(struct xrp_allocation_pool *pool,
 static void xrp_private_free_pool(struct xrp_allocation_pool *pool)
 {
 	struct xrp_private_pool *ppool = container_of(pool,
-						      struct xrp_private_pool,
-						      pool);
+		struct xrp_private_pool,
+		pool);
 	kfree(ppool->free_list);
 	kfree(ppool);
 }
@@ -296,8 +294,8 @@ static void xrp_private_free_pool(struct xrp_allocation_pool *pool)
 static phys_addr_t xrp_private_offset(const struct xrp_allocation *allocation)
 {
 	struct xrp_private_pool *ppool = container_of(allocation->pool,
-						      struct xrp_private_pool,
-						      pool);
+		struct xrp_private_pool,
+		pool);
 	return allocation->start - ppool->start;
 }
 
@@ -309,11 +307,11 @@ static const struct xrp_allocation_ops xrp_private_pool_ops = {
 };
 
 long xrp_init_private_pool(struct xrp_allocation_pool **ppool,
-			   phys_addr_t start, u32 size)
+	phys_addr_t start, u32 size)
 {
 	struct xrp_private_pool *pool = kmalloc(sizeof(*pool), GFP_KERNEL);
 	struct xrp_allocation *allocation = kmalloc(sizeof(*allocation),
-						    GFP_KERNEL);
+		GFP_KERNEL);
 
 	if (!pool || !allocation) {
 		kfree(pool);
@@ -336,5 +334,6 @@ long xrp_init_private_pool(struct xrp_allocation_pool **ppool,
 	};
 	mutex_init(&pool->free_list_lock);
 	*ppool = &pool->pool;
+
 	return 0;
 }
