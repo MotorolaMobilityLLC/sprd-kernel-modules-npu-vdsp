@@ -206,14 +206,15 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 	size = xtlib_pi_library_size((xtlib_packaged_library *)buffer);
 	/*alloc ion buffer later*/
 	lib_ion_mem = vmalloc(sizeof(struct ion_buf));
-	libinfo_ion_mem = vmalloc(sizeof(struct ion_buf));
-	if ((NULL == lib_ion_mem) || (NULL == libinfo_ion_mem)) {
-		pr_err("[ERROR]vmalloc fail,lib:%p,libinfo:%p\n", lib_ion_mem, libinfo_ion_mem);
-		if (NULL != lib_ion_mem)
-			vfree(lib_ion_mem);
-		if (NULL != libinfo_ion_mem)
-			vfree(libinfo_ion_mem);
+	if(NULL == lib_ion_mem) {
+		pr_err("[ERROR]vmalloc fail,lib:%p,libinfo:%p\n", lib_ion_mem);
 		return -ENOMEM;
+	}
+	libinfo_ion_mem = vmalloc(sizeof(struct ion_buf));
+	if(NULL == libinfo_ion_mem) {
+		pr_err("[ERROR]vmalloc fail,lib:%p,libinfo:%p\n", libinfo_ion_mem);
+		ret = -ENOMEM;
+		goto __load_internal_err0;
 	}
 	/*alloc lib ion buffer*/
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
@@ -221,10 +222,9 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 		ION_HEAP_ID_MASK_SYSTEM,
 		size);
 	if (ret != 0) {
+		ret = -ENOMEM;
 		pr_err("[ERROR]alloc lib_ion_mem failed\n");
-		vfree(lib_ion_mem);
-		vfree(libinfo_ion_mem);
-		return -ENOMEM;
+		goto __load_internal_err1;
 	}
 	lib_ion_mem->dev = xvp->dev;
 	/*alloc libinfo ion buffer*/
@@ -233,22 +233,39 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 		ION_HEAP_ID_MASK_SYSTEM,
 		sizeof(xtlib_pil_info));
 	if (ret != 0) {
+		ret = -ENOMEM;
 		pr_err("[ERROR]alloc libinfo_ion_mem failed\n");
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_ion_mem);
-		vfree(lib_ion_mem);
-		vfree(libinfo_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_ion_mem);
-		return -ENOMEM;
+		goto __load_internal_err2;
 	}
 	libinfo_ion_mem->dev = xvp->dev;
-	xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, lib_ion_mem);
+	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, lib_ion_mem);
+	if(ret != 0) {
+		pr_err("[ERROR]mem_kmap lib_ion_mem failed\n");
+		ret = -EINVAL;
+		goto __load_internal_err3;
+	}
 	kvaddr = (void*)lib_ion_mem->addr_k[0];
-	xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, lib_ion_mem, IOMMU_ALL);
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, lib_ion_mem, IOMMU_ALL);
+	if(ret != 0) {
+		pr_err("[ERROR] mem_iommu_map lib_ion_mem failed\n");
+		ret = -EINVAL;
+		goto __load_internal_err4;
+	}
 	kpaddr = lib_ion_mem->iova[0];
 
-	xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
+	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
+	if(ret != 0) {
+		pr_err("[ERROR]mem_kmap libinfo_ion_mem failed\n");
+		ret = -EINVAL;
+		goto __load_internal_err5;
+	}
 	kvaddr_libinfo = (void*)libinfo_ion_mem->addr_k[0];
-	xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, libinfo_ion_mem, IOMMU_ALL);
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, libinfo_ion_mem, IOMMU_ALL);
+	if(ret != 0) {
+		pr_err("[ERROR]mem_iommu_map libinfo_ion_mem failed\n");
+		ret = -EINVAL;
+		goto __load_internal_err6;
+	}
 	kpaddr_libinfo = libinfo_ion_mem->iova[0];
 	pr_debug("buffer:%p, kpaddr:%lx, kvaddr:%p, (libinfo)kpaddr:%lx, kvaddr:%p\n",
 		buffer, (unsigned long)kpaddr, kvaddr,
@@ -258,34 +275,16 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 		(xtlib_pil_info*)kvaddr_libinfo, xt_lib_memcpy, xt_lib_memset, kvaddr);
 	if (result == 0){
 		/*free ion buffer*/
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, lib_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-			lib_ion_mem, IOMMU_ALL);
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-			libinfo_ion_mem, IOMMU_ALL);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo_ion_mem);
-		vfree(lib_ion_mem);
-		vfree(libinfo_ion_mem);
 		pr_err("[ERROR]xtlib_host_load_pi_library failed\n");
-		return -1;
+		ret = -EINVAL;
+		goto __load_internal_err7;
 	}
 
 	libback_buffer = vmalloc(size);
 	if (libback_buffer == NULL) {
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, lib_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-			lib_ion_mem, IOMMU_ALL);
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-			libinfo_ion_mem, IOMMU_ALL);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo_ion_mem);
-		vfree(lib_ion_mem);
-		vfree(libinfo_ion_mem);
 		pr_err("[ERROR]vmalloc back buffer is NULL\n");
-		return -1;
+		ret = -ENOMEM;
+		goto __load_internal_err7;
 	}
 
 	/*back up the code for reboot*/
@@ -294,18 +293,8 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 	if (new_element == NULL) {
 		/*free ion buffer*/
 		pr_err("[ERROR]libinfo_alloc_element failed\n");
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, lib_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-			lib_ion_mem, IOMMU_ALL);
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-			libinfo_ion_mem, IOMMU_ALL);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_ion_mem);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo_ion_mem);
-		vfree(lib_ion_mem);
-		vfree(libinfo_ion_mem);
-		vfree(libback_buffer);
-		return -1;
+		ret = -ENOMEM;
+		goto __load_internal_err8;
 	}else {
 		sprintf(new_element->libname, "%s", libname);
 		/*may be change later*/
@@ -325,6 +314,25 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 		libinfo_list_size(&xvp->load_lib.lib_list));
 
 	return 0;
+__load_internal_err8:
+	vfree(libback_buffer);
+__load_internal_err7:
+	xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc , libinfo_ion_mem , IOMMU_ALL);
+__load_internal_err6:
+	xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
+__load_internal_err5:
+	xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, lib_ion_mem, IOMMU_ALL);
+__load_internal_err4:
+	xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, lib_ion_mem);
+__load_internal_err3:
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo_ion_mem);
+__load_internal_err2:
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_ion_mem);
+__load_internal_err1:
+	vfree(libinfo_ion_mem);
+__load_internal_err0:
+	vfree(lib_ion_mem);
+	return ret;
 }
 enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request *rq)
 {
@@ -836,6 +844,7 @@ int32_t xrp_pre_process_request(struct xvp *xvp, struct xrp_request *rq,
 				lib_result = xrp_library_unload(xvp, rq, libname);
 				if (lib_result != 0) {
 					pr_err("[ERROR]xrp_library_unload failed:%d\n", lib_result);
+					xrp_library_increase(xvp , libname);
 					return -EINVAL;
 				}
 			}else {
@@ -893,7 +902,9 @@ int post_process_request(struct xvp *xvp, struct xrp_request *rq,
 			libinfo = xrp_library_getlibinfo(xvp, libname);
 			if (NULL != libinfo)
 				libinfo->lib_state = XRP_LIBRARY_IDLE;
-		}else {
+			pr_info("libname:%s, libstate XRP_LIBRARY_IDLE libinfo:%p\n", libname , libinfo);
+		} else {
+			xrp_library_increase(xvp , libname);
 			pr_err("[ERROR]libname:%s, unload failed\n", libname);
 			ret = -EFAULT;
 		}

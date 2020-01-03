@@ -817,7 +817,7 @@ static int sprd_unmap_request(struct file *filp, struct xrp_request *rq)
 			IOMMU_ALL);
 		ret = xvp->vdsp_mem_desc->ops->mem_free(
 			xvp->vdsp_mem_desc,
-			rq->dsp_buf);
+				rq->dsp_buf);
 		kfree(rq->dsp_buf);
 		for (i = 0; i < n_buffers; ++i) {
 			ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
@@ -848,9 +848,9 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq)
 	struct ion_buf *p_in_buf = &rq->ion_in_buf;
 	struct ion_buf *p_out_buf = &rq->ion_out_buf;
 	struct ion_buf *p_dsp_buf;
-	int i;
+	int i , nbufferflag;
 	long ret = 0;
-
+	nbufferflag = 0;
 	memset((void *)&rq->ion_in_buf, 0x00, sizeof(struct ion_buf));
 	memset((void *)&rq->ion_out_buf, 0x00, sizeof(struct ion_buf));
 
@@ -864,43 +864,70 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq)
 
 	rq->n_buffers = n_buffers;
 	if (n_buffers) {
+		nbufferflag = 1;
 		rq->dsp_buf = kmalloc(sizeof(*rq->dsp_buf), GFP_KERNEL);
 		if (!rq->dsp_buf) {
 			pr_err("[ERROR]fail to kmalloc buffer.\n");
 			return -ENOMEM;
 		}
-		xvp->vdsp_mem_desc->ops->mem_alloc(
+		ret = xvp->vdsp_mem_desc->ops->mem_alloc(
 			xvp->vdsp_mem_desc,
 			rq->dsp_buf,
 			ION_HEAP_ID_MASK_SYSTEM,
 			n_buffers * sizeof(*rq->dsp_buffer));
-		if (!rq->dsp_buf) {
+		if (ret != 0) {
 			pr_err("[ERROR]fail to mem alloc buffer.\n");
+			kfree(rq->dsp_buf);
 			return -ENOMEM;
 		}
-		xvp->vdsp_mem_desc->ops->mem_kmap(
+		ret = xvp->vdsp_mem_desc->ops->mem_kmap(
 			xvp->vdsp_mem_desc,
 			rq->dsp_buf);
+		if(ret != 0) {
+			pr_err("[ERROR]fail to mem kmap dsp_buf\n");
+			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc , rq->dsp_buf);
+			kfree(rq->dsp_buf);
+			return -EINVAL;
+		}
 		rq->dsp_buf->dev = xvp->dev;
-		xvp->vdsp_mem_desc->ops->mem_iommu_map(
+		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
 			xvp->vdsp_mem_desc,
 			rq->dsp_buf,
 			IOMMU_ALL);
+		if(ret != 0) {
+			pr_err("[ERROR]fail to mem_iommu_map dsp_buf\n");
+			xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc , rq->dsp_buf);
+			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc , rq->dsp_buf);
+			kfree(rq->dsp_buf);
+			return -EINVAL;
+		}
 		rq->dsp_buffer_phys = (phys_addr_t)rq->dsp_buf->iova[0];
 
 		rq->ion_dsp_pool =
 			kmalloc(n_buffers * sizeof(*rq->ion_dsp_pool),
 			GFP_KERNEL);
-		if (!rq->ion_dsp_pool)
+		if (!rq->ion_dsp_pool) {
+			pr_err("[ERROR]fail to kmalloc ion_dsp_pool\n");
+			xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc , rq->dsp_buf , IOMMU_ALL);
+			xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc , rq->dsp_buf);
+			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc , rq->dsp_buf);
+			kfree(rq->dsp_buf);
 			return -ENOMEM;
+		}
 		memset((void *)rq->ion_dsp_pool,
 			0x00, n_buffers * sizeof(*rq->ion_dsp_pool));
 		if (n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT) {
 			rq->dsp_buffer =
 				kmalloc(n_buffers * sizeof(*rq->dsp_buffer),
 				GFP_KERNEL);
-			if (!rq->dsp_buffer)
+			if (!rq->dsp_buffer) {
+				xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc , rq->dsp_buf , IOMMU_ALL);
+				xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc , rq->dsp_buf);
+				xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc , rq->dsp_buf);
+				kfree(rq->ion_dsp_pool);
+				kfree(rq->dsp_buf);
 				return -ENOMEM;
+			}
 		}else {
 			rq->dsp_buffer = rq->buffer_data;
 		}
@@ -910,7 +937,8 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq)
 	if ((rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)) {
 		if (rq->ioctl_queue.in_data_fd < 0) {
 			pr_err("[ERROR]in data fd is:%d\n", rq->ioctl_queue.in_data_fd);
-			return -EFAULT;
+			ret = -EFAULT;
+			goto free_indata_err;
 		}
 		p_in_buf->mfd[0] = rq->ioctl_queue.in_data_fd;
 		p_in_buf->dev = xvp->dev;
@@ -919,7 +947,8 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq)
 			p_in_buf);
 		if (ret) {
 			pr_err("[ERROR]fail to get in_ion_buf\n");
-			return -EFAULT;
+			ret = -EFAULT;
+			goto free_indata_err;
 		}
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
 			xvp->vdsp_mem_desc,
@@ -927,7 +956,8 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq)
 			IOMMU_ALL);
 		if (ret) {
 			pr_err("[ERROR]fail to get in_data addr!!!!\n");
-			return -EFAULT;
+			ret = -EFAULT;
+			goto free_indata_err;
 		}
 		rq->in_data_phys = (uint32_t)p_in_buf->iova[0];
 
@@ -940,7 +970,8 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq)
 			(void __user *)(unsigned long)rq->ioctl_queue.in_data_addr,
 			rq->ioctl_queue.in_data_size)) {
 			pr_err("[ERROR]in_data could not be copied\n");
-			return -EFAULT;
+			ret = -EFAULT;
+			goto free_indata_err;
 		}
 	}
 
@@ -1069,6 +1100,16 @@ share_err:
 	if (ret < 0)
 		sprd_unmap_request(filp, rq);
 
+	return ret;
+free_indata_err:
+	if(nbufferflag == 1) {
+		xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc , rq->dsp_buf , IOMMU_ALL);
+		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc , rq->dsp_buf);
+		kfree(rq->ion_dsp_pool);
+		if(n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT)
+			kfree(rq->dsp_buffer);
+		kfree(rq->dsp_buf);
+        }
 	return ret;
 }
 
