@@ -40,6 +40,11 @@
 #include "xrp_kernel_dsp_interface.h"
 
 #define DOWNLOAD_FIRMWARE
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+#define pr_fmt(fmt) "sprd-vdsp: faceid %d %d %s : "\
+        fmt, current->pid, __LINE__, __func__
 
 
 static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp , Elf32_Phdr *phdr)
@@ -48,8 +53,7 @@ static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp , Elf32_Phdr *phdr)
 	int32_t offset;
 	uint8_t *virstart = NULL;
 #endif
-	printk("%s phdr->p_paddr:%lx , firmware viraddr:%lx\n" ,
-			__func__ , (unsigned long)phdr->p_paddr,
+	pr_debug("p_paddr:%lx , firmware viraddr:%lx\n", (unsigned long)phdr->p_paddr,
 			(unsigned long)xvp->dsp_firmware_addr);
 #ifdef DOWNLOAD_FIRMWARE
 	if(phdr->p_paddr < xvp->dsp_firmware_addr)
@@ -58,16 +62,15 @@ static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp , Elf32_Phdr *phdr)
 
 	virstart = (uint8_t*)xvp->firmware2_viraddr;
 
-	pr_info("%s virstart:%p, offset:%x"
-			"poffset:%x,pmemsz:%x, pfilesz:%x\n",
-			__func__, virstart, offset,
+	pr_debug("virstart:%p, offset:%x"
+			"poffset:%x,pmemsz:%x, pfilesz:%x\n", virstart, offset,
 			phdr->p_offset, phdr->p_memsz, phdr->p_filesz);
 	memcpy((void*)(virstart + offset) ,
 			xvp->firmware2.data + phdr->p_offset , phdr->p_filesz);
 	if(phdr->p_memsz > phdr->p_filesz)
 	{
-		pr_info("%s memset vir:%p , size:%x\n" ,
-				__func__ , (void*)(virstart+ offset + phdr->p_filesz) ,
+		pr_debug("memset vir:%p , size:%x\n", 
+			(void*)(virstart+ offset + phdr->p_filesz) ,
 				(phdr->p_memsz - phdr->p_filesz));
 		memset((void*)(virstart + offset + phdr->p_filesz) , 0 ,
 				(phdr->p_memsz - phdr->p_filesz));
@@ -84,13 +87,12 @@ static int xrp_load_segment_to_iomem(struct xvp *xvp, Elf32_Phdr *phdr)
 	void __iomem *p = ioremap(pa, phdr->p_memsz);
 
 	if (!p) {
-		dev_err(xvp->dev,
-			"couldn't ioremap %pap x 0x%08x\n",
+		pr_err("couldn't ioremap %pap x 0x%08x\n",
 			&pa, (u32)phdr->p_memsz);
 		return -EINVAL;
 	}
-	pr_info("%s ioremap p:%p, p_paddr:%lx , memcpyhw:%p , memsethw:%p\n" ,
-			__func__ , p , (unsigned long)pa ,
+	pr_debug("ioremap p:%p, p_paddr:%lx , memcpyhw:%p , memsethw:%p\n", 
+			p , (unsigned long)pa ,
 			xvp->hw_ops->memcpy_tohw , xvp->hw_ops->memset_hw);
 	if (xvp->hw_ops->memcpy_tohw)
 		xvp->hw_ops->memcpy_tohw(p, (void *)xvp->firmware2.data +
@@ -129,15 +131,13 @@ static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
 	unsigned i;
 
 	if (ehdr->e_shoff == 0) {
-		dev_dbg(xvp->dev, "%s: no section header in the firmware image",
-			__func__);
+		pr_err("no section header in the firmware image\n");
 		return -ENOENT;
 	}
 	if (ehdr->e_shoff > xvp->firmware2.size ||
 	    ehdr->e_shnum * ehdr->e_shentsize >
 		xvp->firmware2.size - ehdr->e_shoff) {
-		dev_err(xvp->dev, "%s: bad firmware SHDR information",
-			__func__);
+		pr_err("bad firmware SHDR information\n");
 		return -EINVAL;
 	}
 
@@ -159,20 +159,17 @@ static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
 	}
 
 	if (!sh_symtab || !sh_strtab) {
-		dev_dbg(xvp->dev, "%s: no symtab or strtab in the firmware image",
-			__func__);
+		pr_err("no symtab or strtab in the firmware image\n");
 		return -ENOENT;
 	}
 
 	if (xrp_section_bad(xvp, sh_symtab)) {
-		dev_err(xvp->dev, "%s: bad firmware SYMTAB section information",
-			__func__);
+		pr_err("bad firmware SYMTAB section information\n");
 		return -EINVAL;
 	}
 
 	if (xrp_section_bad(xvp, sh_strtab)) {
-		dev_err(xvp->dev, "%s: bad firmware STRTAB section information",
-			__func__);
+		pr_err("bad firmware STRTAB section information\n");
 		return -EINVAL;
 	}
 
@@ -196,29 +193,26 @@ static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
 			Elf32_Off in_section_off = esym->st_value - shdr->sh_addr;
 
 			if (xrp_section_bad(xvp, shdr)) {
-				dev_err(xvp->dev, "%s: bad firmware section #%d information",
-					__func__, esym->st_shndx);
+				pr_err("bad firmware section #%d information\n", esym->st_shndx);
 				return -EINVAL;
 			}
 
 			if (esym->st_value < shdr->sh_addr ||
 			    in_section_off > shdr->sh_size ||
 			    esym->st_size > shdr->sh_size - in_section_off) {
-				dev_err(xvp->dev, "%s: bad symbol information",
-					__func__);
+				pr_err("bad symbol information\n");
 				return -EINVAL;
 			}
 			addr = (void *)xvp->firmware2.data + shdr->sh_offset +
 				in_section_off;
 
-			dev_dbg(xvp->dev, "%s: found symbol, st_shndx = %d, "
+			pr_debug("found symbol, st_shndx = %d, "
 				"sh_offset = 0x%08x, sh_addr = 0x%08x, "
-				"st_value = 0x%08x, address = %p",
-				__func__, esym->st_shndx, shdr->sh_offset,
+				"st_value = 0x%08x, address = %p", 
+				esym->st_shndx, shdr->sh_offset,
 				shdr->sh_addr, esym->st_value, addr);
 		} else {
-			dev_dbg(xvp->dev, "%s: unsupported section index in found symbol: 0x%x",
-				__func__, esym->st_shndx);
+			pr_err("unsupported section index in found symbol: 0x%x", esym->st_shndx);
 			return -EINVAL;
 		}
 		break;
@@ -243,22 +237,19 @@ static int xrp_firmware_fixup_symbol(struct xvp *xvp, const char *name,
 
 	rc = xrp_firmware_find_symbol(xvp, name, &addr, &sz);
 	if (rc < 0) {
-		dev_err(xvp->dev, "%s: symbol \"%s\" is not found",
-			__func__, name);
+		pr_err("symbol \"%s\" is not found\n", name);
 		return rc;
 	}
 
 	if (sz != sizeof(u32)) {
-		dev_err(xvp->dev, "%s: symbol \"%s\" has wrong size: %zu",
-			__func__, name, sz);
+		pr_err("symbol \"%s\" has wrong size: %zu\n", name, sz);
 		return -EINVAL;
 	}
 
 	/* update data associated with symbol */
 
 	if (memcmp(addr, &v32, sz) != 0) {
-		dev_dbg(xvp->dev, "%s: value pointed to by symbol is incorrect: %*ph",
-			__func__, (int)sz, addr);
+		pr_err("value pointed to by symbol is incorrect: %*ph\n", (int)sz, addr);
 	}
 
 	v32 = v;
@@ -273,24 +264,24 @@ static int xrp_load_firmware(struct xvp *xvp)
 	int i;
 
 	if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG)) {
-		dev_err(xvp->dev, "bad firmware ELF magic\n");
+		pr_err("bad firmware ELF magic\n");
 		return -EINVAL;
 	}
 
 	if (ehdr->e_type != ET_EXEC) {
-		dev_err(xvp->dev, "bad firmware ELF type\n");
+		pr_err("bad firmware ELF type\n");
 		return -EINVAL;
 	}
 
 	if (ehdr->e_machine != 94 /*EM_XTENSA*/) {
-		dev_err(xvp->dev, "bad firmware ELF machine\n");
+		pr_err("bad firmware ELF machine\n");
 		return -EINVAL;
 	}
 
 	if (ehdr->e_phoff >= xvp->firmware2.size ||
 	    ehdr->e_phoff +
 	    ehdr->e_phentsize * ehdr->e_phnum > xvp->firmware2.size) {
-		dev_err(xvp->dev, "bad firmware ELF PHDR information\n");
+		pr_err("bad firmware ELF PHDR information\n");
 		return -EINVAL;
 	}
 
@@ -310,9 +301,7 @@ static int xrp_load_firmware(struct xvp *xvp)
 
 		if (phdr->p_offset >= xvp->firmware2.size ||
 		    phdr->p_offset + phdr->p_filesz > xvp->firmware2.size) {
-			dev_err(xvp->dev,
-				"bad firmware ELF program header entry %d\n",
-				i);
+			pr_err("bad firmware ELF program header entry %d\n",i);
 			return -EINVAL;
 		}
 
@@ -332,12 +321,12 @@ static int xrp_load_firmware(struct xvp *xvp)
 int sprd_load_faceid_firmware(struct xvp *xvp)
 {
 	int ret;
-	pr_info("%s start\n", __func__);
+
 	ret = xrp_load_firmware(xvp);
 
 	if (ret < 0) {
-		pr_err("%s ret:%d\n" , __func__ ,ret);
+		pr_err("load fw failed, ret:%d\n" ,ret);
 	}
-	pr_info("%s done\n", __func__);
+
 	return ret;
 }

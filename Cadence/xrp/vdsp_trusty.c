@@ -24,6 +24,14 @@
 
 #define VDSP_TA_PORT_NAME        "com.android.trusty.vdsp"
 
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+#define pr_fmt(fmt) "sprd-vdsp: faceid %d %d %s : "\
+        fmt, current->pid, __LINE__, __func__
+
+
+
 static struct vdsp_ca_ctrl vdsp_ca ={TIPC_CHANNEL_DISCONNECTED, 0, };
 static struct bootcp_ca_ctrl bootcp_ca ={TIPC_CHANNEL_DISCONNECTED, 0, };
 
@@ -38,7 +46,7 @@ struct tipc_msg_buf *vdsp_ca_handle_msg(void *data, struct tipc_msg_buf *rxbuf,u
 		/* get new buffer */
 		newbuf = tipc_chan_get_rxbuf(ca->chan);
 		if (newbuf) {
-			pr_info(" received new data, rxbuf %p, newbuf %p\n",
+			pr_debug("received new data, rxbuf %p, newbuf %p\n",
 						  rxbuf, newbuf);
 			/* queue an old buffer and return a new one */
 			list_add_tail(&rxbuf->node, &ca->rx_msg_queue);
@@ -48,7 +56,7 @@ struct tipc_msg_buf *vdsp_ca_handle_msg(void *data, struct tipc_msg_buf *rxbuf,u
 			 * return an old buffer effectively discarding
 			 * incoming message
 			 */
-			pr_info(" discard incoming message\n");
+			pr_debug("discard incoming message\n");
 
 			newbuf = rxbuf;
 		}
@@ -63,16 +71,16 @@ static void vdsp_ca_handle_event(void *data, int event)
 
 	switch (event) {
 	case TIPC_CHANNEL_SHUTDOWN:
-		pr_info("vdsp channel shutdown\n");
+		pr_debug("vdsp channel shutdown\n");
 		break;
 
 	case TIPC_CHANNEL_DISCONNECTED:
-		pr_info("vdsp channel disconnected\n");
+		pr_debug("vdsp channel disconnected\n");
 		ca->chanel_state = TIPC_CHANNEL_DISCONNECTED;
 		break;
 
 	case TIPC_CHANNEL_CONNECTED:
-		pr_info("vdsp channel connected\n");
+		pr_debug("vdsp channel connected\n");
 		ca->chanel_state = TIPC_CHANNEL_CONNECTED;
 		wake_up_interruptible(&ca->readq);
 		break;
@@ -108,10 +116,10 @@ bool vdsp_ca_connect(void)
 	int chan_conn_ret =0;
 	bool ret = false;
 
-	pr_info("vdsp chanel_state =%d\n", ca->chanel_state);
+	pr_debug("vdsp chanel_state =%d\n", ca->chanel_state);
 
 	if (ca->chanel_state == TIPC_CHANNEL_CONNECTED) {
-		pr_info("vdsp has already been connected\n");
+		pr_debug("vdsp has already been connected\n");
 		return true;
 	}
 
@@ -134,11 +142,9 @@ bool vdsp_ca_connect(void)
 	chan_conn_ret = tipc_chan_connect(ca->chan, VDSP_TA_PORT_NAME);
 	if (chan_conn_ret) {
 		ret = false;
-		pr_err("vdsp connect channel failed\n");
 		return ret;
 	} else {
 		ret = true;
-		pr_info("vdsp connect channel done\n");
 	}
 
 	if (!wait_event_interruptible_timeout(ca->readq,
@@ -169,7 +175,7 @@ void vdsp_ca_disconnect(void)
 	 /*todo for Stability test */
 	 //tipc_chan_destroy(ca->chan);
 
-	pr_info(" disconnect\n");
+	pr_debug("disconnect\n");
 }
 bool vdsp_ca_write(void *buf, size_t len)
 {
@@ -178,8 +184,6 @@ bool vdsp_ca_write(void *buf, size_t len)
 	struct tipc_msg_buf *txbuf = NULL;
 	struct vdsp_ca_ctrl *ca = &vdsp_ca;
 	int  msg_ret =0;
-
-	pr_info("ca write enter");
 
 	if (ca->chanel_state != TIPC_CHANNEL_CONNECTED)
 		return false;
@@ -214,12 +218,10 @@ ssize_t vdsp_ca_read(void *buf, size_t max_len)
 	ssize_t	len;
 	struct vdsp_ca_ctrl *ca = &vdsp_ca;
 
-	pr_info(" ca read enter");
-
 	if (!wait_event_interruptible_timeout(ca->readq,
 					      !list_empty(&ca->rx_msg_queue),
 					      msecs_to_jiffies(CA_READ_TIMEOUT))) {
-		pr_err(" wait read response time out!\n");
+		pr_err("wait read response time out!\n");
 		return -ETIMEDOUT;
 	}
 
@@ -242,18 +244,16 @@ bool vdsp_ca_wait_response(uint32_t cmd)
 {
 	ssize_t size;
 	bool ret = true;
-	struct status_message status_msg ;
-
-	pr_info(" wait resp enter");
+	struct status_message status_msg;
 
 	size = vdsp_ca_read(&status_msg, sizeof(struct status_message));
 	if (size !=sizeof(struct status_message )) {
-		pr_err("  remote response size failed\n");
+		pr_err("remote response size failed\n");
 		return false;
 	}
 
 	if (status_msg.cmd == (cmd | TA_RESP_BIT ) ) {
-		pr_err(" remote ack_msg.cmd failed\n");
+		pr_err("remote ack_msg.cmd failed\n");
 		return false;
 	}
 
@@ -262,7 +262,7 @@ bool vdsp_ca_wait_response(uint32_t cmd)
 		return false;
 	}
 
-	pr_info("response ret =%d\n", ret);
+	pr_debug("response ret =%d\n", ret);
 	return true;
 }
 
@@ -271,24 +271,22 @@ bool vdsp_ca_wait_ack(uint32_t cmd)
 {
 	ssize_t size;
 	bool ret = true;
-	struct ack_message ack_msg  ;
-
-	pr_info(" wait ack enter");
+	struct ack_message ack_msg ;
 
 	size = vdsp_ca_read(&ack_msg, sizeof(struct ack_message));
 
 	if (size !=sizeof(struct ack_message )) {
-		pr_err("  remote response size failed, size= %zd\n", size);
+		pr_err("remote response size failed, size= %zd\n", size);
 		return false;
 	}
 
 	if (ack_msg.cmd != (cmd | TA_RESP_BIT ) ) {
-		pr_err(" remote ack_msg.cmd failed, ack_msg.cmd=0x%x, cmd=0x%x\n", ack_msg.cmd, cmd);
+		pr_err("remote ack_msg.cmd failed, ack_msg.cmd=0x%x, cmd=0x%x\n", ack_msg.cmd, cmd);
 		return false;
 	}
 
 	if (ack_msg.ack ==  TA_CMD_ERR) {
-		pr_err(" remote ack_msg.ack failed, ack=0x%x\n", ack_msg.ack);
+		pr_err("remote ack_msg.ack failed, ack=0x%x\n", ack_msg.ack);
 		return false;
 	}
 
@@ -302,11 +300,11 @@ bool vdsp_set_sec_mode(struct vdsp_msg *vdsp_msg)
 	struct vdsp_msg msg ;
 	struct vdsp_ca_ctrl *ca = &vdsp_ca;
 
-	pr_info(" ca chanel_state =%d, vdsp_type=%d, work_mode=%d",  ca->chanel_state,
+	pr_debug("ca chanel_state =%d, vdsp_type=%d, work_mode=%d", ca->chanel_state,
 				vdsp_msg->vdsp_type, vdsp_msg->msg_cmd);
 
 	if (ca->chanel_state != TIPC_CHANNEL_CONNECTED) {
-		pr_err(" enter ta mode fail, con err\n");
+		pr_err("enter ta mode fail, con err\n");
 		return false;
 	}
 
@@ -316,7 +314,7 @@ bool vdsp_set_sec_mode(struct vdsp_msg *vdsp_msg)
 
 	ret = vdsp_ca_write(&msg, sizeof(struct vdsp_msg));
 	if ( !ret ) {
-		pr_err(" cam_ca_write fail ret =%d\n",  ret);
+		pr_err("cam_ca_write fail ret =%d\n", ret);
 		mutex_unlock(&ca->wlock);
 		return ret;
 	}
@@ -325,7 +323,7 @@ bool vdsp_set_sec_mode(struct vdsp_msg *vdsp_msg)
 
 	mutex_unlock(&ca->wlock);
 
-	pr_info("vdsp tee ret =%d\n",   ret);
+	pr_debug("vdsp tee ret =%d\n",   ret);
 
 	return ret;
 
@@ -342,7 +340,7 @@ struct tipc_msg_buf *bootcp_ca_handle_msg(void *data, struct tipc_msg_buf *rxbuf
 		/* get new buffer */
 		newbuf = tipc_chan_get_rxbuf(ca->chan);
 		if (newbuf) {
-			pr_info("bootcp received new data, rxbuf %p, newbuf %p\n",
+			pr_debug("bootcp received new data, rxbuf %p, newbuf %p\n",
 						  rxbuf, newbuf);
 			/* queue an old buffer and return a new one */
 			list_add_tail(&rxbuf->node, &ca->rx_msg_queue);
@@ -352,7 +350,7 @@ struct tipc_msg_buf *bootcp_ca_handle_msg(void *data, struct tipc_msg_buf *rxbuf
 			 * return an old buffer effectively discarding
 			 * incoming message
 			 */
-			pr_info("bootcp discard incoming message\n");
+			pr_debug("bootcp discard incoming message\n");
 
 			newbuf = rxbuf;
 		}
@@ -367,16 +365,16 @@ static void bootcp_ca_handle_event(void *data, int event)
 
 	switch (event) {
 	case TIPC_CHANNEL_SHUTDOWN:
-		pr_info("bootcp channel shutdown\n");
+		pr_debug("bootcp channel shutdown\n");
 		break;
 
 	case TIPC_CHANNEL_DISCONNECTED:
-		pr_info("bootcp channel disconnected\n");
+		pr_debug("bootcp channel disconnected\n");
 		ca->chanel_state = TIPC_CHANNEL_DISCONNECTED;
 		break;
 
 	case TIPC_CHANNEL_CONNECTED:
-		pr_info("bootcp channel connected\n");
+		pr_debug("bootcp channel connected\n");
 		ca->chanel_state = TIPC_CHANNEL_CONNECTED;
 		wake_up_interruptible(&ca->readq);
 		break;
@@ -400,7 +398,7 @@ bool trusty_kernelbootcp_connect(void)
 	//pr_info("bootcp chanel_state =%d\n", ca->chanel_state);
 
 	if (ca->chanel_state == TIPC_CHANNEL_CONNECTED) {
-		pr_info("bootcp has already been connected\n");
+		pr_debug("bootcp has already been connected\n");
 		return true;
 	}
 
@@ -423,11 +421,9 @@ bool trusty_kernelbootcp_connect(void)
 	chan_conn_ret = tipc_chan_connect(ca->chan, KERNELBOOTCP_PORT);
 	if (chan_conn_ret) {
 		ret = false;
-		pr_err("bootcp connect channel failed\n");
 		return ret;
 	} else {
 		ret = true;
-		pr_info("bootcp connect channel done\n");
 	}
 
 	if (!wait_event_interruptible_timeout(ca->readq,
@@ -459,7 +455,7 @@ void trusty_kernelbootcp_disconnect(void)
 	 /*todo for Stability test */
 	 //tipc_chan_destroy(ca->chan);
 
-	pr_info("bootcp disconnect\n");
+	pr_debug("bootcp disconnect\n");
 
 }
 
@@ -470,8 +466,6 @@ bool bootcp_ca_write(void *buf, size_t len)
 	struct tipc_msg_buf *txbuf = NULL;
 	struct bootcp_ca_ctrl *ca = &bootcp_ca;
 	int  msg_ret =0;
-
-	pr_info("bootcp ca write enter");
 
 	if (ca->chanel_state != TIPC_CHANNEL_CONNECTED)
 		return false;
@@ -506,8 +500,6 @@ ssize_t bootcp_ca_read(void *buf, size_t max_len)
 	ssize_t	len;
 	struct bootcp_ca_ctrl *ca = &bootcp_ca;
 
-	pr_info("bootcp ca read enter");
-
 	if (!wait_event_interruptible_timeout(ca->readq,
 					      !list_empty(&ca->rx_msg_queue),
 					      msecs_to_jiffies(CA_READ_TIMEOUT))) {
@@ -535,12 +527,10 @@ bool bootcp_ca_wait_ack(uint32_t cmd)
 	bool ret = true;
 	struct kernelbootcp_message ack_msg;
 
-	pr_info("bootcp wait ack enter\n");
-
 	size = bootcp_ca_read(&ack_msg, sizeof(struct kernelbootcp_message));
 
 	if (size !=sizeof(struct kernelbootcp_message )) {
-		pr_err("bootcp  remote response size failed, size= %zd\n", size);
+		pr_err("bootcp remote response size failed, size= %zd\n", size);
 		return false;
 	}
 
@@ -572,7 +562,7 @@ bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V  *table)
 	msg->cmd = KERNEL_BOOTCP_UNLOCK_DDR_VDSP;
 
 	memcpy(msg->payload, table, sizeof(KBC_LOAD_TABLE_V));
-	pr_info("bootcp unlock ddr msg_size = %zd \n", msg_size);
+	pr_debug("bootcp unlock ddr msg_size = %zd \n", msg_size);
 
 	ret = bootcp_ca_write(msg, msg_size);
 	if ( !ret ) {
@@ -586,7 +576,7 @@ bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V  *table)
 
 	mutex_unlock(&ca->wlock);
 
-	pr_info("bootcp ret =%d\n", ret);
+	pr_debug("bootcp ret =%d\n", ret);
 	kfree(msg);
 	return ret;
 }
@@ -609,7 +599,7 @@ bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V  *table)
 	msg->cmd = KERNEL_BOOTCP_VERIFY_VDSP;
 
 	memcpy(msg->payload, table, sizeof(KBC_LOAD_TABLE_V));
-	pr_info("bootcp verify msg_size = %zd \n", msg_size);
+	pr_debug("bootcp verify msg_size = %zd \n", msg_size);
 
 	ret = bootcp_ca_write(msg, msg_size);
 	if ( !ret ) {
@@ -623,7 +613,7 @@ bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V  *table)
 
 	mutex_unlock(&ca->wlock);
 
-	pr_info("bootcp ret =%d\n", ret);
+	pr_debug("bootcp ret =%d\n", ret);
 	kfree(msg);
 	return ret;
 

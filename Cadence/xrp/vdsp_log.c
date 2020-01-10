@@ -12,6 +12,14 @@
 #define BANK_BUSY 0
 #define BANK_READY 1
 
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+
+#define pr_fmt(fmt) "sprd-vdsp: log %d %d : "\
+        fmt, current->pid, __LINE__
+
+
 struct log_header_stru
 {
 	volatile int32_t mode;
@@ -45,10 +53,6 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 	struct log_header_stru *log =
 		(struct log_header_stru*)s->log_vaddr;
 
-	pr_info("mode %d, bank_size %d, flag0 %d, flag1 %d\n",
-		log->mode,log->bank_size,log->flag[0],log->flag[1]);
-
-
 	if(BANK_READY == log->flag[0])
 	{
 		bank = 0;
@@ -61,12 +65,12 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 	}
 	else
 	{
-		pr_info("bank is busy\n");
+		pr_err("bank is busy\n");
 		return;
 	}
 	get = s->get;
 	put = log->log_size[bank];
-	pr_info("addr %x, log size %d\n", addr, put);
+	pr_debug("addr %x, log size %d\n", addr, put);
 	while (put != get) {
 			/* Make sure that the read of put occurs before the read of log data */
 			rmb();
@@ -77,7 +81,7 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 			/* Force the loads from log_read_line to complete. */
 			rmb();
 
-		pr_info("vdsp: %s", s->line_buffer);
+		pr_info("%s", s->line_buffer);
 		get += read_chars;
 	}
 	log->flag[bank] = BANK_BUSY;
@@ -94,7 +98,6 @@ irqreturn_t vdsp_log_irq_handler(int irq, void *private)
 	vlw = this_cpu_ptr(s->nop_works);
 	queue_work(s->nop_wq, &vlw->work);
 
-	pr_info("add queue work.\n");
 	return IRQ_HANDLED;
 }
 static void vdsp_log_nop_work_func(struct work_struct *work)
@@ -103,7 +106,6 @@ static void vdsp_log_nop_work_func(struct work_struct *work)
 	struct vdsp_log_work *vlw = container_of(work, struct vdsp_log_work, work);
 	unsigned long flags;
 
-	pr_info("%s\n",__func__);
 	s = vlw->vls;
 	spin_lock_irqsave(&s->lock, flags);
 	vdsp_dump_logs(s);
@@ -121,7 +123,7 @@ int vdsp_log_alloc_buffer(struct xvp *xvp)
 					ION_HEAP_ID_MASK_VDSP,
 					VDSP_LOG_BUFFER_SZIE);
 	if(0 != ret) {
-		pr_err("%s failed\n" , __func__);
+		pr_err("alloc log buffer failed\n");
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, ion_buf);
@@ -133,7 +135,7 @@ int vdsp_log_alloc_buffer(struct xvp *xvp)
 	ion_buf->dev = xvp->dev;
 	s->log_vaddr = (void*)ion_buf->addr_k[0];
 
-	pr_info("%s pa:%lx,va:%lx,size %ld\n",__func__,
+	pr_debug("log buffer pa:%lx,va:%lx,size %ld\n",
 			ion_buf->addr_p[0] , ion_buf->addr_k[0],ion_buf->size[0]);
 
 	return 0;
@@ -155,9 +157,6 @@ int vdsp_log_init(struct xvp *xvp)
 	int result;
 	struct log_header_stru *log;
 	unsigned int cpu;
-	//work_func_t work_func;
-
-	pr_info("%s \n",__func__);
 
 	s = kzalloc(sizeof(*s), GFP_KERNEL);
 	if (!s) {
@@ -245,12 +244,10 @@ int vdsp_log_deinit(struct xvp *xvp)
 		}
 		free_percpu(s->nop_works);
 		destroy_workqueue(s->nop_wq);
-
 		vdsp_log_free_buffer(xvp);
-
 		kfree(s);
 	}
-	pr_info("%s done.\n",__func__);
+
 	return 0;
 }
 

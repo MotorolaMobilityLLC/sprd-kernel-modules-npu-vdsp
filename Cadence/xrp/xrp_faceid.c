@@ -47,8 +47,9 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "[VDSP]xrp_faceid: %d %d %s : "\
+#define pr_fmt(fmt) "sprd-vdsp: faceid %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
+
 
 
 static int sprd_alloc_faceid_weights_buffer(struct xvp *xvp,
@@ -60,7 +61,7 @@ static int sprd_alloc_faceid_weights_buffer(struct xvp *xvp,
 						ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
 						size);
 	if(0 != ret) {
-		pr_info("%s failed\n" , __func__);
+		pr_err("alloc weights failed\n");
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, ion_buf);
@@ -70,7 +71,7 @@ static int sprd_alloc_faceid_weights_buffer(struct xvp *xvp,
 	}
 	//xvp->faceid_fw_viraddr = (void*)xvp->ion_faceid_fw.addr_k[0];
 	ion_buf->dev = xvp->dev;
-	pr_info("faceid alloc addr_p %lx  vaddr:%lx,size %ld\n",
+	pr_debug("faceid alloc addr_p %lx  vaddr:%lx,size %ld\n",
 			ion_buf->addr_p[0] , ion_buf->addr_k[0],ion_buf->size[0]);
 	return 0;
 
@@ -131,7 +132,7 @@ int sprd_faceid_request_algo_mem(struct xvp *xvp)
 				&xvp->faceid_pool.ion_fd_mem_pool,
 				FACEID_FD_MEM_SIZE);
 	if (ret < 0){
-		pr_info("request fd mem fail\n");
+		pr_err("request fd mem fail\n");
 		return ret;
 	}
 
@@ -180,7 +181,7 @@ int sprd_faceid_request_weights_fd_p(struct xvp *xvp)
 			"network_coeff_fd_p.bin", xvp->dev);
 
 	if (ret < 0){
-		pr_info("request fd p weights fail\n");
+		pr_err("request fd p weights fail\n");
 		return ret;
 	}
 
@@ -188,13 +189,15 @@ int sprd_faceid_request_weights_fd_p(struct xvp *xvp)
 			&xvp->faceid_pool.ion_fd_weights_p,
 			xvp->faceid_fw->size);
 	if (ret < 0)
+	{
+		pr_err("alloc fd p weights fail\n");
 		return ret;
-
+	}
 	dst = xvp->faceid_pool.ion_fd_weights_p.addr_k[0];
 	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
-	pr_info("request fd p weights done\n");
+
 	return ret;
 }
 int sprd_faceid_request_weights_fd_r(struct xvp *xvp)
@@ -204,7 +207,7 @@ int sprd_faceid_request_weights_fd_r(struct xvp *xvp)
 			"network_coeff_fd_r.bin", xvp->dev);
 
 	if (ret < 0){
-		pr_info("request fd r weights fail\n");
+		pr_err("request fd r weights fail\n");
 		return ret;
 	}
 
@@ -212,13 +215,15 @@ int sprd_faceid_request_weights_fd_r(struct xvp *xvp)
 			&xvp->faceid_pool.ion_fd_weights_r,
 			xvp->faceid_fw->size);
 	if (ret < 0)
+	{
+		pr_err("alloc fd r weights fail\n");
 		return ret;
+	}
 
 	dst = xvp->faceid_pool.ion_fd_weights_r.addr_k[0];
 	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
-	pr_info("request fd r weights done\n");
 
 	return ret;
 }
@@ -229,7 +234,7 @@ int sprd_faceid_request_weights_fd_o(struct xvp *xvp)
 			"network_coeff_fd_o.bin", xvp->dev);
 
 	if (ret < 0){
-		pr_info("request fd o weights fail\n");
+		pr_err("request fd o weights fail\n");
 		return ret;
 	}
 
@@ -237,13 +242,15 @@ int sprd_faceid_request_weights_fd_o(struct xvp *xvp)
 			&xvp->faceid_pool.ion_fd_weights_o,
 			xvp->faceid_fw->size);
 	if (ret < 0)
+	{
+		pr_err("alloc fd o weights fail\n");
 		return ret;
+	}
 
 	dst = xvp->faceid_pool.ion_fd_weights_o.addr_k[0];
 	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
-	pr_info("request fd o weights done\n");
 
 	return ret;
 }
@@ -263,13 +270,15 @@ int sprd_faceid_request_weights_fp(struct xvp *xvp)
 			&xvp->faceid_pool.ion_fp_weights,
 			xvp->faceid_fw->size);
 	if (ret < 0)
+	{
+		pr_err("alloc fp weights fail\n");
 		return ret;
+	}
 
 	dst = xvp->faceid_pool.ion_fp_weights.addr_k[0];
 	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
-	pr_info("request fp weights done\n");
 
 	return ret;
 }
@@ -288,13 +297,15 @@ int sprd_faceid_request_weights_flv(struct xvp *xvp)
 			&xvp->faceid_pool.ion_flv_weights,
 			xvp->faceid_fw->size);
 	if (ret < 0)
+	{
+		pr_err("alloc flv weights fail\n");
 		return ret;
+	}
 
 	dst = xvp->faceid_pool.ion_flv_weights.addr_k[0];
 	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
-	pr_info("request flv weights done\n");
 
 	return ret;
 }
@@ -313,13 +324,15 @@ int sprd_faceid_request_weights_fv(struct xvp *xvp)
 			&xvp->faceid_pool.ion_fv_weights,
 			xvp->faceid_fw->size);
 	if (ret < 0)
+	{
+		pr_err("alloc fv weights fail\n");
 		return ret;
+	}
 
 	dst = xvp->faceid_pool.ion_fv_weights.addr_k[0];
 	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
-	pr_info("request fv weights done\n");
 
 	return ret;
 }
@@ -362,7 +375,7 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 		ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
 		VDSP_FACEID_FIRMWIRE_SIZE);
 	if(0 != ret) {
-		pr_err("%s  failed,ret %d\n" , __func__,ret);
+		pr_err("alloc sign fw buffer failed,ret %d\n",ret);
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc,
@@ -370,17 +383,17 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 	if(0 != ret) {
 		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
 				&xvp->ion_faceid_fw_sign);
+		pr_err("kmap fw buffer failed,ret %d\n",ret);
 		return -EFAULT;
 	}
 	xvp->ion_faceid_fw_sign.dev = xvp->dev;
-
 
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
 			&xvp->ion_faceid_fw,
 			ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
 			VDSP_FACEID_FIRMWIRE_SIZE);
 	if(0 != ret) {
-		pr_err("%s  failed,ret %d\n" , __func__,ret);
+		pr_err("alloc fw buffer failed,ret %d\n",ret);
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc,
@@ -388,20 +401,20 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 	if(0 != ret) {
 		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
 				&xvp->ion_faceid_fw);
+		pr_err("kmap fw buffer failed,ret %d\n",ret);
 		return -EFAULT;
 	}
 	xvp->firmware2_viraddr = (void*)xvp->ion_faceid_fw.addr_k[0];
 	xvp->firmware2_phys = xvp->ion_faceid_fw.addr_p[0];
 	xvp->ion_faceid_fw.dev = xvp->dev;
-	pr_info("%s vaddr:%p phyaddr %llX\n",
+	pr_debug("%s vaddr:%p phyaddr %llX\n",
 			__func__ , xvp->firmware2_viraddr,xvp->firmware2_phys);
 	return 0;
 }
 
 static int sprd_free_faceid_fwbuffer(struct xvp *xvp)
 {
-	pr_info("%s xvp faceid fw:%p\n",
-			__func__ , xvp->firmware2_viraddr);
+	pr_debug("vdsp fw vir addr:%p\n", xvp->firmware2_viraddr);
 	if(xvp->firmware2_viraddr) {
 		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
 				&xvp->ion_faceid_fw_sign);
@@ -429,11 +442,10 @@ int sprd_request_faceid_firmware(struct xvp *xvp)
 
 	if (ret < 0)
 	{
-		pr_err("%s ret:%d\n" , __func__ ,ret);
+		pr_err("request firmware failed ret:%d\n" ,ret);
 		return ret;
 	}
 #endif
-	pr_info("%s done.", __func__);
 	return ret;
 }
 
@@ -448,12 +460,12 @@ int sprd_iommu_map_faceid_fwbuffer(struct xvp *xvp)
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc,
 				&xvp->ion_faceid_fw , IOMMU_ALL);
 		if(ret) {
-			pr_err("%s map faceid fialed\n" , __func__);
+			pr_err("map faceid fw buffer failed\n");
 			return ret;
 		}
 		xvp->dsp_firmware_addr = xvp->ion_faceid_fw.iova[0];
 	}
-	pr_info("%s:%p --> %lx\n" , __func__,
+	pr_debug("iomap:%p --> %lx\n",
 			xvp->firmware2_viraddr,(unsigned long)xvp->dsp_firmware_addr);
 	return ret;
 }
@@ -471,11 +483,11 @@ int sprd_iommu_unmap_faceid_fwbuffer(struct xvp *xvp)
 				&xvp->ion_faceid_fw , IOMMU_ALL);
 		if(ret) {
 			ret1 = -EFAULT;
-			pr_err("%s unmap faceid fw fialed\n" , __func__);
+			pr_err("unmap faceid fw fialed\n");
 		}
 	}
 
-	pr_info("%s unmap faceid fw :%p , ret:%d, ret1:%d\n" , __func__ ,
+	pr_debug("unmap faceid fw :%p , ret:%d, ret1:%d\n",
 	       xvp->firmware2_viraddr , ret , ret1);
 	return ((ret!=0)||(ret1!=0)) ? -EFAULT : 0;
 }
@@ -498,7 +510,7 @@ int sprd_iommu_map_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf,int fd)
 		return -EFAULT;
 	}
 
-	pr_info("Get faceid ion iova %X\n",(uint32_t)ion_buf->iova[0]);
+	pr_debug("Get ion iova %X\n",(uint32_t)ion_buf->iova[0]);
 	return 0;
 }
 int sprd_iommu_ummap_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf)
@@ -513,11 +525,10 @@ int sprd_iommu_ummap_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf)
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
 				ion_buf, IOMMU_ALL);
 		if(ret) {
-			pr_err("%s unmap faceid ion buffer failed\n" , __func__);
+			pr_err("unmap ion buffer failed\n");
 			return ret;
 		}
 	}
-	pr_info("%s :%lx\n" , __func__ ,ion_buf->addr_k[0]);
 
 	return 0;
 }
@@ -543,7 +554,7 @@ int sprd_kernel_map_faceid_ion(struct xvp *xvp,
 		return -EFAULT;
 	}
 
-	pr_info("faceid kmap addr_p %lx  vaddr:%lx,size %ld\n",
+	pr_debug("kmap addr_p %lx  vaddr:%lx,size %ld\n",
 			ion_buf->addr_p[0], ion_buf->addr_k[0],ion_buf->size[0]);
 	return 0;
 }
@@ -583,7 +594,7 @@ int sprd_faceid_sec_sign(struct xvp *xvp)
 	table.faceid_fw.img_addr = mem_addr_p;
 	table.faceid_fw.img_len = img_len;
 
-	pr_info("faceid fw sign paddr %lX size %zd\n",
+	pr_debug("fw sign paddr %lX size %zd\n",
 			mem_addr_p,img_len);
 
 	ret = kernel_bootcp_verify_vdsp(&table);
