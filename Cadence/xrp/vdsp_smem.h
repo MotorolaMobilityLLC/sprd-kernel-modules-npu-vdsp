@@ -16,7 +16,7 @@
 #include <linux/types.h>
 #include <linux/sprd_iommu.h>
 #include <linux/sprd_ion.h>
-#include "ion.h"
+#include <linux/ion.h>
 
 #define CB_MSG	0
 #define CB_MAX	3
@@ -72,6 +72,8 @@ struct vdsp_mem_ops {
 			struct ion_buf *buf_info);
 	int (*mem_kunmap)(struct vdsp_mem_desc *ctx,
 			  struct ion_buf *buf_info);
+	int (*mem_kmap_userbuf)(struct ion_buf *buf_info);
+	int (*mem_kunmap_userbuf)(struct ion_buf *buf_info);
 	int (*mem_iommu_map)(struct vdsp_mem_desc *ctx,
 			     struct ion_buf *pfinfo, int idx);
 	int (*mem_iommu_unmap)(struct vdsp_mem_desc *ctx,

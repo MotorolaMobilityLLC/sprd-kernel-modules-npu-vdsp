@@ -1,7 +1,9 @@
 #include <linux/kthread.h>
+#include <linux/hashtable.h>
 #include "vdsp_dvfs.h"
 #include "vdsp_hw.h"
 #include "xrp_internal.h"
+#include "xvp_main.h"
 
 #define DVFS_MONITOR_CYCLE_TIME   (1000*1000)
 
@@ -11,24 +13,85 @@
 #define pr_fmt(fmt) "sprd-vdsp: dvfs %d: %d %s:" \
 	fmt, current->pid, __LINE__, __func__
 
-static enum sprd_vdsp_kernel_power_level translate_powerlevel_fromuser(int32_t in)
+enum vdsp_powerhint_adddec_flag
 {
+	VDSP_POWERHINT_ADD_LEVELCOUNT,
+	VDSP_POWERHINT_DEC_LEVELCOUNT,
+};
+
+static enum sprd_vdsp_kernel_power_level dvfs_recorrect_level(struct xvp* xvp , enum sprd_vdsp_kernel_power_level level);
+static enum sprd_vdsp_kernel_power_level get_maxsupported_level(struct xvp* xvp);
+
+static void vdsp_add_dec_level_tofile(struct file *filp , enum sprd_vdsp_kernel_power_level level , enum vdsp_powerhint_adddec_flag flag)
+{
+	struct xvp_file *xvp_file = (struct xvp_file*)filp->private_data;
+
+	if (flag == VDSP_POWERHINT_ADD_LEVELCOUNT) {
+		xvp_file->powerhint_info.powerhint_count_level[level] ++;
+	} else if (flag == VDSP_POWERHINT_DEC_LEVELCOUNT) {
+		if (unlikely(xvp_file->powerhint_info.powerhint_count_level[level] == 0)) {
+			pr_err("err dec level count level count is 0\n");
+		} else {
+			xvp_file->powerhint_info.powerhint_count_level[level] --;
+		}
+	} else {
+		pr_err("err param flag:%d\n", flag);
+	}
+	pr_debug("flag:%d,level:%d,count:%d\n", flag, level, xvp_file->powerhint_info.powerhint_count_level[level]);
+}
+
+static enum sprd_vdsp_kernel_power_level vdsp_get_current_maxlevel(struct file *filp) {
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
+	struct xvp_file * xvpfile_temp;
+	unsigned long bkt;
+	struct xrp_known_file *p;
+	int32_t i;
+	enum sprd_vdsp_kernel_power_level max_level = SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
+	enum sprd_vdsp_kernel_power_level temp_level;
+
+	/*check every file*/
+	pr_debug("enter0\n");
+	mutex_lock(&xvp->xrp_known_files_lock);
+	hash_for_each(xvp->xrp_known_files , bkt , p , node) {
+		xvpfile_temp = (struct xvp_file*)(((struct file*)(p->filp))->private_data);
+		temp_level = SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
+		for (i = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX - 1; i >= 0; i--) {
+			if (xvpfile_temp->powerhint_info.powerhint_count_level[i] != 0) {
+				temp_level = i;
+				break;
+			}
+		}
+		if (temp_level > max_level) {
+			max_level = temp_level;
+		}
+	}
+	mutex_unlock(&xvp->xrp_known_files_lock);
+	pr_debug("max level:%d\n", max_level);
+	return max_level;
+}
+
+static enum sprd_vdsp_kernel_power_level translate_powerlevel_fromuser(struct xvp* xvp , int32_t in)
+{
+	enum sprd_vdsp_kernel_power_level level;
+
+	level = get_maxsupported_level(xvp);
+
 	switch (in)
 	{
 	case -1:
 		return SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
 	case 0:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_0;
+		return dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_0);
 	case 1:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_1;
+		return dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_1);
 	case 2:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
+		return dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2);
 	case 3:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3;
+		return dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3);
 	case 4:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_4;
+		return dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_4);
 	case 5:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
+		return dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5);
 	case 6:
 		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX;
 	default:
@@ -50,13 +113,25 @@ static enum sprd_vdsp_kernel_powerhint_acquire_release
 	}
 }
 
+static enum sprd_vdsp_kernel_power_level get_maxsupported_level(struct xvp* xvp)
+{
+	if (xvp->dvfs_info.max_freq == T618_MAX_FREQ)
+	{
+		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
+	} else if (xvp->dvfs_info.max_freq == T610_MAX_FREQ) {
+		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_4;
+	}
+	pr_err("get_maxsupported_level max freq:%d may error\n", xvp->dvfs_info.max_freq);
+	return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_4;
+}
+
 int32_t set_dvfs_maxminfreq(void *data, int32_t maxminflag)
 {
 	struct xvp *xvp = (struct xvp*) data;
 	int32_t index;
 
 	if (maxminflag)
-		index = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
+		index = get_maxsupported_level(xvp);
 	else
 		index = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_0;
 	if (xvp->hw_ops->setdvfs)
@@ -68,12 +143,19 @@ void preprocess_work_piece(void *data)
 {
 	struct xvp* xvp = (struct xvp*)data;
 
+	mutex_lock(&xvp->dvfs_info.dvfs_lock);
+	if (unlikely(xvp->dvfs_info.dvfs_init != 1)) {
+		pr_warn("dvfs init:%d\n", xvp->dvfs_info.dvfs_init);
+		mutex_unlock(&xvp->dvfs_info.dvfs_lock);
+		return;
+	}
 	mutex_lock(&xvp->dvfs_info.timepiece_lock);
 	if (0 == xvp->dvfs_info.workingcount)
 		xvp->dvfs_info.piece_starttime = ktime_get();
 
 	xvp->dvfs_info.workingcount++;
 	mutex_unlock(&xvp->dvfs_info.timepiece_lock);
+	mutex_unlock(&xvp->dvfs_info.dvfs_lock);
 }
 
 void postprocess_work_piece(void *data)
@@ -81,6 +163,12 @@ void postprocess_work_piece(void *data)
 	ktime_t realstarttime;
 	struct xvp *xvp = (struct xvp*)data;
 
+	mutex_lock(&xvp->dvfs_info.dvfs_lock);
+	if (unlikely(xvp->dvfs_info.dvfs_init != 1)) {
+		pr_warn("dvfs init:%d\n", xvp->dvfs_info.dvfs_init);
+		mutex_unlock(&xvp->dvfs_info.dvfs_lock);
+		return;
+	}
 	mutex_lock(&xvp->dvfs_info.timepiece_lock);
 	xvp->dvfs_info.workingcount--;
 	if (0 == xvp->dvfs_info.workingcount) {
@@ -92,50 +180,56 @@ void postprocess_work_piece(void *data)
 	}
 	pr_debug("workingcount:%d", xvp->dvfs_info.workingcount);
 	mutex_unlock(&xvp->dvfs_info.timepiece_lock);
+	mutex_unlock(&xvp->dvfs_info.dvfs_lock);
 }
 
 int32_t set_powerhint_flag(void *data, int32_t power, uint32_t acq_rel)
 {
-	int32_t index;
-	struct xvp *xvp = (struct xvp*) data;
+	struct file *filp = (struct file*) data;
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
 	int ret = 0;
-	int i;
+	int cur_max_level;
 	enum sprd_vdsp_kernel_power_level level;
 	enum sprd_vdsp_kernel_powerhint_acquire_release acquire_release;
 
-	level = translate_powerlevel_fromuser(power);
-	if ((level == SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX) ||
-		(level == SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS)) {
+	pr_debug("enter\n");
+	level = translate_powerlevel_fromuser(xvp , power);
+	if (unlikely((level >= SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX) ||
+		(level <= SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS) ||
+		(level > get_maxsupported_level(xvp)))) {
 		pr_err("level:%d is error", level);
 		return -1;
 	}
 	acquire_release = translate_acquire_release_fromuser(acq_rel);
+	mutex_lock(&xvp->dvfs_info.dvfs_lock);
+	if (unlikely(xvp->dvfs_info.dvfs_init != 1)) {
+		pr_warn("dvfs init:%d\n", xvp->dvfs_info.dvfs_init);
+		mutex_unlock(&xvp->dvfs_info.dvfs_lock);
+		return -1;
+	}
 	mutex_lock(&xvp->dvfs_info.powerhint_lock);
 	if (acquire_release == SPRD_VDSP_KERNEL_POWERHINT_ACQUIRE)
-		xvp->dvfs_info.powerhint_count_level[level]++;
+		vdsp_add_dec_level_tofile(filp , level , VDSP_POWERHINT_ADD_LEVELCOUNT);
 	else if (SPRD_VDSP_KERNEL_POWERHINT_RELEASE == acquire_release)
-		xvp->dvfs_info.powerhint_count_level[level]--;
+		vdsp_add_dec_level_tofile(filp , level , VDSP_POWERHINT_DEC_LEVELCOUNT);
 
-	for (i = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX - 1; i >= 0; i--) {
-		if (xvp->dvfs_info.powerhint_count_level[i] != 0)
-			break;
-	}
-
-	pr_debug("acquire_release:%d, level:%d, i:%d, last_powerhint_level:%d\n",
-		acquire_release, level, i, xvp->dvfs_info.last_powerhint_level);
-	if ((i != -1) && (xvp->dvfs_info.last_powerhint_level != i)) {
-		/*set power hint*/
-		index = i;
+	cur_max_level = vdsp_get_current_maxlevel(filp);
+	pr_debug("acquire_release:%d , level:%d , curr_maxlevel:%d , last_level:%d\n",
+		acquire_release , level , cur_max_level , xvp->dvfs_info.last_powerhint_level);
+	if ((cur_max_level != SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS) &&
+			(xvp->dvfs_info.last_powerhint_level != cur_max_level))	{
 		if (xvp->hw_ops->setdvfs) {
-			pr_debug("setdvfs index:%d\n", index);
-			xvp->hw_ops->setdvfs(xvp->hw_arg, index);
+			pr_debug("setdvfs index:%d\n", cur_max_level);
+			xvp->hw_ops->setdvfs(xvp->hw_arg, cur_max_level);
+			xvp->dvfs_info.last_powerhint_level = cur_max_level;
 		}
-		xvp->dvfs_info.last_powerhint_level = i;
-	}else if (-1 == i) {
+	} else if (cur_max_level == SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS){
 		xvp->dvfs_info.last_dvfs_index = xvp->dvfs_info.last_powerhint_level;
-		xvp->dvfs_info.last_powerhint_level = SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
+		xvp->dvfs_info.last_powerhint_level = cur_max_level;
 	}
 	mutex_unlock(&xvp->dvfs_info.powerhint_lock);
+	mutex_unlock(&xvp->dvfs_info.dvfs_lock);
+	pr_debug("exit\n");
 	return ret;
 }
 
@@ -165,36 +259,38 @@ static uint32_t calculate_vdsp_usage(void *data, ktime_t fromtime)
 	return percent;
 }
 
-static uint32_t calculate_dvfs_index(uint32_t percent)
+static enum sprd_vdsp_kernel_power_level dvfs_recorrect_level(struct xvp* xvp , enum sprd_vdsp_kernel_power_level level)
+{
+	enum sprd_vdsp_kernel_power_level max_level = get_maxsupported_level(xvp);
+	return (level > max_level) ? max_level : level;
+}
+
+static uint32_t calculate_dvfs_index(struct xvp* xvp , uint32_t percent)
 {
 	enum sprd_vdsp_kernel_power_level level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_0;
 	static uint32_t last_percent = 0;
 
 	if ((last_percent > 50)) {
 		if (percent > 50)
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
+			level = get_maxsupported_level(xvp);
 		else if ((percent <= 50) && (percent > 20))
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3;
-		else if (percent <= 20)
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
+			level = dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3);
+		else
+			level = dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2);
 	}else if ((last_percent <= 50) && (last_percent > 20)) {
 		if (percent > 50)
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
+			level = get_maxsupported_level(xvp);
 		else if ((percent <= 50) && (percent > 20))
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3;
-		else if (percent <= 20)
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
+			level = dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3);
 		else
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
-	}else if (last_percent <= 20){
-		if (percent > 50)
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
-		else if ((percent <= 50) && (percent > 20))
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
-		else if (percent <= 20)
-			level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
+			level = dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2);
 	}else {
-		level = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
+		if (percent > 50)
+			level = get_maxsupported_level(xvp);
+		else if ((percent <= 50) && (percent > 20))
+			level = dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2);
+		else
+			level = dvfs_recorrect_level(xvp , SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2);
 	}
 	last_percent = percent;
 	return level;
@@ -205,6 +301,7 @@ int vdsp_dvfs_thread(void* data)
 	uint32_t percentage;
 	int32_t index;
 	long ret = 0;
+	int32_t firstcycle = 1;
 	struct xvp *xvp = (struct xvp *)data;
 
 	while (!kthread_should_stop()) {
@@ -212,8 +309,13 @@ int vdsp_dvfs_thread(void* data)
 		if (SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS ==
 				xvp->dvfs_info.last_powerhint_level) {
 			percentage = calculate_vdsp_usage(xvp, xvp->dvfs_info.starttime);
-			/*dvfs set freq*/
-			index = calculate_dvfs_index(percentage);
+			if (firstcycle == 1) {
+				index = get_maxsupported_level(xvp);
+				firstcycle = 0;
+			} else {
+				/*dvfs set freq*/
+				index = calculate_dvfs_index(xvp , percentage);
+			}
 			pr_debug("percentage:%d, dvfs index:%d, last index:%d\n",
 				percentage, index, xvp->dvfs_info.last_dvfs_index);
 			if (index != xvp->dvfs_info.last_dvfs_index) {
@@ -233,37 +335,41 @@ int vdsp_dvfs_thread(void* data)
 }
 
 int vdsp_dvfs_init(void *data) {
-	int i;
 	struct xvp* xvp = (struct xvp*)data;
 
+	mutex_lock(&(xvp->dvfs_info.dvfs_lock));
 	mutex_init(&xvp->dvfs_info.timepiece_lock);
 	mutex_init(&xvp->dvfs_info.powerhint_lock);
 	init_waitqueue_head(&xvp->dvfs_info.wait_q);
-	xvp->dvfs_info.starttime = 0;
+	xvp->dvfs_info.starttime = ktime_get();
 	xvp->dvfs_info.cycle_totaltime = 0;
 	xvp->dvfs_info.piece_starttime = 0;
 	xvp->dvfs_info.last_powerhint_level = SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
 	xvp->dvfs_info.last_dvfs_index = 0;
-	for (i = 0; i < SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX; i++) {
-		xvp->dvfs_info.powerhint_count_level[i] = 0;
-	}
+	xvp->hw_ops->get_max_freq(&xvp->dvfs_info.max_freq);
 	/*when open init to max freq*/
 	if (xvp->hw_ops->setdvfs) {
-		xvp->hw_ops->setdvfs(xvp->hw_arg, SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5);
-		xvp->dvfs_info.last_dvfs_index = SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
+		enum sprd_vdsp_kernel_power_level max_level;
+		max_level = get_maxsupported_level(xvp);
+		xvp->hw_ops->setdvfs(xvp->hw_arg, max_level);
+		xvp->dvfs_info.last_dvfs_index = max_level;
 	}
 	xvp->dvfs_info.dvfs_thread = kthread_run(vdsp_dvfs_thread, xvp,
 		"vdsp_dvfs_thread");
 	if (IS_ERR(xvp->dvfs_info.dvfs_thread)) {
 		pr_err("kthread_run err\n");
+		mutex_unlock(&(xvp->dvfs_info.dvfs_lock));
 		return -1;
 	}
+	xvp->dvfs_info.dvfs_init = 1;
+	mutex_unlock(&(xvp->dvfs_info.dvfs_lock));
 	return 0;
 }
 
 void vdsp_dvfs_deinit(void *data) {
 	struct xvp* xvp = (struct xvp*)data;
 
+	mutex_lock(&(xvp->dvfs_info.dvfs_lock));
 	if (xvp->dvfs_info.dvfs_thread) {
 		kthread_stop(xvp->dvfs_info.dvfs_thread);
 		xvp->dvfs_info.dvfs_thread = NULL;
@@ -274,5 +380,42 @@ void vdsp_dvfs_deinit(void *data) {
 	mutex_destroy(&xvp->dvfs_info.timepiece_lock);
 	mutex_destroy(&xvp->dvfs_info.powerhint_lock);
 	pr_debug("dvfs deinit exit\n");
+	xvp->dvfs_info.dvfs_init = 0;
+	mutex_unlock(&(xvp->dvfs_info.dvfs_lock));
+	return;
+}
+
+void vdsp_release_powerhint(void *data) {
+	struct file *filp = (struct file*) data;
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
+	struct xvp_file *xvp_file = (struct xvp_file*)filp->private_data;
+	int32_t i;
+	enum sprd_vdsp_kernel_power_level max_level = SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
+
+	mutex_lock(&(xvp->dvfs_info.dvfs_lock));
+	if (xvp->dvfs_info.dvfs_init != 1) {
+		pr_warn("dvfs init:%d\n", xvp->dvfs_info.dvfs_init);
+		mutex_unlock(&(xvp->dvfs_info.dvfs_lock));
+		return;
+	}
+	mutex_lock(&xvp->dvfs_info.powerhint_lock);
+	/*check every file*/
+	pr_debug("enter0\n");
+	for (i = 0; i < SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX; i++)
+		xvp_file->powerhint_info.powerhint_count_level[i] = 0;
+	max_level = vdsp_get_current_maxlevel(filp);
+	if (max_level == SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS) {
+		/*restore dvfs*/
+		xvp->dvfs_info.last_dvfs_index = xvp->dvfs_info.last_powerhint_level;
+		xvp->dvfs_info.last_powerhint_level = SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
+	} else if (max_level != xvp->dvfs_info.last_powerhint_level){
+		if (xvp->hw_ops->setdvfs != NULL) {
+			pr_debug("setdvfs index:%d\n", max_level);
+			xvp->hw_ops->setdvfs(xvp->hw_arg, max_level);
+			xvp->dvfs_info.last_powerhint_level = max_level;
+		}
+	}
+	mutex_unlock(&xvp->dvfs_info.powerhint_lock);
+	mutex_unlock(&(xvp->dvfs_info.dvfs_lock));
 	return;
 }

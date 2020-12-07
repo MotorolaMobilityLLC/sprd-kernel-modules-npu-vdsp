@@ -93,7 +93,7 @@ static int vdsp_ipi_send_irq(int idx)
 
 static irqreturn_t irq_handler(int irq, void *arg)
 {
-	irqreturn_t ret = 0;
+	irqreturn_t ret = IRQ_NONE;
 	int irq_val = 0;
 	int irq_mask = 0;
 	int i = 0;

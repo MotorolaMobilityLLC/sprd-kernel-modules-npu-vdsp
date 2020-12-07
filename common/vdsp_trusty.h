@@ -34,7 +34,15 @@ enum vdsp_ip_type {
 enum vdsp_command {
 	TA_FACEID_ENTER_SEC_MODE = 1,
 	TA_FACEID_EXIT_SEC_MODE,
-
+	TA_FACEID_LOAD_FW,
+	TA_FACEID_HALT_VDSP,
+	TA_FACEID_RESET_VDSP,
+	TA_FACEID_RELEASE_VDSP,
+	TA_FACEID_ENABLE_VDSP,
+	TA_FACEID_DISABLE_VDSP,
+	TA_FACEID_INIT,
+	TA_FACEID_SYNC_VDSP,
+	TA_FACEID_RUN_VDSP,
 	TA_GET_CAM_STATUS,
 };
 
@@ -42,6 +50,36 @@ struct vdsp_msg {
 	uint32_t vdsp_type;
 	uint32_t msg_cmd;
 };
+
+struct vdsp_sync_msg {
+	uint32_t vdsp_type;
+	uint32_t msg_cmd;
+
+	uint32_t device_mmio_base;
+	uint32_t host_irq_mode;
+	uint32_t host_irq_offset;
+	uint32_t host_irq_bit;
+	uint32_t device_irq_mode;
+	uint32_t device_irq_offset;
+	uint32_t device_irq_bit;
+	uint32_t device_irq;
+	uint32_t vdsp_log_addr;
+} __attribute__((__packed__));
+
+struct vdsp_run_msg {
+	uint32_t vdsp_type;
+	uint32_t msg_cmd;
+
+	uint32_t fd_p_coffe_addr;
+	uint32_t fd_r_coffe_addr;
+	uint32_t fd_o_coffe_addr;
+	uint32_t fp_coffe_addr;
+	uint32_t flv_coffe_addr;
+	uint32_t fv_coffe_addr;
+	uint32_t mem_pool_addr;
+	uint64_t in_addr;
+	uint64_t out_addr;
+} __attribute__((__packed__));
 
 enum vdsp_cmdack {
 	TA_CMD_DONE = 0,
@@ -76,6 +114,10 @@ struct vdsp_ca_ctrl {
 bool vdsp_ca_connect(void);
 void vdsp_ca_disconnect(void);
 bool vdsp_set_sec_mode(struct vdsp_msg *vdsp_msg);
+bool vdsp_load_firmware(void);
+bool vdsp_sync_sec(struct vdsp_sync_msg *msg);
+bool vdsp_run_vdsp(struct vdsp_run_msg *msg);
+
 
 /*sign data*/
 #define KERNELBOOTCP_PORT "com.android.trusty.kernelbootcp"

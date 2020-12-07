@@ -29,9 +29,8 @@ struct log_rb {
 #define PING_MODE 0x01
 #define PONG_MODE 0x01
 
-#define LOG_WAIT_MODE
-#define LOG_OVERFLOW_MODE
-
+#define LOG_OVERFLOW_MODE	0
+#define LOG_WAIT_MODE		1
 
 struct vdsp_log_work;
 
@@ -45,7 +44,7 @@ struct vdsp_log_state {
 	uint32_t get;
 
 	void *log_vaddr;
-
+	uint32_t log_ion_vdsp_addr;
 	struct workqueue_struct *nop_wq;
 	struct vdsp_log_work __percpu *nop_works;
 	struct list_head nop_queue;
@@ -62,8 +61,9 @@ struct vdsp_log_work {
 
 int vdsp_log_init(struct xvp *xvp);
 int vdsp_log_deinit(struct xvp *xvp);
-
-
+int vdsp_log_coredump(struct xvp *xvp);
+int vdsp_log_mapbuffer(struct xvp* xvp);
+int vdsp_log_unmapbuffer(struct xvp* xvp);
 
 #endif
 

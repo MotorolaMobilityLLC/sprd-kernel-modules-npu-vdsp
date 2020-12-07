@@ -33,7 +33,6 @@
 #include <linux/miscdevice.h>
 #include <linux/mutex.h>
 #include <linux/types.h>
-#include "xrp_address_map.h"
 #include "vdsp_smem.h"
 #include "xrp_library_loader.h"
 #include "vdsp_dvfs.h"
@@ -62,19 +61,15 @@ struct faceid_mem_addr {
 	struct ion_buf ion_fd_weights_o;
 	struct ion_buf ion_fp_weights;
 	struct ion_buf ion_flv_weights;
-	struct ion_buf ion_fv_weights;
+	struct ion_buf ion_fo_weights;
 
 	struct ion_buf ion_fd_mem_pool;
-	struct ion_buf ion_face_transfer;
-	struct ion_buf ion_face_in;
-	struct ion_buf ion_face_out;
 };
 
 struct xvp {
 	struct device *dev;
 	const char *firmware_name;
 	const struct firmware *firmware;
-	struct firmware_origin firmware2;/*faceid fw*/
 	const struct firmware *firmware2_sign;/*faceid sign fw*/
 	struct miscdevice miscdev;
 	const struct xrp_hw_ops *hw_ops;
@@ -93,16 +88,12 @@ struct xvp {
 	struct ion_buf ion_comm;
 	/*firmware addr infos*/
 	void *firmware_viraddr;
-	void *firmware2_viraddr;
 	phys_addr_t firmware_phys;
-	phys_addr_t firmware2_phys;
 	phys_addr_t dsp_firmware_addr;
 
 	phys_addr_t shared_size;
 	atomic_t reboot_cycle;
 	atomic_t reboot_cycle_complete;
-
-	struct xrp_address_map address_map;
 
 	bool host_irq_mode;
 
@@ -111,8 +102,10 @@ struct xvp {
 	int nodeid;
 	bool secmode;/*used for faceID*/
 	bool tee_con;/*the status of connect TEE*/
+	int irq_status;
 	struct ion_buf ion_faceid_fw;/*faceid fw*/
 	struct ion_buf ion_faceid_fw_sign;/*faceid fw ion which used to sign*/
+	struct ion_buf ion_faceid_comm;
 	struct faceid_mem_addr faceid_pool;
 	const struct firmware *faceid_fw;
 	struct vdsp_log_state *log_state;
@@ -124,6 +117,9 @@ struct xvp {
 	uint32_t cur_opentype;
 	struct vdsp_dvfs_info dvfs_info;
 	struct vdsp_mem_desc *vdsp_mem_desc;
+	struct hlist_head xrp_known_files[1<<10];
+	struct mutex xrp_known_files_lock;
+	uint32_t sysdump_num;
 };
 
 #endif

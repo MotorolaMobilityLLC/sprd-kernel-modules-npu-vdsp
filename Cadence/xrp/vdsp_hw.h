@@ -19,14 +19,20 @@
 #include <linux/types.h>
 #include "vdsp_ipi_drv.h"
 
+#define VDSP_FIRMWIRE_SIZE    (1024*1024*6)
+#define VDSP_DRAM_ADDR       (0x7f000000)
+#define VDSP_DRAM_SIZE       (256*1024)
+
 #define DRIVER_NAME "vdsp"
-#define REG_RESET		(0x04)
-#define REG_RUNSTALL	(0x3084)
+#define REG_RESET           (0x04)
+#define REG_RUNSTALL        (0x3084)
 #define REG_LP_CTL          (0x3090)
 #define REG_QOS_THRESHOLD   (0xBC)
 #define REG_QOS_3           (0xD4)
 #define REG_QOS_SEL3        (0xD8)
-#define BIT(nr) (1UL << (nr))
+
+#define T610_MAX_FREQ      768
+#define T618_MAX_FREQ      936
 
 #define APAHB_HREG_MWR(reg, msk, val) \
 		(REG_WR((reg), \
@@ -93,7 +99,7 @@ struct vdsp_hw {
 	 */
 	u32 host_irq[2];
 
-	u32 client_irq;
+	s32 client_irq;
 
 	struct vdsp_ipi_ctx_desc *vdsp_ipi_desc;
 	struct qos_info qos;
@@ -230,6 +236,12 @@ struct xrp_hw_ops {
 	bool (*panic_check)(void *hw_arg);
 	/*set qos*/
 	void (*set_qos)(void *hw_arg);
+	/*request irq*/
+	int (*vdsp_request_irq)(void *xvp_arg, void *hw_arg);
+	/*free irq*/
+	void (*vdsp_free_irq)(void *xvp_arg, void *hw_arg);
+	/*get max_freq*/
+	void (*get_max_freq)(uint32_t *max_freq);
 };
 
 long sprd_vdsp_init(struct platform_device *pdev, enum vdsp_init_flags flags,

@@ -46,8 +46,8 @@ struct tipc_msg_buf *vdsp_ca_handle_msg(void *data, struct tipc_msg_buf *rxbuf,u
 		/* get new buffer */
 		newbuf = tipc_chan_get_rxbuf(ca->chan);
 		if (newbuf) {
-			pr_debug("received new data, rxbuf %p, newbuf %p\n",
-						  rxbuf, newbuf);
+			//pr_debug("received new data, rxbuf %p, newbuf %p\n",
+			//			  rxbuf, newbuf);
 			/* queue an old buffer and return a new one */
 			list_add_tail(&rxbuf->node, &ca->rx_msg_queue);
 			wake_up_interruptible(&ca->readq);
@@ -141,6 +141,7 @@ bool vdsp_ca_connect(void)
 
 	chan_conn_ret = tipc_chan_connect(ca->chan, VDSP_TA_PORT_NAME);
 	if (chan_conn_ret) {
+		pr_err("tipc_chan_connect fail, ret %d!\n",chan_conn_ret);
 		ret = false;
 		return ret;
 	} else {
@@ -153,9 +154,6 @@ bool vdsp_ca_connect(void)
 		pr_err("vdsp wait read response time out!\n");
 		ret = false;
 	}
-
-	//pr_info("ret =%d\n", ret);
-
 	return ret;
 }
 void vdsp_ca_disconnect(void)
@@ -168,12 +166,12 @@ void vdsp_ca_disconnect(void)
 	ca->con_init = false;
 
 	 /*todo for Stability test */
-	// tipc_chan_shutdown(ca->chan);
+	tipc_chan_shutdown(ca->chan);
 
 	ca->chanel_state = TIPC_CHANNEL_DISCONNECTED;
 
 	 /*todo for Stability test */
-	 //tipc_chan_destroy(ca->chan);
+	tipc_chan_destroy(ca->chan);
 
 	pr_debug("disconnect\n");
 }
@@ -243,7 +241,6 @@ ssize_t vdsp_ca_read(void *buf, size_t max_len)
 bool vdsp_ca_wait_response(uint32_t cmd)
 {
 	ssize_t size;
-	bool ret = true;
 	struct status_message status_msg;
 
 	size = vdsp_ca_read(&status_msg, sizeof(struct status_message));
@@ -261,8 +258,6 @@ bool vdsp_ca_wait_response(uint32_t cmd)
 		pr_err("remote ack_msg.ack failed\n");
 		return false;
 	}
-
-	pr_debug("response ret =%d\n", ret);
 	return true;
 }
 
@@ -292,6 +287,68 @@ bool vdsp_ca_wait_ack(uint32_t cmd)
 
 	return ret;
 
+}
+
+bool vdsp_sync_sec(struct vdsp_sync_msg *sync_msg)
+{
+	bool ret = true;
+	struct vdsp_ca_ctrl *ca = &vdsp_ca;
+
+	pr_debug("ca chanel_state =%d, vdsp_type=%d, work_mode=%d", ca->chanel_state,
+				sync_msg->vdsp_type, sync_msg->msg_cmd);
+
+	if (ca->chanel_state != TIPC_CHANNEL_CONNECTED) {
+		pr_err("enter ta mode fail, con err\n");
+		return false;
+	}
+
+	mutex_lock(&ca->wlock);
+
+	ret = vdsp_ca_write(sync_msg, sizeof(struct vdsp_sync_msg));
+	if ( !ret ) {
+		pr_err("cam_ca_write fail ret =%d\n", ret);
+		mutex_unlock(&ca->wlock);
+		return ret;
+	}
+
+	ret = vdsp_ca_wait_ack(sync_msg->msg_cmd);
+
+	mutex_unlock(&ca->wlock);
+
+	pr_debug("vdsp tee ret =%d\n",   ret);
+
+	return ret;
+}
+
+bool vdsp_run_vdsp(struct vdsp_run_msg *sync_msg)
+{
+	bool ret = true;
+	struct vdsp_ca_ctrl *ca = &vdsp_ca;
+
+	pr_debug("ca chanel_state =%d, vdsp_type=%d, work_mode=%d", ca->chanel_state,
+				sync_msg->vdsp_type, sync_msg->msg_cmd);
+
+	if (ca->chanel_state != TIPC_CHANNEL_CONNECTED) {
+		pr_err("enter ta mode fail, con err\n");
+		return false;
+	}
+
+	mutex_lock(&ca->wlock);
+
+	ret = vdsp_ca_write(sync_msg, sizeof(struct vdsp_run_msg));
+	if ( !ret ) {
+		pr_err("cam_ca_write fail ret =%d\n", ret);
+		mutex_unlock(&ca->wlock);
+		return ret;
+	}
+
+	ret = vdsp_ca_wait_ack(sync_msg->msg_cmd);
+
+	mutex_unlock(&ca->wlock);
+
+	pr_debug("vdsp tee ret =%d\n",   ret);
+
+	return ret;
 }
 
 bool vdsp_set_sec_mode(struct vdsp_msg *vdsp_msg)
@@ -395,8 +452,6 @@ bool trusty_kernelbootcp_connect(void)
 	int chan_conn_ret =0;
 	bool ret = false;
 
-	//pr_info("bootcp chanel_state =%d\n", ca->chanel_state);
-
 	if (ca->chanel_state == TIPC_CHANNEL_CONNECTED) {
 		pr_debug("bootcp has already been connected\n");
 		return true;
@@ -420,6 +475,7 @@ bool trusty_kernelbootcp_connect(void)
 
 	chan_conn_ret = tipc_chan_connect(ca->chan, KERNELBOOTCP_PORT);
 	if (chan_conn_ret) {
+		pr_err("tipc_chan_connect fail, ret %d!\n",chan_conn_ret);
 		ret = false;
 		return ret;
 	} else {
@@ -432,9 +488,6 @@ bool trusty_kernelbootcp_connect(void)
 		pr_err("bootcp wait read response time out!\n");
 		ret = false;
 	}
-
-	//pr_info("bootcp ret = %d\n", ret);
-
 	return ret;
 
 }
@@ -448,12 +501,12 @@ void trusty_kernelbootcp_disconnect(void)
 	ca->con_init = false;
 
 	 /*todo for Stability test */
-	// tipc_chan_shutdown(ca->chan);
+	tipc_chan_shutdown(ca->chan);
 
 	ca->chanel_state = TIPC_CHANNEL_DISCONNECTED;
 
 	 /*todo for Stability test */
-	 //tipc_chan_destroy(ca->chan);
+	tipc_chan_destroy(ca->chan);
 
 	pr_debug("bootcp disconnect\n");
 

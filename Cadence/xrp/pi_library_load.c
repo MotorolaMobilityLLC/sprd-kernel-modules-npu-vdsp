@@ -49,7 +49,7 @@ static int find_align(Elf32_Ehdr *header)
 	int align = 0;
 	int sec = 0;
 	Elf32_Shdr *sheader = (Elf32_Shdr *)(((char *)header) + xtlib_host_word(header->e_shoff));
-	int num = xtlib_host_half(header->e_shnum);
+	int num = (int)xtlib_host_half(header->e_shnum);
 
 	while (sec < num) {
 		if (sheader[sec].sh_type != SHT_NULL && xtlib_host_word(sheader[sec].sh_size) > 0) {
@@ -69,7 +69,7 @@ static Elf32_Dyn *find_dynamic_info(Elf32_Ehdr *eheader)
 	int seg = 0;
 	char * base_addr = (char *)eheader;
 	Elf32_Phdr * pheader = (Elf32_Phdr *)(base_addr + xtlib_host_word(eheader->e_phoff));
-	int num = xtlib_host_half(eheader->e_phnum);
+	int num = (int)xtlib_host_half(eheader->e_phnum);
 
 	while (seg < num) {
 		if (xtlib_host_word(pheader[seg].p_type) == PT_DYNAMIC)
@@ -89,7 +89,7 @@ static int load_pi_lib(xtlib_pil_info *lib_info, Elf32_Ehdr *eheader,
 
 	Elf32_Phdr *pheader = (Elf32_Phdr *)((char *)lib_addr + xtlib_host_word(eheader->e_phoff));
 	xt_ptr dst_addr = (xt_ptr)xtlib_host_word((Elf32_Word)lib_info->dst_addr);
-	int num = xtlib_host_half(eheader->e_phnum);
+	int num = (int)xtlib_host_half(eheader->e_phnum);
 
 	while (seg < num) {
 		if (xtlib_host_word(pheader[seg].p_type) == PT_LOAD) {
@@ -253,7 +253,7 @@ unsigned int xtlib_pi_library_size(xtlib_packaged_library *library)
 		return -1;
 	}
 	seg = 0;
-	num = xtlib_host_half(header->e_phnum);
+	num = (int)xtlib_host_half(header->e_phnum);
 	pheader = (Elf32_Phdr *)((char *)library + xtlib_host_word(header->e_phoff));
 	while (seg < num) {
 		if (xtlib_host_word(pheader[seg].p_type) == PT_LOAD) {
@@ -359,11 +359,6 @@ static xt_ptr xtlib_load_split_pi_library_common(xtlib_packaged_library *library
 	xtlib_load_seg(&pheader[1],
 		(char *)library + xtlib_host_word(pheader[1].p_offset),
 		dst_data, mcpy_fn, mset_fn, user);
-
-	if (err != XTLIB_NO_ERR) {
-		xtlib_globals.err = err;
-		return 0;
-	}
 
 	return (xt_ptr)xtlib_host_word((Elf32_Word)lib_info->start_sym);
 }

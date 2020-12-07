@@ -6,11 +6,16 @@
 
 #include "xrp_internal.h"
 #include "vdsp_log.h"
-
+#include "vdsp_dump.h"
 
 #define VDSP_LOG_BUFFER_SZIE (1024*128)
 #define BANK_BUSY 0
 #define BANK_READY 1
+
+#define COREDUMP_NONE		(0)
+#define COREDUMP_START		(1)
+#define COREDUMP_STACK_DONE	(2)
+#define COREDUMP_FINISH		(3)
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -19,14 +24,16 @@
 #define pr_fmt(fmt) "sprd-vdsp: log %d %d : "\
         fmt, current->pid, __LINE__
 
-
 struct log_header_stru
 {
-	volatile int32_t mode;
+	volatile int32_t mode;	// 0:not wait,1:wait
 	volatile int32_t bank_size;
-	volatile int32_t flag[2];
-	volatile uint32_t addr[2];
+	volatile int32_t flag[2];	//flag, write disable/enable
+	volatile uint32_t addr[2];	//log bank address
 	volatile uint32_t log_size[2];
+	volatile uint32_t log_level;
+	volatile uint32_t coredump_flag;
+	volatile uint32_t reverse[6];
 }log_header;
 
 
@@ -36,7 +43,6 @@ static int log_read_line(struct vdsp_log_state *s, int put, int get, char *addr)
 	char c = '\0';
 	size_t max_to_read = min((size_t)(put - get),
 				 sizeof(s->line_buffer) - 1);
-
 
 	for (i = 0; i < max_to_read && c != '\n';)
 		s->line_buffer[i++] = c = addr[get++];
@@ -50,21 +56,15 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 	char *addr;
 	int read_chars;
 
-	struct log_header_stru *log =
-		(struct log_header_stru*)s->log_vaddr;
+	struct log_header_stru *log = (struct log_header_stru*)s->log_vaddr;
 
-	if(BANK_READY == log->flag[0])
-	{
+	if(BANK_READY == log->flag[0]) {
 		bank = 0;
 		addr = (char*)s->log_vaddr + sizeof(struct log_header_stru);
-	}
-	else if(BANK_READY == log->flag[1])
-	{
+	} else if(BANK_READY == log->flag[1]) {
 		bank = 1;
 		addr = (char*)s->log_vaddr + sizeof(struct log_header_stru) + log->bank_size;
-	}
-	else
-	{
+	} else {
 		pr_err("bank is busy\n");
 		return;
 	}
@@ -120,7 +120,7 @@ int vdsp_log_alloc_buffer(struct xvp *xvp)
 
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
 					ion_buf,
-					ION_HEAP_ID_MASK_VDSP,
+					ION_HEAP_ID_MASK_SYSTEM,
 					VDSP_LOG_BUFFER_SZIE);
 	if(0 != ret) {
 		pr_err("alloc log buffer failed\n");
@@ -131,12 +131,10 @@ int vdsp_log_alloc_buffer(struct xvp *xvp)
 		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, ion_buf);
 		return -EFAULT;
 	}
-
 	ion_buf->dev = xvp->dev;
 	s->log_vaddr = (void*)ion_buf->addr_k[0];
 
-	pr_debug("log buffer pa:%lx,va:%lx,size %ld\n",
-			ion_buf->addr_p[0] , ion_buf->addr_k[0],ion_buf->size[0]);
+	pr_debug("log buffer vdsp va:%lx\n", ion_buf->addr_k[0]);
 
 	return 0;
 }
@@ -151,6 +149,46 @@ int vdsp_log_free_buffer(struct xvp *xvp)
 	}
 	return 0;
 }
+
+int vdsp_log_mapbuffer(struct xvp* xvp)
+{
+	int ret;
+	struct ion_buf *ion_buf = &xvp->ion_vdsp_log;
+	struct log_header_stru *log;
+
+	log = (struct log_header_stru*)xvp->log_state->log_vaddr;
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
+			xvp->vdsp_mem_desc,
+			ion_buf,
+			IOMMU_ALL);
+	if(ret != 0) {
+		return -EFAULT;
+	}
+	log->addr[0] = xvp->ion_vdsp_log.iova[0] + sizeof(struct log_header_stru);
+	log->addr[1] = xvp->ion_vdsp_log.iova[0] + sizeof(struct log_header_stru) + log->bank_size;
+	log->flag[0] = 0;					//init log flag, BANK_BUSY
+	log->flag[1] = 0;
+	log->log_size[0] = 0;				//vdsp write log size
+	log->log_size[1] = 0;
+	pr_debug("log addr map, 0x%x-0x%x", log->addr[0], log->addr[1]);
+	return 0;
+}
+
+int vdsp_log_unmapbuffer(struct xvp* xvp)
+{
+	int ret;
+	struct ion_buf *ion_buf = &xvp->ion_vdsp_log;
+	struct log_header_stru *log;
+
+	pr_debug("log addr unmap");
+	log = (struct log_header_stru*)xvp->log_state->log_vaddr;
+	log->addr[0] = 0;
+	log->addr[1] = 0;
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, ion_buf , IOMMU_ALL);
+
+	return ret;
+}
+
 int vdsp_log_init(struct xvp *xvp)
 {
 	struct vdsp_log_state *s;
@@ -166,9 +204,7 @@ int vdsp_log_init(struct xvp *xvp)
 	xvp->log_state = s;
 
 	spin_lock_init(&s->lock);
-
 	s->get = 0;
-
 	s->nop_wq = alloc_workqueue("vdsplog-nop-wq", WQ_CPU_INTENSIVE, 0);
 	if (!s->nop_wq) {
 		result = -ENODEV;
@@ -190,7 +226,6 @@ int vdsp_log_init(struct xvp *xvp)
 		INIT_WORK(&vlw->work, vdsp_log_nop_work_func);
 	}
 
-
 	s->vdsp_ipi_desc = get_vdsp_ipi_ctx_desc();
 	if (!s->vdsp_ipi_desc) {
 		result = -ENOMEM;
@@ -202,14 +237,25 @@ int vdsp_log_init(struct xvp *xvp)
 						     vdsp_log_irq_handler,
 						     xvp);
 
-	if(vdsp_log_alloc_buffer(xvp) != 0)
-	{
+	if(vdsp_log_alloc_buffer(xvp) != 0) {
 		result = -ENOMEM;
 		goto error_alloc_log;
 	}
 
 	log = (struct log_header_stru*)s->log_vaddr;
 	log->bank_size = (VDSP_LOG_BUFFER_SZIE - sizeof(struct log_header_stru)) / 2;
+
+	log->mode = LOG_OVERFLOW_MODE;		//wait or ignore when log full
+	log->flag[0] = 0;					//init log flag, BANK_BUSY
+	log->flag[1] = 0;
+	log->addr[0] = 0;
+	log->addr[1] = 0;
+	log->log_size[0] = 0;				//vdsp write log size
+	log->log_size[1] = 0;
+	log->log_level = 5;					//vdsp log level
+	log->coredump_flag = COREDUMP_NONE;
+
+	pr_info("log header addr:%lx, bank addr:%x,%x\n", xvp->ion_vdsp_log.iova[0], log->addr[0], log->addr[1]);
 
 	return 0;
 
@@ -234,9 +280,7 @@ int vdsp_log_deinit(struct xvp *xvp)
 	unsigned int cpu;
 
 	s = xvp->log_state;
-
-	if(s)
-	{
+	if(s) {
 		for_each_possible_cpu(cpu) {
 			struct vdsp_log_work *vlw  = per_cpu_ptr(s->nop_works, cpu);
 
@@ -249,6 +293,30 @@ int vdsp_log_deinit(struct xvp *xvp)
 	}
 
 	return 0;
+}
+
+int vdsp_log_coredump(struct xvp *xvp)
+{
+	int res = -1;
+	int dump_res = -1;
+	struct log_header_stru *log = (struct log_header_stru*)xvp->log_state->log_vaddr;
+	unsigned long deadline = jiffies + 5 * HZ;	//5s
+
+	pr_info("dump start,flag:%d \n", log->coredump_flag);
+	if(log->coredump_flag == COREDUMP_START) {
+		dump_res = xrp_dump_libraries(xvp);
+		log->coredump_flag = COREDUMP_STACK_DONE;
+		do{
+			if(log->coredump_flag == COREDUMP_FINISH){
+				res = 0;
+				break;
+			}
+			schedule();
+		}while(time_before(jiffies, deadline));
+	}
+	log->coredump_flag = COREDUMP_NONE;
+	pr_info("dump end, process(-1/0):%d, data(-1/0):%d \n", res, dump_res);
+	return res;
 }
 
 

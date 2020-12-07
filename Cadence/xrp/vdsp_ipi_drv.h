@@ -19,7 +19,6 @@
 
 #define XRP_IRQ_REG_OFFSET    0x00800000
 
-#define BIT(nr) (1UL << (nr))
 
 enum xrp_irq_mode {
 	XRP_IRQ_NONE,

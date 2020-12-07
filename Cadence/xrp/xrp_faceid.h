@@ -33,8 +33,7 @@
 
 #define FACEID_FD_MEM_SIZE (1024*1024*16)
 #define FACEID_FIRMWARE "faceid_fw.bin"
-
-
+#define FACEID_COEFF_NUM (6)
 
 struct xvp;
 /*sync with vdsp side*/
@@ -51,6 +50,7 @@ struct faceid_hw_sync_data
 	__u32 out_addr;
 	__u32 transfer_addr;/*face landmark point*/
 };
+
 typedef struct
 {
 	uint32_t width, height;
@@ -66,10 +66,17 @@ typedef struct
 {
 	int x, y;
 }FV_POINT;
+
 typedef struct
 {
 	FV_POINT landmarks[7];
 }FV_FAECINFO;
+
+enum IRQ_STATUS
+{
+	IRQ_STATUS_REQUESTED = 0,
+	IRQ_STATUS_FREED ,
+};
 
 int sprd_faceid_init(struct xvp *xvp);
 int sprd_faceid_deinit(struct xvp *xvp);
@@ -80,17 +87,18 @@ int sprd_faceid_secboot_entry(struct xvp *xvp);
 int sprd_faceid_secboot_exit(struct xvp *xvp);
 
 int sprd_faceid_sec_sign(struct xvp *xvp);
+int sprd_faceid_load_firmware(struct xvp *xvp);
 
+int sprd_faceid_sync_vdsp(struct xvp *xvp);
+int sprd_faceid_halt_vdsp(struct xvp *xvp);
+int sprd_faceid_reset_vdsp(struct xvp *xvp);
+int sprd_faceid_release_vdsp(struct xvp *xvp);
+int sprd_faceid_enable_vdsp(struct xvp *xvp);
+int sprd_faceid_disable_vdsp(struct xvp *xvp);
+int sprd_faceid_run_vdsp(struct xvp *xvp, uint32_t in_fd, uint32_t out_fd);
 
 int sprd_iommu_map_faceid_fwbuffer(struct xvp *xvp);
 int sprd_iommu_unmap_faceid_fwbuffer(struct xvp *xvp);
-
-int sprd_iommu_map_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf,int fd);
-int sprd_iommu_ummap_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf);
-
-int sprd_kernel_map_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf,int fd);
-int sprd_kernel_unmap_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf);
-
 
 
 #endif

@@ -1,7 +1,11 @@
 #ifndef __XVP_MAIN_H__
 #define __XVP_MAIN_H__
+
+#include <linux/types.h>
 #include "xrp_kernel_defs.h"
 #include "xrp_alloc.h"
+#include "xrp_kernel_dsp_interface.h"
+#include "vdsp_dvfs.h"
 
 struct xrp_alien_mapping {
         unsigned long vaddr;
@@ -33,8 +37,12 @@ struct xrp_mapping {
 
 struct xvp_file {
         struct xvp *xvp;
+	struct list_head load_lib_list;
+	struct vdsp_dvfs_filpowerhint powerhint_info;
         spinlock_t busy_list_lock;
         struct xrp_allocation *busy_list;
+	struct mutex lock;
+	uint32_t working;
 };
 
 struct xrp_known_file {

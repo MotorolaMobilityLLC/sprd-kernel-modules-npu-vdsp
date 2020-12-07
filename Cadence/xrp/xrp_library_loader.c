@@ -1,13 +1,11 @@
-#include "xrp_library_loader.h"
-#include "xt_library_loader.h"
-#include "xrp_kernel_dsp_interface.h"
-#include "xrp_kernel_defs.h"
+
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
 #include <linux/dma-mapping.h>
 #include <linux/elf.h>
 #include <linux/firmware.h>
 #include <linux/highmem.h>
+#include <linux/hashtable.h>
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -15,6 +13,9 @@
 #include "xvp_main.h"
 #include "xrp_library_loader.h"
 #include "xt_library_loader.h"
+#include "xrp_kernel_dsp_interface.h"
+#include "xrp_kernel_defs.h"
+
 #define LIBRARY_CMD_PIL_INFO_OFFSET   40
 #define LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE 44
 
@@ -29,189 +30,145 @@
 #define pr_fmt(fmt) "sprd-vdsp: library_loader %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
-static int32_t libinfo_list_size(const struct libinfo_list *list)
-{
-	if (list == NULL)
-		return LIST_ERROR;
-	return list->number;
-}
+
 static void* libinfo_alloc_element()
 {
 	struct loadlib_info *pnew = NULL;
 
 	pnew = vmalloc(sizeof(struct loadlib_info));
-	if (pnew != NULL)
+	if (unlikely(pnew != NULL)) {
 		memset(pnew, 0, sizeof(struct loadlib_info));
+		mutex_init(&pnew->mutex);
+	}
 
 	return pnew;
 }
-/*index start from 0*/
-static int32_t libinfo_list_add(struct libinfo_list *list, void *element, int32_t pos)
-{
-	int i = 0;
-	struct libinfo_node *new_node = NULL;
-	struct libinfo_node *node = NULL;
 
-	if (list == NULL)
-		return LIST_ERROR;
 
-	new_node = (struct libinfo_node *)vmalloc(sizeof(struct libinfo_node));
-	if (new_node == NULL)
-		return LIST_NO_MEM;
-	memset(new_node, 0, sizeof(struct libinfo_node));
-	new_node->element = element;
-
-	if (list->number == 0){
-		new_node->next = NULL;
-		list->node = new_node;
-		list->number++;
-		return list->number;
-	}
-	if (pos < 0 || pos >= list->number)
-		pos = list->number;
-
-	node = list->node;
-	if (pos == 0){
-		new_node->next = list->node;
-		list->node = new_node;
-		list->number++;
-		return list->number;
-	}
-
-	while (i + 1 < pos){
-		i++;
-		node = node->next;
-	}
-	if (pos == list->number){
-		new_node->next = NULL;
-		node->next = new_node;
-		list->number++;
-		return list->number;
-	}
-	new_node->next = node->next;
-	node->next->next = new_node;
-	list->number++;
-
-	return list->number;
-}
-
-static void *libinfo_list_get(const struct libinfo_list *list, int32_t pos)
-{
-	int i = 0;
-	struct libinfo_node *node = NULL;
-
-	if (list == NULL)
-		return NULL;
-	if (pos < 0 || pos >= list->number)
-		return NULL;
-	node = list->node;
-	while (i < pos){
-		i++;
-		node = node->next;
-	}
-
-	return node->element;
-}
-
-static int32_t libinfo_list_remove(struct libinfo_list *list, int32_t pos)
-{
-	int i = 0;
-	struct libinfo_node *node = NULL;
-	struct libinfo_node *del_node = NULL;
-
-	if (list == NULL)
-		return LIST_ERROR;
-	if (pos < 0 || pos >= list->number)
-		return LIST_ERROR;
-	node = list->node;
-	/*special case*/
-	if (pos == 0){
-		list->node = node->next;
-		list->number--;
-		if (node->element)
-			vfree(node->element);
-		vfree(node);
-		return LIST_SUCCESS;
-	}
-
-	while (pos > i + 1){
-		i++;
-		node = node->next;
-	}
-	del_node = node->next;
-	node->next = node->next->next;
-	list->number--;
-	if (del_node->element)
-		vfree(del_node->element);
-	vfree(del_node);
-
-	return LIST_SUCCESS;
-}
 static xt_ptr xt_lib_memcpy(xt_ptr dest, const void * src, unsigned int n, void *user)
 {
 	memcpy(user, src, n);
-	return 0;
+	return LIB_RESULT_OK;
 }
 static xt_ptr xt_lib_memset(xt_ptr s, int c, unsigned int n, void *user)
 {
 	memset(user, c, n);
-	return 0;
+	return LIB_RESULT_OK;
 }
-static int32_t xrp_library_checkprocessing(struct xvp *xvp, const char *libname)
-{
-	int i;
-	struct loadlib_info *libinfo = NULL;
 
-	for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-		if (libinfo->lib_state == XRP_LIBRARY_PROCESSING_CMD) {
-			if (strcmp(libinfo->libname, libname) == 0)
-				return 1;
+//check lib name whether load, 1: aready load by self xvp file. 2: aready load by other xvp file.
+//xvp->xvp file->load_lib_list, When multiple xvp loads the same algorithm library, each xvp will record a loading data, but there is only one actual loading process.
+static uint32_t xrp_check_whether_loaded(struct file *filp, const char* libname, struct loadlib_info **outlibinfo) {
+	struct loadlib_info *libinfo, *libinfo1;
+	struct xvp_file * xvpfile_temp;
+	unsigned long bkt;
+	uint32_t find = 0;
+	struct xrp_known_file *p;
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
+	struct xvp_file *xvp_file = (struct xvp_file*)filp->private_data;
+	libinfo = libinfo1 = NULL;
+	*outlibinfo = NULL;
+
+	/*check whether loaded myself*/
+	list_for_each_entry(libinfo, &xvp_file->load_lib_list, node_libinfo) {
+		if(0 == strcmp(libinfo->libname, libname)) {
+			find = 1;
+			break;
 		}
 	}
-
-	return 0;
+	if(1 == find) {
+		pr_debug("this filp has loaded libname:%s\n", libname);
+		return 1; /*loaded return 1*/
+	}
+	//look for lib name in All xvp file lib list.
+	mutex_lock(&xvp->xrp_known_files_lock);
+	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
+		if (((struct file*)(p->filp))->private_data != xvp_file) {
+			xvpfile_temp = (struct xvp_file*)(((struct file*)(p->filp))->private_data);
+			find = 0;
+			list_for_each_entry(libinfo1, &xvpfile_temp->load_lib_list, node_libinfo) {
+				pr_debug("enter libname:%s, %s\n", libinfo1->libname, libname);
+				if (0 == strcmp(libinfo1->libname, libname)) {
+					find = 1;
+					*outlibinfo = libinfo1;
+					break;
+				}
+			}
+			if (1 == find) {
+				break;
+			}
+		}
+	}
+	mutex_unlock(&xvp->xrp_known_files_lock);
+	return find;
 }
-static struct loadlib_info *xrp_library_getlibinfo(struct xvp *xvp, const char *libname)
+
+//look for current lib whether running now in all xvp file
+static int32_t xrp_library_checkprocessing(struct file *filp, const char *libname)
 {
-	int i;
+	unsigned long bkt;
+	struct xrp_known_file *p;
+	struct xvp_file *xvp_file;
+	struct xvp *xvp = (struct xvp*) (((struct xvp_file*)(filp->private_data))->xvp);
 	struct loadlib_info *libinfo = NULL;
 
-	for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-		if (0 == strcmp(libinfo->libname, libname))
-			break;
+	mutex_lock(&xvp->xrp_known_files_lock);
+	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
+		xvp_file = (struct xvp_file*)(((struct file*)(p->filp))->private_data);
+		list_for_each_entry(libinfo, &xvp_file->load_lib_list, node_libinfo) {
+			if((0 == strcmp(libinfo->libname, libname)) && (libinfo->lib_state == XRP_LIBRARY_PROCESSING_CMD)) {
+				pr_debug("xrp_library_checkprocessing processing\n");
+				mutex_unlock(&xvp->xrp_known_files_lock);
+				return 1;
+			}
+		}
 	}
-	/*find and decrease*/
-	if (i < libinfo_list_size(&(xvp->load_lib.lib_list)))
-		return libinfo;
-	else
-		return NULL;
+	mutex_unlock(&xvp->xrp_known_files_lock);
+	return 0;
 }
 
-static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, const char *libname)
+//look for lib info through lib name in current xvp file
+static struct loadlib_info *xrp_library_getlibinfo(struct file *filp, const char *libname)
+{
+	struct loadlib_info *libinfo = NULL;
+	struct xvp_file *xvp_file = (struct xvp_file*)filp->private_data;
+
+	list_for_each_entry(libinfo, &xvp_file->load_lib_list, node_libinfo) {
+		if(0 == strcmp(libinfo->libname, libname)) {
+			return libinfo;
+		}
+	}
+	return NULL;
+}
+
+//buffer : all lib binary. 
+//libname: lib name
+// malloc and map memory to realy load the lib. (only one memory for each lib, so before malloc, it need check multiple) 
+// function name called xrp_library_request_resource maybe good.
+static int32_t xrp_library_load_internal(struct file *filp, const char* buffer, const char *libname)
 {
 	unsigned int size;
 	int32_t ret = 0;
 	struct loadlib_info *new_element;
 	unsigned int result;
-	struct ion_buf *lib_ion_mem = NULL;
-	struct ion_buf *libinfo_ion_mem = NULL;
-	void *libback_buffer = NULL;
+	struct ion_buf *lib_ion_mem = NULL;	// use for store lib bin 
+	struct ion_buf *libinfo_ion_mem = NULL;// use for store lib key information
 	void *kvaddr = NULL;
 	void *kvaddr_libinfo = NULL;
+	struct xvp_file *xvp_file = (struct xvp_file*)(filp->private_data);
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
 	phys_addr_t kpaddr, kpaddr_libinfo;
 
 	/*load library to ddr*/
 	size = xtlib_pi_library_size((xtlib_packaged_library *)buffer);
 	/*alloc ion buffer later*/
 	lib_ion_mem = vmalloc(sizeof(struct ion_buf));
-	if(NULL == lib_ion_mem) {
+	if(unlikely(lib_ion_mem == NULL)) {
 		pr_err("[ERROR]vmalloc fail,lib:%p,libinfo:%p\n", lib_ion_mem);
 		return -ENOMEM;
 	}
 	libinfo_ion_mem = vmalloc(sizeof(struct ion_buf));
-	if(NULL == libinfo_ion_mem) {
+	if(unlikely(libinfo_ion_mem == NULL)) {
 		pr_err("[ERROR]vmalloc fail,lib:%p,libinfo:%p\n", libinfo_ion_mem);
 		ret = -ENOMEM;
 		goto __load_internal_err0;
@@ -221,7 +178,7 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 		lib_ion_mem,
 		ION_HEAP_ID_MASK_SYSTEM,
 		size);
-	if (ret != 0) {
+	if (unlikely(ret != 0)) {
 		ret = -ENOMEM;
 		pr_err("[ERROR]alloc lib_ion_mem failed\n");
 		goto __load_internal_err1;
@@ -232,38 +189,38 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 		libinfo_ion_mem,
 		ION_HEAP_ID_MASK_SYSTEM,
 		sizeof(xtlib_pil_info));
-	if (ret != 0) {
+	if (unlikely(ret != 0)) {
 		ret = -ENOMEM;
 		pr_err("[ERROR]alloc libinfo_ion_mem failed\n");
 		goto __load_internal_err2;
 	}
 	libinfo_ion_mem->dev = xvp->dev;
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, lib_ion_mem);
-	if(ret != 0) {
+	if(unlikely(ret != 0)) {
 		pr_err("[ERROR]mem_kmap lib_ion_mem failed\n");
-		ret = -EINVAL;
+		ret = -EFAULT;
 		goto __load_internal_err3;
 	}
 	kvaddr = (void*)lib_ion_mem->addr_k[0];
 	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, lib_ion_mem, IOMMU_ALL);
-	if(ret != 0) {
+	if(unlikely(ret != 0)) {
 		pr_err("[ERROR] mem_iommu_map lib_ion_mem failed\n");
-		ret = -EINVAL;
+		ret = -EFAULT;
 		goto __load_internal_err4;
 	}
 	kpaddr = lib_ion_mem->iova[0];
 
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
-	if(ret != 0) {
+	if(unlikely(ret != 0)) {
 		pr_err("[ERROR]mem_kmap libinfo_ion_mem failed\n");
-		ret = -EINVAL;
+		ret = -EFAULT;
 		goto __load_internal_err5;
 	}
 	kvaddr_libinfo = (void*)libinfo_ion_mem->addr_k[0];
 	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, libinfo_ion_mem, IOMMU_ALL);
-	if(ret != 0) {
+	if(unlikely(ret != 0)) {
 		pr_err("[ERROR]mem_iommu_map libinfo_ion_mem failed\n");
-		ret = -EINVAL;
+		ret = -EFAULT;
 		goto __load_internal_err6;
 	}
 	kpaddr_libinfo = libinfo_ion_mem->iova[0];
@@ -273,32 +230,22 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 
 	result = xtlib_host_load_pi_library((xtlib_packaged_library*)buffer, kpaddr,
 		(xtlib_pil_info*)kvaddr_libinfo, xt_lib_memcpy, xt_lib_memset, kvaddr);
-	if (result == 0){
+	if (unlikely(result == 0)){
 		/*free ion buffer*/
 		pr_err("[ERROR]xtlib_host_load_pi_library failed\n");
-		ret = -EINVAL;
+		ret = -EFAULT;
 		goto __load_internal_err7;
 	}
 
-	libback_buffer = vmalloc(size);
-	if (libback_buffer == NULL) {
-		pr_err("[ERROR]vmalloc back buffer is NULL\n");
-		ret = -ENOMEM;
-		goto __load_internal_err7;
-	}
-
-	/*back up the code for reboot*/
-	memcpy(libback_buffer, kvaddr, size);
 	new_element = (struct loadlib_info*)libinfo_alloc_element();
-	if (new_element == NULL) {
+	if (unlikely(new_element == NULL)) {
 		/*free ion buffer*/
 		pr_err("[ERROR]libinfo_alloc_element failed\n");
 		ret = -ENOMEM;
-		goto __load_internal_err8;
+		goto __load_internal_err7;
 	}else {
-		sprintf(new_element->libname, "%s", libname);
+		snprintf(new_element->libname, XRP_NAMESPACE_ID_SIZE, "%s", libname);
 		/*may be change later*/
-		new_element->address_start = 0;
 		new_element->length = size;
 		new_element->load_count = 0;
 		new_element->ionhandle = lib_ion_mem;
@@ -306,18 +253,17 @@ static int32_t xrp_library_load_internal(struct xvp *xvp, const char* buffer, co
 		new_element->ion_kaddr = kvaddr;
 		new_element->pil_ionhandle = libinfo_ion_mem;
 		new_element->pil_info = kpaddr_libinfo;
-		new_element->pil_info_kaddr = kvaddr_libinfo;
 		new_element->lib_state = XRP_LIBRARY_LOADING;
-		new_element->code_back_kaddr = libback_buffer;
+		new_element->lib_processing_count = 0;
+		new_element->original_flag = 1;
 	}
-	libinfo_list_add(&xvp->load_lib.lib_list, new_element,
-		libinfo_list_size(&xvp->load_lib.lib_list));
+	pr_debug("add new libinfo xvpfile:%x, libname:%s\n", xvp_file, libname);
+	list_add_tail(&new_element->node_libinfo, &xvp_file->load_lib_list);
 
-	return 0;
-__load_internal_err8:
-	vfree(libback_buffer);
+	return LIB_RESULT_OK;
+
 __load_internal_err7:
-	xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc , libinfo_ion_mem , IOMMU_ALL);
+	xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, libinfo_ion_mem, IOMMU_ALL);
 __load_internal_err6:
 	xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo_ion_mem);
 __load_internal_err5:
@@ -334,7 +280,9 @@ __load_internal_err0:
 	vfree(lib_ion_mem);
 	return ret;
 }
-enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request *rq)
+
+//check cmd type (common cmd/ load/unload cmd/ error)
+enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request *rq, uint32_t krqflag)
 {
 	__u32 indata_size;
 	enum load_unload_flag load_flag = XRP_NOT_LOAD_UNLOAD;
@@ -348,208 +296,282 @@ enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request 
 		else
 			tempsrc = rq->in_data;
 
-		tempbuffer = vmalloc(indata_size);
-		if (copy_from_user(tempbuffer, tempsrc, indata_size)) {
+		if(krqflag == 1) {
+			load_flag = XRP_UNLOAD_LIB_FLAG;
+		} else {
+			tempbuffer = vmalloc(indata_size);
+			if(unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
+				vfree(tempbuffer);
+				return -EFAULT;	//there return -EFAULT, it different from enum load_unload_flag
+			}
+			load_flag = *tempbuffer;
 			vfree(tempbuffer);
-			return -EFAULT;
 		}
-		load_flag = *tempbuffer;
-		vfree(tempbuffer);
+		pr_debug("load flag:%d\n" , load_flag);
+		return load_flag;
+	} else {
+		return XRP_NOT_LOAD_UNLOAD;
 	}
-
-	return load_flag;
 }
-#ifndef USE_RE_REGISTER_LIB
+
 int32_t xrp_library_setall_missstate(struct xvp *xvp)
 {
-	int i;
-	struct loadlib_info *libinfo = NULL;
+	unsigned long bkt;
+	struct xrp_known_file *p;
+	struct loadlib_info *libinfo;
+	struct xvp_file *xvp_file;
 
-	for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-		libinfo->lib_state = XRP_LIBRARY_MISSED_STATE;
+	mutex_lock(&xvp->xrp_known_files_lock);
+	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
+		xvp_file = (struct xvp_file *)(((struct file*)(p->filp))->private_data);
+		list_for_each_entry(libinfo, &xvp_file->load_lib_list, node_libinfo) {
+			libinfo->lib_state = XRP_LIBRARY_MISSED_STATE;
+		}
 	}
+	mutex_unlock(&xvp->xrp_known_files_lock);
+	return LIB_RESULT_OK;
+}
 
+// Statistics load count, curfilecnt: current file load count/ totalcount: all load count in all files.
+// filp: current file
+// through foreach all file to read lib name load count to Statistics
+static uint32_t xrp_library_get_loadcount(struct file *filp, const char* libname, uint32_t* curfilecnt, uint32_t *totalcount)
+{
+	unsigned long bkt;
+	struct xrp_known_file *p;
+	struct loadlib_info *libinfo;
+	struct xvp_file *xvp_file = (struct xvp_file*)(filp->private_data);
+	struct xvp *xvp = xvp_file->xvp;
+	*curfilecnt = 0;
+	*totalcount = 0;
+
+	pr_debug("[IN]check lib name:%s\n", libname);
+	mutex_lock(&xvp->xrp_known_files_lock);
+	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
+		pr_debug("check in each file\n");
+		xvp_file = (struct xvp_file *)(((struct file*)(p->filp))->private_data);
+		list_for_each_entry(libinfo, &xvp_file->load_lib_list, node_libinfo) {
+			if(0 == strcmp(libinfo->libname, libname)) {
+				pr_debug("libname:%s, loadcount:%d\n", libname, libinfo->load_count);
+				(*totalcount) += libinfo->load_count;
+				if(p->filp == filp) {
+					(*curfilecnt) += libinfo->load_count;
+				}
+			}
+		}
+	}
+	mutex_unlock(&xvp->xrp_known_files_lock);
+	pr_debug("[OUT]statistics lib load status, libname:%s, curfilecnt:%d, totalcount:%d\n", libname, *curfilecnt, *totalcount);
+	return LIB_RESULT_OK;
+}
+
+/*check current lib name whether store in xvp file, if yes-> counter++,
+else alloc one libinfo struct(from inlibinfo), add store into xvp_file list.*/
+static int32_t xrp_library_increase(struct file *filp, const char *libname, struct loadlib_info *inlibinfo)
+{
+	struct loadlib_info *libinfo = NULL;
+	struct loadlib_info *newlibinfo = NULL;
+	struct xvp_file *xvptemp_file;
+	struct xvp_file *xvp_file = (struct xvp_file*)(filp->private_data);
+	uint32_t find = 0;
+	unsigned long bkt;
+	struct xvp *xvp = xvp_file->xvp;
+	struct xrp_known_file *p;
+
+	list_for_each_entry(libinfo, &xvp_file->load_lib_list, node_libinfo) {
+		if(0 == strcmp(libname, libinfo->libname)) {
+			libinfo->load_count++;
+			find = 1;
+			pr_debug("libname:%s find is 1 ,and only add load_count\n", libinfo->libname);
+			break;
+		}
+	}
+	if(1 == find) {
+		pr_info("loadcount:%d, libname:%s\n", libinfo->load_count, libname);
+		return libinfo->load_count;
+	}
+	mutex_lock(&xvp->xrp_known_files_lock);
+	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
+		find = 0;
+		xvptemp_file = (struct xvp_file*)(((struct file*)(p->filp))->private_data);
+		if(xvp_file == xvptemp_file) {
+			list_for_each_entry(libinfo, &xvp_file->load_lib_list, node_libinfo) {
+				if(0 == strcmp(libname, libinfo->libname)) {
+					libinfo->load_count++;
+					find = 1;
+					break;
+				}
+			}
+			if((0 == find) && (inlibinfo != NULL)) {
+				newlibinfo = libinfo_alloc_element();
+				pr_debug("alloc new element xvpfile:%x, libname:%s\n", xvp_file, inlibinfo->libname);
+				if(newlibinfo) {
+					find = 1;
+					memcpy(newlibinfo, inlibinfo, sizeof(struct loadlib_info));
+					newlibinfo->load_count = 1;
+					newlibinfo->original_flag = 0;
+					newlibinfo->lib_state = XRP_LIBRARY_LOADED;
+					newlibinfo->lib_processing_count = 0;
+					mutex_init(&newlibinfo->mutex);
+					list_add_tail(&newlibinfo->node_libinfo,  &xvp_file->load_lib_list);
+				}
+			} else {
+				pr_err("find is:%d , inlibinfo:%x\n", find, inlibinfo);
+			}
+		}
+	}
+	mutex_unlock(&xvp->xrp_known_files_lock);
+	if(0 == find) {
+		return -EFAULT;
+	}
 	return 0;
 }
-#endif
-static int32_t xrp_library_decrease(struct xvp *xvp, const char *libname)
-{
-	int i;
-	struct loadlib_info *libinfo = NULL;
 
-	for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-		if (0 == strcmp(libinfo->libname, libname))
-			break;
+// check none current file load lib count, bellow count is only load or not, not the sum of load counter
+// whether it can use one global load total counter , to record it (atomic_t counter)
+static uint32_t library_check_otherfile_count(struct file *filp , const char *libname)
+{
+	struct loadlib_info *libinfo = NULL;
+	struct loadlib_info *temp;
+	unsigned long bkt;
+	uint32_t count = 0;
+	struct xrp_known_file *p;
+	struct xvp_file *xvp_file;
+	struct xvp *xvp = NULL;
+	struct xvp_file *xvp_file_curr = (struct xvp_file*)(filp->private_data);
+	xvp = xvp_file_curr->xvp;
+	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
+		xvp_file = (struct xvp_file*)(((struct file*)(p->filp))->private_data);
+		if(xvp_file_curr != xvp_file) {
+			list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list, node_libinfo) {
+				if(strcmp(libinfo->libname, libname) == 0) {
+					count++;
+				}
+			}
+		}
 	}
-	/*find and decrease*/
-	if (i < libinfo_list_size(&(xvp->load_lib.lib_list)))
-		libinfo->load_count--;
-	else
-		return -EINVAL;
-	pr_debug("loadcount:%d libname:%s\n", libinfo->load_count, libname);
-
-	return libinfo->load_count;
+	pr_debug("count is:%d\n", count);
+	return count;
 }
-static int32_t xrp_library_increase(struct xvp *xvp, const char *libname)
-{
-	int i;
-	struct loadlib_info *libinfo = NULL;
 
-	for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-		if (0 == strcmp(libinfo->libname, libname))
-			break;
-	}
-	/*find and decrease*/
-	if (i < libinfo_list_size(&(xvp->load_lib.lib_list)))
-		libinfo->load_count++;
-	else
-		return -EINVAL;
-
-	pr_debug("loadcount:%d, libname:%s\n", libinfo->load_count, libname);
-	return libinfo->load_count;
-}
-int32_t xrp_library_decrelease(struct xvp *xvp, const char *libname)
+//xrp_library_decrelease, name error, its name should change to decrease(increase)
+//decrease one lib record in  current file. if no other has this lib, release this lib memory(alloc in xrp_library_load_internal
+// no need return value.
+int32_t xrp_library_decrelease(struct file* filp, const char *libname)
 {
-	int i;
-	int ret;
+	int32_t find = 0;
+	int32_t release = 0;
 	struct loadlib_info *libinfo = NULL;
+	struct loadlib_info *temp = NULL;
+	struct xvp_file *xvp_file = (struct xvp_file*)(filp->private_data);
+	struct xvp *xvp = xvp_file->xvp;
 
 	/*decrease load_count*/
-	for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-		if (0 == strcmp(libinfo->libname, libname))
+	list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list, node_libinfo) {
+		if(0 == strcmp(libinfo->libname, libname)) {
+			find = 1;
+			if(libinfo->load_count > 0)
+				libinfo->load_count--;
+			if(libinfo->load_count == 0) {
+				mutex_lock(&xvp->xrp_known_files_lock);
+				if(library_check_otherfile_count(filp, libname) == 0) {
+					xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo->ionhandle);
+					xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, libinfo->ionhandle, IOMMU_ALL);
+					xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo->ionhandle);
+					vfree(libinfo->ionhandle);
+					xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo->pil_ionhandle);
+					xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, libinfo->pil_ionhandle, /*IOMMU_MSTD*/IOMMU_ALL);
+					xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo->pil_ionhandle);
+					vfree(libinfo->pil_ionhandle);
+				}
+				mutex_unlock(&xvp->xrp_known_files_lock);
+				pr_debug("xrp_library_decrelease libname:%s ok original_flag:%d\n", libname, libinfo->original_flag);
+				/*remove this lib element*/
+				list_del(&libinfo->node_libinfo);
+				vfree(libinfo);
+				release = 1;
+			} else {
+				pr_debug("xrp_library_decrelease warning libname:%s loadcount:%d\n", libname, libinfo->load_count);
+			}
 			break;
-	}
-	if (i < libinfo_list_size(&(xvp->load_lib.lib_list))) {
-		if (libinfo->load_count != 0)
-			libinfo->load_count--;
-		pr_debug("load_count:%d, libname:%s\n", libinfo->load_count, libname);
-		if (libinfo->load_count == 0) {
-			xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-				libinfo->ionhandle);
-			xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-				libinfo->ionhandle, IOMMU_ALL);
-			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-				libinfo->ionhandle);
-			vfree(libinfo->ionhandle);
-			xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-				libinfo->pil_ionhandle);
-			xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-				libinfo->pil_ionhandle, IOMMU_ALL);
-			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-				libinfo->pil_ionhandle);
-			vfree(libinfo->pil_ionhandle);
-			if (libinfo->code_back_kaddr != NULL)
-				vfree(libinfo->code_back_kaddr);
-			/*remove this lib element*/
-			libinfo_list_remove(&(xvp->load_lib.lib_list), i);
 		}
-		ret = 0; /*loaded*/
-	}else {
-		pr_err("[ERROR]not find lib [%s]\n", libname);
-		ret = 1;
 	}
-
-	return ret;
+	if(1 == find && 1 == release) {
+		return LIB_RESULT_OK;
+	} else {
+		pr_err("[ERROR]not find lib [%s] or not release, may be some error find:%d, release:%d\n", libname , find , release);
+		return LIB_RESULT_ERROR;
+	}
 }
-static int32_t xrp_library_getloadunload_libname(struct xvp *xvp,
-	struct xrp_request *rq, char *outlibname)
+
+//get which lib  to unload, this info is stored in unload cmd->indata (byte0: flag-load/unload; byte1:nsid)
+//it is no use to check flag
+static int32_t xrp_library_getloadunload_libname(struct xvp *xvp, struct xrp_request *rq, char *outlibname, uint32_t krqflag)
 {
 	__u32 indata_size;
-	int32_t ret = 0;
+	int32_t ret = LIB_RESULT_OK;
 	void *tempsrc = NULL;
 	__u8 *tempbuffer = NULL;
-
 	indata_size = rq->ioctl_queue.in_data_size;
-	if (0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID)) {
+
+	if(likely(0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID))) {
 		/*check libname*/
 		if (indata_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
 			tempsrc = (void*)(rq->ioctl_queue.in_data_addr);
 		else
 			tempsrc = (void*)(rq->in_data);
-
-		tempbuffer = vmalloc(indata_size);
-		if (copy_from_user(tempbuffer, tempsrc, indata_size)) {
-			pr_err("[ERROR]copy from user failed\n");
-			ret = -EINVAL;
+		pr_info("before copy_from_user src:%p , dst:%p\n", tempsrc, tempbuffer);
+		if(krqflag == 1) {
+			snprintf(outlibname, XRP_NAMESPACE_ID_SIZE, "%s", ((char*)(rq->ioctl_queue.in_data_addr) + 1));
+		} else {
+			tempbuffer = vmalloc(indata_size);
+			if(unlikely(copy_from_user(tempbuffer , tempsrc , indata_size))) {
+				pr_err("[ERROR]copy from user failed\n");
+				ret = -EINVAL;
+			} else {
+				snprintf(outlibname , XRP_NAMESPACE_ID_SIZE , "%s" , tempbuffer+1);
+			}
+			vfree(tempbuffer);
 		}
-		/*input_vir first byte is load or unload*/
-		sprintf(outlibname, "%s", tempbuffer + 1);
-		vfree(tempbuffer);
-	}else {
+	} else {
 		ret = -EINVAL;
 	}
 	pr_debug("outlibname:%s, ret:%d\n", outlibname, ret);
 
 	return ret;
 }
-static int32_t xrp_library_kmap_ionbuf(struct ion_buf *ionbuf,
-	__u8 **buffer, struct dma_buf **dmabuf)
-{
-	struct dma_buf *dma_buf;
-	int32_t mapcount = 0;
-	*buffer = NULL;
 
-	if ((ionbuf == NULL) || (ionbuf->mfd[0] < 0)) {
-		pr_err("[ERROR]ion dsp pool is NULL\n");
-		return -EINVAL;
-	}
-	dma_buf = dma_buf_get(ionbuf->mfd[0]);
-	if (IS_ERR_OR_NULL(dma_buf)) {
-		pr_err("[ERROR]dma_buf_get fd:%d\n", ionbuf->mfd[0]);
-		return -EINVAL;
-	}
-	/*workaround need to process later*/
-	while ((*buffer == NULL) && (mapcount < 5)) {
-		*buffer = sprd_ion_map_kernel(dma_buf, 0);
-		mapcount++;
-	}
-	*dmabuf = dma_buf;
-	/*buffer index 0 is input lib buffer*/
-	pr_debug("[kmap]mfd:%d, dev:%p, map vaddr is:%p, mapcount:%d\n",
-		ionbuf->mfd[0], ionbuf->dev, *buffer, mapcount);
-	if (NULL == *buffer)
-		return -EFAULT;
-
-	return 0;
-}
-static int32_t xrp_library_kunmap_ionbuf(struct dma_buf *dmabuf)
+static int32_t xrp_library_unload_prepare(struct file *filp , struct xrp_request *rq , char *libname , uint32_t krqflag)
 {
-	sprd_ion_unmap_kernel(dmabuf, 0);
-	dma_buf_put(dmabuf);
-
-	return 0;
-}
-static int32_t xrp_library_unload(struct xvp *xvp,
-	struct xrp_request *rq, char *libname)
-{
-	int ret = 0;
+	int ret = LIB_RESULT_OK;
 	__u32 indata_size;
 	__u8 *inputbuffer = NULL;
-	struct dma_buf* dmabuf = NULL;
 	struct loadlib_info *libinfo = NULL;
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
 
+	pr_info("[UNLOAD][IN]lib unload, nsid[%s]\n" , rq->nsid);
+	if (krqflag == 1) {
+		pr_info("[UNLOAD][IN]lib unload krqflag is 1, nsid[%s]\n" , rq->nsid);
+		return ret;
+	}
 	indata_size = rq->ioctl_queue.in_data_size;
-	if (0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID)
-		&& (indata_size >= LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE)) {
-		libinfo = xrp_library_getlibinfo(xvp, libname);
-		if (libinfo != NULL) {
-			ret = xrp_library_kmap_ionbuf(&rq->ion_in_buf, &inputbuffer, &dmabuf);
-			if (ret != 0) {
-				pr_err("[ERROR]xrp_library_kmap_ionbuf failed ret:%d\n", ret);
+	if (likely(0 == strcmp(rq->nsid , LIBRARY_LOAD_UNLOAD_NSID) && (indata_size >= LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE))) {
+		libinfo = xrp_library_getlibinfo(filp , libname);
+		if(likely(libinfo != NULL)) {
+			ret = xvp->vdsp_mem_desc->ops->mem_kmap_userbuf(&rq->ion_in_buf);
+			if (unlikely(ret != 0)) {
+				pr_err("[ERROR]xrp_library_unload_prepare kmap failed ret:%d\n", ret);
 				return -EFAULT;
 			}
-			*((unsigned int*)((__u8 *)inputbuffer + 40)) = libinfo->pil_info;
-			xrp_library_kunmap_ionbuf(dmabuf);
+			inputbuffer = (__u8*)((struct ion_buf*)(&rq->ion_in_buf))->addr_k[0];
+			*((unsigned int*)((__u8 *)inputbuffer + LIBRARY_CMD_PIL_INFO_OFFSET)) = libinfo->pil_info;
+			xvp->vdsp_mem_desc->ops->mem_kunmap_userbuf(&rq->ion_in_buf);
 			wmb();
-		}else {
+		} else {
 			pr_err("[ERROR]libinfo null\n");
 			ret = -EINVAL;
 		}
-	}else {
+	} else {
 		pr_err("[ERROR]nsid is not unload\n");
 		ret = -EINVAL;
 	}
@@ -557,25 +579,28 @@ static int32_t xrp_library_unload(struct xvp *xvp,
 
 	return ret;
 }
+
+// load prepare, 1. check lib whwther loaded, 2.xrp_library_request_resource. 3. read lib info to build load cmd.
 /* return value 0 is need load, 1 is loaded already*/
-static int32_t xrp_library_load(struct xvp *xvp,
-	struct xrp_request *rq, char *outlibname)
+static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *rq, char *outlibname, struct loadlib_info **outlibinfo)
 {
-	__u32 indata_size;
-	__u8 load_flag = 0;
-	int32_t ret = 0;
-	int i;
-	void *tempsrc = NULL;
-	__u8 *tempbuffer = NULL;
-	struct loadlib_info *libinfo = NULL;
-	__u8 *input_ptr = NULL;
+	__u8 load_flag = 0;			//it must Load flag, no check need.
+	__u8 *tempbuffer = NULL;	//it is same as input_ptr, one para is enough.
+	__u8 *input_ptr = NULL;		//user input data.
 	__u8 *libbuffer = NULL;
-	__u8 *inputbuffer = NULL;
-	char libname[64];
-	struct dma_buf* dmabuf = NULL;
+	__u8 *inputbuffer = NULL;	//kernel lib input data, it should survive during the existence of lib
+	char libname[XRP_NAMESPACE_ID_SIZE];
 
+	__u32 indata_size;
+	int32_t ret = LIB_RESULT_OK;
+	uint32_t loaded = 0;
+	void *tempsrc = NULL;
+	
+	struct loadlib_info *libinfo = NULL;
+	struct xvp *xvp = ((struct xvp_file *)(filp->private_data))->xvp;	//file link xvp file->link xvp
+
+	*outlibinfo = NULL;
 	indata_size = rq->ioctl_queue.in_data_size;
-
 	/*check whether load cmd*/
 	if (0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID)) {
 		/*check libname*/
@@ -585,7 +610,7 @@ static int32_t xrp_library_load(struct xvp *xvp,
 			tempsrc = (void*)(rq->in_data);
 
 		tempbuffer = vmalloc(indata_size);
-		if (copy_from_user(tempbuffer, tempsrc, indata_size)) {
+		if (unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
 			pr_err("[ERROR]copy from user failed\n");
 			vfree(tempbuffer);
 			return -EFAULT;
@@ -596,66 +621,59 @@ static int32_t xrp_library_load(struct xvp *xvp,
 
 		if (XRP_LOAD_LIB_FLAG == load_flag) {
 			/*load*/
-			sprintf(libname, "%s", input_ptr + 1);
+			snprintf(libname, XRP_NAMESPACE_ID_SIZE,"%s", input_ptr + 1);
 			/*check whether loaded*/
-			for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-				libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-				if (0 == strcmp(libinfo->libname, libname))
-					break;
-			}
-			if (i < libinfo_list_size(&(xvp->load_lib.lib_list))) {
-				libinfo->load_count++;
-				pr_debug("lib[%s]already loaded\n", libname);
+			snprintf(outlibname, XRP_NAMESPACE_ID_SIZE, "%s", libname);
+			loaded = xrp_check_whether_loaded(filp, libname, outlibinfo);
+			if(loaded) {
+				pr_info("lib[%s] already loaded, not need reload\n", libname);
 				ret = 1;/*loaded*/
-			}else {
+			} else {
 				/*not loaded alloc libinfo node ,load internal*/
-				ret = xrp_library_kmap_ionbuf(rq->ion_dsp_pool, &libbuffer, &dmabuf);
+				ret = xvp->vdsp_mem_desc->ops->mem_kmap_userbuf(rq->ion_dsp_pool);
 				if (ret != 0) {
 					pr_err("[ERROR]kmap ionbuf failed\n");
 					vfree(tempbuffer);
-					return -EINVAL;
+					return -EFAULT;
 				}
-				ret = xrp_library_load_internal(xvp, libbuffer, libname);
-				if (ret != 0) {
-					pr_err("[ERROR]xrp_library_load_internal ret:%d\n", ret);
-					xrp_library_kunmap_ionbuf(dmabuf);
+				libbuffer = (__u8*)(rq->ion_dsp_pool->addr_k[0]);
+				pr_debug("before xrp_library_load_internal libname:%s\n", libname);
+				ret = xrp_library_load_internal(filp , libbuffer , libname);
+				if(unlikely(ret != 0)) {
+					pr_err("[ERROR]xrp_library_load_internal ret:%d\n",ret);
+					xvp->vdsp_mem_desc->ops->mem_kunmap_userbuf(rq->ion_dsp_pool);
 					vfree(tempbuffer);
 					ret = -ENOMEM;
 					return ret;
 				}
-				xrp_library_kunmap_ionbuf(dmabuf);
-				/*
-				re edit rq for register libname, input data:
-				input[0] load unload flag
-				input[1] ~input[32]-libname,
-				input[LIBRARY_CMD_PIL_INFO_OFFSET]~input[43]-libinfo addr
-				*/
-				libinfo = xrp_library_getlibinfo(xvp, libname);
-				if (NULL == libinfo) {
-					pr_err("[ERROR]libinfo NULL\n");
-					xrp_library_decrelease(xvp, libname);
+				xvp->vdsp_mem_desc->ops->mem_kunmap_userbuf(rq->ion_dsp_pool);
+				/*re edit rq for register libname, input data: input[0] load unload flag
+				input[1] ~input[32] --- libname , input[LIBRARY_CMD_PIL_INFO_OFFSET]~input[43] ---- libinfo addr*/
+				libinfo = xrp_library_getlibinfo(filp , libname);
+				if (unlikely(libinfo == NULL)) {
+					pr_err("[ERROR]xrp_library_getlibinfo NULL\n");
+					xrp_library_decrelease(filp , libname);
 					vfree(tempbuffer);
 					ret = -ENOMEM;
 					return ret;
-				}else {
+				} else {
 					*((uint32_t*)(input_ptr + LIBRARY_CMD_PIL_INFO_OFFSET)) =
 						libinfo->pil_info;
 					pr_debug("nsid:%s, loadflag:%d, libname:%s,"
 						"pil_info:%x,indata_size:%d\n",
 						rq->nsid, load_flag, libname,
 						libinfo->pil_info, indata_size);
-					sprintf(outlibname, "%s", libname);
 				}
-				ret = xrp_library_kmap_ionbuf(&rq->ion_in_buf, &inputbuffer,
-					&dmabuf);
-				if (ret != 0) {
+				ret = xvp->vdsp_mem_desc->ops->mem_kmap_userbuf(&rq->ion_in_buf);
+				if (unlikely(ret != 0)) {
 					pr_err("[ERROR]kmap ionbuf failed\n");
 					vfree(tempbuffer);
-					xrp_library_decrelease(xvp, libname);
+					xrp_library_decrelease(filp, libname);
 					return -EFAULT;
 				}
+				inputbuffer = (__u8*) ((struct ion_buf*)(&rq->ion_in_buf))->addr_k[0];
 				memcpy(inputbuffer, tempbuffer, indata_size);
-				xrp_library_kunmap_ionbuf(dmabuf);
+				xvp->vdsp_mem_desc->ops->mem_kunmap_userbuf(&rq->ion_in_buf);
 				wmb();
 			}
 		}else {
@@ -668,257 +686,182 @@ static int32_t xrp_library_load(struct xvp *xvp,
 		return 0;
 	}
 }
-#if 1
+
 int32_t xrp_library_release_all(struct xvp *xvp)
 {
 	struct loadlib_info *libinfo = NULL;
+	struct loadlib_info *temp;
+	unsigned long bkt;
+	struct xrp_known_file *p;
+	struct xvp_file *xvp_file;
 
-	mutex_lock(&xvp->load_lib.libload_mutex);
-	while (0 != libinfo_list_size(&(xvp->load_lib.lib_list))) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), 0);
-		/*unmap iommu and release ion buffer*/
-		if ((libinfo != NULL)) {
-			xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-				libinfo->ionhandle);
-			xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-				libinfo->ionhandle, IOMMU_ALL);
-			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-				libinfo->ionhandle);
-			vfree(libinfo->ionhandle);
-
-			xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-				libinfo->pil_ionhandle);
-			xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-				libinfo->pil_ionhandle, IOMMU_ALL);
-			xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-				libinfo->pil_ionhandle);
-			vfree(libinfo->pil_ionhandle);
-			if (libinfo->code_back_kaddr != NULL)
-				vfree(libinfo->code_back_kaddr);
-			libinfo_list_remove(&(xvp->load_lib.lib_list), 0);
-			pr_debug("release ion handle, pil handle\n");
-		}else {
-			pr_err("libinfo is NULL may be error but also remove node\n");
-			libinfo_list_remove(&(xvp->load_lib.lib_list), 0);
-		}
-	}
-	mutex_unlock(&xvp->load_lib.libload_mutex);
-
-	return 0;
-}
-#endif
-#ifdef USE_RE_REGISTER_LIB
-static int32_t xrp_register_libs(struct xvp *xvp , struct xrp_comm *comm)
-{
-	int i;
-	int ret = 0;
-	int realret = 0;
-	__u8 *input_ptr = NULL;
-	struct loadlib_info *libinfo = NULL;
-	struct ion_buf input_ion_buf;
-	phys_addr_t vdsp_addr;
-	struct xrp_request rq;
-
-	rq.ioctl_queue.flags = XRP_QUEUE_FLAG_NSID;
-	rq.ioctl_queue.in_data_size = LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE;
-	rq.ioctl_queue.out_data_size = 0;
-	rq.ioctl_queue.buffer_size = 0;
-	rq.ioctl_queue.in_data_addr = 0;
-	rq.ioctl_queue.out_data_addr = 0;
-	rq.ioctl_queue.buffer_addr = 0;
-	rq.ioctl_queue.nsid_addr = 0;
-	rq.n_buffers = 0;
-	rq.buffer_mapping = NULL;
-	rq.dsp_buffer = NULL;
-	/*may change later*/
-	rq.in_data_phys = 0;
-	/*alloc input cmd ion buffer*/
-	ret = sprd_vdsp_ion_alloc(&input_ion_buf, ION_HEAP_ID_MASK_SYSTEM,
-		rq.ioctl_queue.in_data_size);
-	if(ret != 0) {
-		pr_err("alloc input_ion_buf failed\n");
-		return -ENOMEM;
-	}
-	input_ion_buf.dev = xvp->dev;
-	sprd_vdsp_kmap(&input_ion_buf);
-	input_ptr = (void*)input_ion_buf.addr_k[0];
-	sprd_vdsp_iommu_map(&input_ion_buf, IOMMU_ALL);
-	vdsp_addr = input_ion_buf.iova[0];
-	rq.in_data_phys = vdsp_addr;
-	memset(rq.nsid, 0, sizeof(rq.nsid));
-	sprintf(rq.nsid, "%s", LIBRARY_LOAD_UNLOAD_NSID);
-	for (i = 0; i < libinfo_list_size(&(xvp->load_lib.lib_list)); i++) {
-		libinfo = libinfo_list_get(&(xvp->load_lib.lib_list), i);
-		if (libinfo->load_count > 0) {
-			/*re send register cmd*/
-			if (libinfo->code_back_kaddr == NULL) {
-				realret = -1;
-				pr_err("fail\n");
-				break;
-			}
-			memcpy(libinfo->code_back_kaddr, libinfo->ion_kaddr,
-				libinfo->length);
-			input_ptr[0] = XRP_LOAD_LIB_FLAG;
-			sprintf(input_ptr + 1, "%s", libinfo->libname);
-			*((unsigned int*)(input_ptr + LIBRARY_CMD_PIL_INFO_OFFSET)) =
-				libinfo->pil_info;
-			sprd_fill_hw_request(comm->comm , &rq);
-			xrp_send_device_irq(xvp);
-			if(xvp->host_irq_mode)
-				ret = xvp_complete_cmd_irq(xvp, comm, xrp_cmd_complete);
-			else
-				ret = xvp_complete_cmd_poll(xvp, comm, xrp_cmd_complete);
-
-			xrp_panic_check(xvp);
-			if(0 == ret)
-				ret = sprd_complete_hw_request(comm->comm, &rq);
-			if(ret != 0) {
-				/*set invalid*/
-				pr_err("re load lib:%s failed\n", libinfo->libname);
-				libinfo->lib_state = XRP_LIBRARY_IDLE;
-				realret = -1;
-			}else {
-				libinfo->lib_state = XRP_LIBRARY_LOADED;
-				pr_debug("re load lib:%s ok\n", libinfo->libname);
+	mutex_lock(&xvp->xrp_known_files_lock);
+	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
+		pr_debug("known file-p:%lx\n", (unsigned long)p);
+		xvp_file = (struct xvp_file*)(((struct file*)(p->filp))->private_data);
+		list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list, node_libinfo) {
+			pr_info("list_for_each_entry libinfo:%lx, libname:%s\n", (unsigned long)libinfo, libinfo->libname);
+			if(likely(NULL != libinfo)) {
+				if(library_check_otherfile_count(p->filp, libinfo->libname) == 0) {
+					xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo->ionhandle);
+					xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, libinfo->ionhandle, IOMMU_ALL);
+					xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo->ionhandle);
+					vfree(libinfo->ionhandle);
+					xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, libinfo->pil_ionhandle);
+					xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, libinfo->pil_ionhandle, IOMMU_ALL);
+					xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, libinfo->pil_ionhandle);
+					vfree(libinfo->pil_ionhandle);
+				}
+				pr_debug("release ion handle, pil handle current:%p, original_flag:%d\n", get_current(), libinfo->original_flag );
+				list_del(&libinfo->node_libinfo);
+				vfree(libinfo);
 			}
 		}
 	}
-	sprd_vdsp_iommu_unmap(&input_ion_buf, IOMMU_ALL);
-	sprd_vdsp_kunmap(&input_ion_buf);
-	sprd_vdsp_ion_free(&input_ion_buf);
+	mutex_unlock(&xvp->xrp_known_files_lock);
 
-	return realret;
+	return LIB_RESULT_OK;
 }
-#endif
+
+// 1.load, check whether load before, if yes->add count, or add node / realy load
+// 2.unload ,check whether last one load, if yes->delete node, release load, or decrease count
+// 3. common cmd, record which lib running 
 /*return value 0 is ok, other value is fail or no need process continue*/
-int32_t xrp_pre_process_request(struct xvp *xvp, struct xrp_request *rq,
-	enum load_unload_flag loadflag, char *libname)
+int32_t xrp_pre_process_request(struct file *filp , struct xrp_request *rq , enum load_unload_flag loadflag, char *libname , uint32_t krqflag)
 {
-	int32_t lib_result, load_count;
+	int32_t lib_result;
 	struct loadlib_info *libinfo = NULL;
+	struct xvp* xvp = ((struct xvp_file*)(filp->private_data))->xvp;
 
 	if (loadflag == XRP_LOAD_LIB_FLAG) {
-		lib_result = xrp_library_load(xvp, rq, libname);
-		if (0 != lib_result) {
+		lib_result = xrp_library_load_prepare(filp, rq, libname, &libinfo);
+		if (unlikely(0 != lib_result)) {
 			/*has loaded needn't reload*/
-			if (lib_result != 1) {
+			if (unlikely(lib_result != 1)) {
 				pr_err("[ERROR]result:%d\n", lib_result);
 				return -EFAULT;
-			}else {
-				pr_err("[ERROR]already loaded needn't reload\n");
-				return -ENXIO;
+			} else {
+				pr_warn("[WARN]already loaded needn't reload\n");
+				/*increase*/
+				xrp_library_increase(filp , libname , libinfo);
+				return -EEXIST;
 			}
-		}else {
+		} else {
 			/*re-edit the rq for register*/
 			pr_debug("Load libname:%s\n", libname);
-			return 0;
+			return LIB_RESULT_OK;
 		}
-	}else if (loadflag == XRP_UNLOAD_LIB_FLAG) {
-		lib_result = xrp_library_getloadunload_libname(xvp, rq, libname);
-		if (lib_result == 0) {
-			if (0 != xrp_library_checkprocessing(xvp, libname)) {
-				pr_err("[ERROR]the same lib is processing invalid operation\n");
-				return -EINVAL;
-			}
-			load_count = xrp_library_decrease(xvp, libname);
-			libinfo = xrp_library_getlibinfo(xvp, libname);
-			/*if not need unload, maybe count is not zero, return after unmap*/
-			if (load_count > 0) {
-				pr_debug("needn't unload because load count is not zero\n");
-				return -ENXIO;
-			}else if (0 == load_count){
-#ifndef USE_RE_REGISTER_LIB
-				if (libinfo != NULL) {
-					if (libinfo->lib_state == XRP_LIBRARY_MISSED_STATE) {
-						pr_debug("libname:%s is missed state, release here\n",
-							libname);
-						xrp_library_decrelease(xvp, libname);
-						return -ENXIO;
+	} else if (loadflag == XRP_UNLOAD_LIB_FLAG) {
+		lib_result = xrp_library_getloadunload_libname(xvp, rq, libname, krqflag);
+		if(likely(lib_result == 0)) {
+			uint32_t curfilecnt, totalcount;
+
+			xrp_library_get_loadcount(filp, libname, &curfilecnt, &totalcount);
+			if(curfilecnt == 1) {
+				if(totalcount == 1) {
+					if (0 != xrp_library_checkprocessing(filp , libname)) {
+						pr_err("[ERROR]the same lib is processing invalid operation\n");
+						return -EINVAL;
 					}
+					/*if need unload may be modify libinfo addr, only follow the default send cmd*/
+					lib_result = xrp_library_unload_prepare(filp, rq, libname, krqflag);
+					if(unlikely(lib_result != 0)) {
+						pr_err("[ERROR]xrp_library_unload failed:%d\n", lib_result);
+						return -EINVAL;
+					}
+					libinfo = xrp_library_getlibinfo(filp, libname);
+					if (likely(libinfo != NULL))
+						 libinfo->lib_state = XRP_LIBRARY_UNLOADING;
+					pr_debug("Unload libname:%s\n", libname);
+					return LIB_RESULT_OK;
+				} else {
+					pr_debug("curfile cnt is:%d total cnt:%d needn't unload\n" , curfilecnt , totalcount);
+					xrp_library_decrelease(filp , libname);
+					return -EEXIST;
 				}
-#endif
-				/*
-				if need unload may be modify libinfo addr,
-				only follow the default send cmd
-				*/
-				lib_result = xrp_library_unload(xvp, rq, libname);
-				if (lib_result != 0) {
-					pr_err("[ERROR]xrp_library_unload failed:%d\n", lib_result);
-					xrp_library_increase(xvp , libname);
-					return -EINVAL;
-				}
-			}else {
-				pr_err("[ERROR]decrease count error:%d, libname:%s\n",
-					load_count, libname);
+			} else if(curfilecnt > 1) {
+				pr_debug("curfile cnt is:%d needn't unload\n" , curfilecnt);
+				xrp_library_decrelease(filp , libname);
+				return -EEXIST;
+			} else {
+				pr_err("cur file load count is:%d, total count:%d ,libname:%s curfilecnt is abnormal\n", curfilecnt, totalcount, libname);
 				return -ENXIO;
 			}
-			if (libinfo != NULL)
-				libinfo->lib_state = XRP_LIBRARY_UNLOADING;
-			pr_debug("Unload libname:%s\n", libname);
-			return 0;
-		}else {
+		} else {
 			pr_err("[ERROR]get libname error, libname:%s\n", libname);
 			return -EINVAL;
 		}
-	}else {
-		/*check whether libname unloading state, if unloading return*/
-		libinfo = xrp_library_getlibinfo(xvp, rq->nsid);
+	} else {
+		libinfo = xrp_library_getlibinfo(filp , rq->nsid);
 		if (libinfo != NULL) {
-			if (libinfo->lib_state != XRP_LIBRARY_LOADED) {
-				pr_err("[ERROR]lib:%s, libstate is:%d not XRP_LIBRARY_LOADED\n",
-					rq->nsid, libinfo->lib_state);
+			mutex_lock(&libinfo->mutex);
+			if ((libinfo->lib_state != XRP_LIBRARY_LOADED) && (libinfo->lib_state != XRP_LIBRARY_PROCESSING_CMD)) {
+				pr_err("[ERROR]lib:%s, libstate is:%d not XRP_LIBRARY_LOADED, so return inval\n", rq->nsid, libinfo->lib_state);
 				return -EINVAL;
 			}
 			/*set processing libname*/
+			libinfo->lib_processing_count++;
 			libinfo->lib_state = XRP_LIBRARY_PROCESSING_CMD;
-		}else {
+			pr_debug("lib_processing_count:%d\n", libinfo->lib_processing_count);
+			mutex_unlock(&libinfo->mutex);
+		} else {
 			pr_err("libinfo null\n");
 		}
+		/*check whether libname unloading state, if unloading return*/
 		pr_debug("Command libname:%s\n", rq->nsid);
-		return 0;
+		return LIB_RESULT_OK;
 	}
 }
-int post_process_request(struct xvp *xvp, struct xrp_request *rq,
-	const char* libname, enum load_unload_flag load_flag, int32_t resultflag)
+
+// resultflag: cmd run result, ok/deliver fail/timeout busy
+// load flag: load, unload, common cmd
+int post_process_request(struct file *filp, struct xrp_request *rq, const char* libname, enum load_unload_flag load_flag, int32_t resultflag)
 {
 	struct loadlib_info *libinfo = NULL;
 	int32_t ret = 0;
 
-	pr_debug("load_flag[%d], resultflag[%d]\n", load_flag, resultflag);
-	if (load_flag == XRP_LOAD_LIB_FLAG) {
-		if (0 == resultflag){
-			xrp_library_increase(xvp, libname);
-			libinfo = xrp_library_getlibinfo(xvp, libname);
-			if (NULL != libinfo)
+	pr_info("[IN]load_flag[%d], resultflag[%d]\n", load_flag, resultflag);
+	if(load_flag == XRP_LOAD_LIB_FLAG) {
+		if (likely(resultflag == 0)){
+			xrp_library_increase(filp , libname , NULL);
+			libinfo = xrp_library_getlibinfo(filp , libname);
+			if(likely(libinfo != NULL)) {
 				libinfo->lib_state = XRP_LIBRARY_LOADED;
-		}else {
-			/*load failed release here*/
-			xrp_library_decrelease(xvp, libname);
-			pr_err("[ERROR]libname:%s, load failed, release\n", libname);
+				pr_info("libname:%s, libstate XRP_LIBRARY_LOADED\n" , libname);
+			}
+		} else {
+			/*load failedd release here*/
+			xrp_library_decrelease(filp , libname);
+			pr_err("[ERROR]libname:%s, load failed xrp_library_decrelease\n", libname);
 			ret = -EFAULT;
 		}
-	}else if (load_flag == XRP_UNLOAD_LIB_FLAG) {
-		if (0 == resultflag) {
-			libinfo = xrp_library_getlibinfo(xvp, libname);
-			if (NULL != libinfo)
+	} else if (load_flag == XRP_UNLOAD_LIB_FLAG) {
+		if(likely(resultflag == 0)) {
+			libinfo = xrp_library_getlibinfo(filp , libname);
+			if(likely(libinfo != NULL)) {
 				libinfo->lib_state = XRP_LIBRARY_IDLE;
-			pr_info("libname:%s, libstate XRP_LIBRARY_IDLE libinfo:%p\n", libname , libinfo);
+			}
+			pr_info("libname:%s, libstate XRP_LIBRARY_IDLE libinfo:%p\n", libname, libinfo);
+			xrp_library_decrelease(filp , libname);
 		} else {
-			xrp_library_increase(xvp , libname);
 			pr_err("[ERROR]libname:%s, unload failed\n", libname);
 			ret = -EFAULT;
 		}
-	}else {
+	} else {
 		/*remove processing lib*/
-		libinfo = xrp_library_getlibinfo(xvp, rq->nsid);
-		if (libinfo != NULL) {
+		libinfo = xrp_library_getlibinfo(filp , rq->nsid);
+		if(libinfo != NULL) {
+			mutex_lock(&libinfo->mutex);
+			libinfo->lib_processing_count--;
+			pr_debug("post processing count:%d\n", libinfo->lib_processing_count);
 			if (libinfo->lib_state != XRP_LIBRARY_PROCESSING_CMD) {
-				pr_err("[ERROR]lib:%s processing cmd, but state error\n",
-					rq->nsid);
+				pr_err("[ERROR]lib:%s processing cmd , but not XRP_LIBRARY_PROCESSING_CMD state\n", rq->nsid);
 				ret = -EINVAL;
 			}
 			/*set processing libname*/
-			libinfo->lib_state = XRP_LIBRARY_LOADED;
+			if (libinfo->lib_processing_count == 0)
+				libinfo->lib_state = XRP_LIBRARY_LOADED;
+			mutex_unlock(&libinfo->mutex);
 		}
 		/*set processing lib state*/
 		pr_debug("lib:%s, process cmd over\n", rq->nsid);
@@ -927,3 +870,82 @@ int post_process_request(struct xvp *xvp, struct xrp_request *rq,
 	return ret;
 }
 
+int32_t xrp_create_unload_cmd(struct file *filp, struct loadlib_info *libinfo, struct xrp_unload_cmdinfo *info)
+{
+	struct xrp_request *rq;
+	struct ion_buf *lib_input_ionmem;
+	int ret;
+	char *kvaddr;
+	const char *libname = libinfo->libname;
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
+
+	rq = vmalloc(sizeof(*rq));
+	if (unlikely(rq == NULL)) {
+		goto rq_failed;
+	}
+	lib_input_ionmem = vmalloc(sizeof(struct ion_buf));
+	if (unlikely(lib_input_ionmem == NULL)) {
+	    goto ion_buf_failed;
+	}
+	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
+                                             lib_input_ionmem,
+                                             ION_HEAP_ID_MASK_SYSTEM,
+                                             LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE);
+	if (unlikely(ret != 0)) {
+		goto alloc_lib_input_ionmem_failed;
+	}
+	lib_input_ionmem->dev = xvp->dev;
+	/*alloc libinfo ion buffer*/
+	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, lib_input_ionmem);
+	if (unlikely(ret != 0)) {
+		goto kmap_failed;
+	}
+	kvaddr = (void*)lib_input_ionmem->addr_k[0];
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, lib_input_ionmem , IOMMU_ALL);
+	if (unlikely(ret != 0)) {
+		goto iommu_map_failed;
+	}
+	//set lib name
+	memset(rq, 0, sizeof(*rq));
+	/*nsid to load/unload nsid*/
+	sprintf(rq->nsid, "%s", LIBRARY_LOAD_UNLOAD_NSID);
+	kvaddr[0] = XRP_UNLOAD_LIB_FLAG;  /*unload*/
+	strncpy(kvaddr + 1, libname, 33); /*libname*/
+	*((uint32_t *)(kvaddr + 40)) = libinfo->pil_info;
+	info->input_kaddr = kvaddr;
+	rq->ioctl_queue.flags = (1 ? XRP_QUEUE_FLAG_NSID : 0) |
+							((2 << XRP_QUEUE_FLAG_PRIO_SHIFT) &
+							XRP_QUEUE_FLAG_PRIO);
+	rq->ioctl_queue.in_data_size = LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE;
+	rq->ioctl_queue.in_data_addr = (unsigned long)kvaddr;
+	rq->in_data_phys = lib_input_ionmem->iova[0];
+	info->rq = rq;
+	info->input_ion_handle = lib_input_ionmem;
+	pr_debug("create unload cmd\n");
+	return LIB_RESULT_OK;
+iommu_map_failed:
+	xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, lib_input_ionmem, IOMMU_ALL);
+kmap_failed:
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_input_ionmem);
+alloc_lib_input_ionmem_failed:
+	vfree(lib_input_ionmem);
+ion_buf_failed:
+	vfree(rq);
+rq_failed:
+	return -EFAULT;
+}
+
+int32_t xrp_free_unload_cmd(struct file *filp , struct xrp_unload_cmdinfo *info)
+{
+	struct ion_buf *lib_input_ionmem;
+	struct xvp *xvp = ((struct xvp_file*)(filp->private_data))->xvp;
+
+	lib_input_ionmem = info->input_ion_handle;
+	xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, lib_input_ionmem);
+	xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, lib_input_ionmem , IOMMU_ALL);
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, lib_input_ionmem);
+	vfree(info->rq);
+	vfree(info->input_ion_handle);
+	pr_debug("free unload cmd\n");
+	return LIB_RESULT_OK;
+}

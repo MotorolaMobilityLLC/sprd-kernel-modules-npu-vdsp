@@ -33,13 +33,12 @@
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
-#include <linux/io.h>
-#include "xrp_address_map.h"
 #include "vdsp_hw.h"
 #include "xrp_internal.h"
 #include "xrp_kernel_dsp_interface.h"
 #include "xrp_faceid.h"
 #include "vdsp_trusty.h"
+#include "vdsp_smem.h"
 
 #define SIGN_HEAD_SIZE (512)
 #define SIGN_TAIL_SIZE (512)
@@ -60,12 +59,12 @@ static int sprd_alloc_faceid_weights_buffer(struct xvp *xvp,
 						ion_buf,
 						ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
 						size);
-	if(0 != ret) {
+	if(unlikely(0 != ret)) {
 		pr_err("alloc weights failed\n");
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, ion_buf);
-	if(0 != ret) {
+	if(unlikely(0 != ret)) {
 		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, ion_buf);
 		return -EFAULT;
 	}
@@ -86,347 +85,178 @@ static int sprd_free_faceid_weights_buffer(struct xvp *xvp,
 	}
 	return 0;
 }
-#if 0
-static int sprd_iommu_map_faceid_weights_buffer(struct xvp *xvp,struct ion_buf *ion_buf)
-{
-	int ret = -EFAULT;
-	if(NULL == (void*)ion_buf->addr_k[0]) {
-		pr_info("map faceid weights addr is NULL \n");
-		return ret;
-	}
-	pr_info("ion_buf->addr_k[0] %lx\n",ion_buf->addr_k[0]);
-	{
-		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, ion_buf , IOMMU_ALL);
-		if(ret) {
-			pr_info("%s map faceid fialed\n" , __func__);
-			return ret;
-		}
-		//xvp->dsp_firmware_addr = xvp->ion_faceid_fw.iova[0];
-	}
-	pr_info("map faceid weights addr:%lx --> %lx\n",ion_buf->addr_k[0],ion_buf->iova[0]);
 
-	return ret;
-}
-static int sprd_iommu_unmap_faceid_weights_buffer(struct xvp *xvp,struct ion_buf *ion_buf)
-{
-	int ret = -EFAULT;
-
-	if(NULL == (void*)ion_buf->addr_k[0]) {
-		pr_err("unmap faceid weights addr is NULL\n");
-		return ret;
-	}
-	{
-		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc, ion_buf, IOMMU_ALL);
-		if(ret) {
-			pr_err("%s unmap faceid weights buffer failed\n" , __func__);
-			return ret;
-		}
-	}
-	pr_info("%s :%lx\n" , __func__ ,ion_buf->addr_k[0]);
-	return 0;
-}
-#endif
 int sprd_faceid_request_algo_mem(struct xvp *xvp)
 {
 	int ret = sprd_alloc_faceid_weights_buffer(xvp,
 				&xvp->faceid_pool.ion_fd_mem_pool,
 				FACEID_FD_MEM_SIZE);
-	if (ret < 0){
+	if (unlikely(ret < 0)){
 		pr_err("request fd mem fail\n");
 		return ret;
 	}
 
-	ret = sprd_alloc_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_face_transfer,
-			sizeof(FV_FAECINFO));
-	if (ret < 0){
-		sprd_free_faceid_weights_buffer(xvp,
-				&xvp->faceid_pool.ion_fd_mem_pool);
-		pr_err("request transfer mem fail\n");
-		return ret;
-	}
-/*
-	ret = sprd_alloc_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_flv_mem_pool,FACEID_FLV_MEM_SIZE);
-	if (ret < 0){
-		sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_fd_mem_pool);
-		sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_fp_mem_pool);
-		pr_info("request flv mem fail\n");
-		return ret;
-	}
-	ret = sprd_alloc_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_fv_mem_pool,FACEID_FV_MEM_SIZE);
-	if (ret < 0){
-		sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_fd_mem_pool);
-		sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_fp_mem_pool);
-		sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_flv_mem_pool);
-		pr_info("request fv mem fail\n");
-		return ret;
-	}
-*/
 	return 0;
 }
 
 int sprd_faceid_release_algo_mem(struct xvp *xvp)
 {
 	sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_fd_mem_pool);
-	sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_face_transfer);
-	//sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_flv_mem_pool);
-	//sprd_free_faceid_weights_buffer(xvp,&xvp->faceid_pool.ion_fv_mem_pool);
 	return 0;
 }
 
-int sprd_faceid_request_weights_fd_p(struct xvp *xvp)
+int sprd_request_weights(struct xvp *xvp,char* name,struct ion_buf *coeff_ion)
 {
 	unsigned long dst = 0;
 	int ret = request_firmware(&xvp->faceid_fw,
-			"network_coeff_fd_p.bin", xvp->dev);
+			name, xvp->dev);
 
-	if (ret < 0){
-		pr_err("request fd p weights fail\n");
+	if (unlikely(ret < 0)){
+		pr_info("request %s weights fail\n",name);
 		return ret;
 	}
 
 	ret = sprd_alloc_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fd_weights_p,
+			coeff_ion,
 			xvp->faceid_fw->size);
-	if (ret < 0)
+
+	if (unlikely(ret < 0))
 	{
-		pr_err("alloc fd p weights fail\n");
+		pr_err("alloc %s weights fail\n",name);
 		return ret;
 	}
-	dst = xvp->faceid_pool.ion_fd_weights_p.addr_k[0];
+
+	dst = coeff_ion->addr_k[0];
 	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
 
 	return ret;
 }
-int sprd_faceid_request_weights_fd_r(struct xvp *xvp)
-{
-	unsigned long dst = 0;
-	int ret = request_firmware(&xvp->faceid_fw,
-			"network_coeff_fd_r.bin", xvp->dev);
 
-	if (ret < 0){
-		pr_err("request fd r weights fail\n");
-		return ret;
-	}
-
-	ret = sprd_alloc_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fd_weights_r,
-			xvp->faceid_fw->size);
-	if (ret < 0)
-	{
-		pr_err("alloc fd r weights fail\n");
-		return ret;
-	}
-
-	dst = xvp->faceid_pool.ion_fd_weights_r.addr_k[0];
-	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
-
-	release_firmware(xvp->faceid_fw);
-
-	return ret;
-}
-int sprd_faceid_request_weights_fd_o(struct xvp *xvp)
-{
-	unsigned long dst = 0;
-	int ret = request_firmware(&xvp->faceid_fw,
-			"network_coeff_fd_o.bin", xvp->dev);
-
-	if (ret < 0){
-		pr_err("request fd o weights fail\n");
-		return ret;
-	}
-
-	ret = sprd_alloc_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fd_weights_o,
-			xvp->faceid_fw->size);
-	if (ret < 0)
-	{
-		pr_err("alloc fd o weights fail\n");
-		return ret;
-	}
-
-	dst = xvp->faceid_pool.ion_fd_weights_o.addr_k[0];
-	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
-
-	release_firmware(xvp->faceid_fw);
-
-	return ret;
-}
-int sprd_faceid_request_weights_fp(struct xvp *xvp)
-{
-	unsigned long dst = 0;
-
-	int ret = request_firmware(&xvp->faceid_fw,
-			"network_coeff_fp.bin", xvp->dev);
-
-	if (ret < 0){
-		pr_info("request fp weights fail\n");
-		return ret;
-	}
-
-	ret = sprd_alloc_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fp_weights,
-			xvp->faceid_fw->size);
-	if (ret < 0)
-	{
-		pr_err("alloc fp weights fail\n");
-		return ret;
-	}
-
-	dst = xvp->faceid_pool.ion_fp_weights.addr_k[0];
-	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
-
-	release_firmware(xvp->faceid_fw);
-
-	return ret;
-}
-int sprd_faceid_request_weights_flv(struct xvp *xvp)
-{
-	unsigned long dst = 0;
-	int ret = request_firmware(&xvp->faceid_fw,
-			"network_coeff_flv.bin", xvp->dev);
-
-	if (ret < 0){
-		pr_info("request flv weights fail\n");
-		return ret;
-	}
-
-	ret = sprd_alloc_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_flv_weights,
-			xvp->faceid_fw->size);
-	if (ret < 0)
-	{
-		pr_err("alloc flv weights fail\n");
-		return ret;
-	}
-
-	dst = xvp->faceid_pool.ion_flv_weights.addr_k[0];
-	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
-
-	release_firmware(xvp->faceid_fw);
-
-	return ret;
-}
-int sprd_faceid_request_weights_fv(struct xvp *xvp)
-{
-	unsigned long dst = 0;
-	int ret = request_firmware(&xvp->faceid_fw,
-			"network_coeff_fv.bin", xvp->dev);
-
-	if (ret < 0){
-		pr_info("request fv weights fail\n");
-		return ret;
-	}
-
-	ret = sprd_alloc_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fv_weights,
-			xvp->faceid_fw->size);
-	if (ret < 0)
-	{
-		pr_err("alloc fv weights fail\n");
-		return ret;
-	}
-
-	dst = xvp->faceid_pool.ion_fv_weights.addr_k[0];
-	memcpy((void*)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
-
-	release_firmware(xvp->faceid_fw);
-
-	return ret;
-}
 int sprd_faceid_request_weights(struct xvp *xvp)
 {
-	sprd_faceid_request_weights_fd_p(xvp);
-	sprd_faceid_request_weights_fd_r(xvp);
-	sprd_faceid_request_weights_fd_o(xvp);
-	sprd_faceid_request_weights_fp(xvp);
-	sprd_faceid_request_weights_flv(xvp);
-	sprd_faceid_request_weights_fv(xvp);
+	int i = 0,ret;
+	char* coeff_name[FACEID_COEFF_NUM] ={"network_coeff_fd_p.bin",
+		"network_coeff_fd_r.bin",
+		"network_coeff_fd_o.bin",
+		"network_coeff_fp.bin",
+		"network_coeff_flv.bin",
+		"network_coeff_fv.bin"};
+
+	struct ion_buf *coeff_ion[FACEID_COEFF_NUM] = {
+			&xvp->faceid_pool.ion_fd_weights_p,
+			&xvp->faceid_pool.ion_fd_weights_r,
+			&xvp->faceid_pool.ion_fd_weights_o,
+			&xvp->faceid_pool.ion_fp_weights,
+			&xvp->faceid_pool.ion_flv_weights,
+			&xvp->faceid_pool.ion_fo_weights,};
+
+
+	for(;i < FACEID_COEFF_NUM; i++)
+	{
+		ret = sprd_request_weights(xvp, coeff_name[i], coeff_ion[i]);
+		if(ret < 0)
+			return ret;
+	}
 	sprd_faceid_request_algo_mem(xvp);
-	//sprd_faceid_request_result_mem(xvp);
+
 	return 0;
 }
 void sprd_faceid_release_weights(struct xvp *xvp)
 {
-	sprd_free_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fd_weights_p);
-	sprd_free_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fd_weights_r);
-	sprd_free_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fd_weights_o);
-	sprd_free_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fp_weights);
-	sprd_free_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_flv_weights);
-	sprd_free_faceid_weights_buffer(xvp,
-			&xvp->faceid_pool.ion_fv_weights);
-	sprd_faceid_release_algo_mem(xvp);
-	//sprd_faceid_release_result_mem(xvp);
-}
+	int i = 0;
+	struct ion_buf *coeff_ion[FACEID_COEFF_NUM] = {
+			&xvp->faceid_pool.ion_fd_weights_p,
+			&xvp->faceid_pool.ion_fd_weights_r,
+			&xvp->faceid_pool.ion_fd_weights_o,
+			&xvp->faceid_pool.ion_fp_weights,
+			&xvp->faceid_pool.ion_flv_weights,
+			&xvp->faceid_pool.ion_fo_weights,};
 
+	for(;i < FACEID_COEFF_NUM; i++)
+	{
+		sprd_free_faceid_weights_buffer(xvp, coeff_ion[i]);
+	}
+	sprd_faceid_release_algo_mem(xvp);
+}
+int sprd_alloc_faceid_combuffer(struct xvp *xvp)
+{
+	int ret;
+
+	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
+		&xvp->ion_faceid_comm,
+		ION_HEAP_ID_MASK_VDSP,
+		PAGE_SIZE);
+	if(0 != ret) {
+		pr_err("alloc faceid com buffer failed,ret %d\n",ret);
+		return -ENOMEM;
+	}
+
+	xvp->ion_faceid_comm.dev = xvp->dev;
+
+	pr_debug("faceid com phyaddr %llX\n",xvp->ion_faceid_comm.addr_p[0]);
+	return 0;
+}
+int sprd_free_faceid_combuffer(struct xvp *xvp)
+{
+
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
+		&xvp->ion_faceid_comm);
+
+	return 0;
+}
 static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 {
 	int ret;
 
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
 		&xvp->ion_faceid_fw_sign,
-		ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
+		ION_HEAP_ID_MASK_VDSP,
 		VDSP_FACEID_FIRMWIRE_SIZE);
-	if(0 != ret) {
+	if(unlikely(0 != ret)) {
 		pr_err("alloc sign fw buffer failed,ret %d\n",ret);
 		return -ENOMEM;
 	}
 	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc,
 			&xvp->ion_faceid_fw_sign);
-	if(0 != ret) {
+	if(unlikely(0 != ret)) {
 		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
 				&xvp->ion_faceid_fw_sign);
 		pr_err("kmap fw buffer failed,ret %d\n",ret);
 		return -EFAULT;
 	}
 	xvp->ion_faceid_fw_sign.dev = xvp->dev;
+	pr_debug("ion_faceid_fw_sign phyaddr %llX\n",xvp->ion_faceid_fw_sign.addr_k[0],
+				xvp->ion_faceid_fw_sign.addr_p[0]);
 
+	xvp->ion_faceid_fw.addr_p[0] = 0;
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
 			&xvp->ion_faceid_fw,
-			ION_HEAP_ID_MASK_VDSP,/*todo vdsp head id*/
+			ION_HEAP_ID_MASK_VDSP,
 			VDSP_FACEID_FIRMWIRE_SIZE);
-	if(0 != ret) {
+	if(unlikely(0 != ret)) {
 		pr_err("alloc fw buffer failed,ret %d\n",ret);
 		return -ENOMEM;
 	}
-	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc,
-			&xvp->ion_faceid_fw);
-	if(0 != ret) {
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-				&xvp->ion_faceid_fw);
-		pr_err("kmap fw buffer failed,ret %d\n",ret);
-		return -EFAULT;
-	}
-	xvp->firmware2_viraddr = (void*)xvp->ion_faceid_fw.addr_k[0];
-	xvp->firmware2_phys = xvp->ion_faceid_fw.addr_p[0];
+
 	xvp->ion_faceid_fw.dev = xvp->dev;
-	pr_debug("%s vaddr:%p phyaddr %llX\n",
-			__func__ , xvp->firmware2_viraddr,xvp->firmware2_phys);
+	pr_debug("ion_faceid_fw phyaddr %llX\n",xvp->ion_faceid_fw.addr_p[0]);
 	return 0;
 }
 
 static int sprd_free_faceid_fwbuffer(struct xvp *xvp)
 {
-	pr_debug("vdsp fw vir addr:%p\n", xvp->firmware2_viraddr);
-	if(xvp->firmware2_viraddr) {
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-				&xvp->ion_faceid_fw_sign);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-				&xvp->ion_faceid_fw_sign);
+	xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
+			&xvp->ion_faceid_fw_sign);
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
+			&xvp->ion_faceid_fw_sign);
 
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-				&xvp->ion_faceid_fw);
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-				&xvp->ion_faceid_fw);
-		xvp->firmware2_viraddr = NULL;
-	}
+
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
+			&xvp->ion_faceid_fw);
+
+	xvp->ion_faceid_fw.addr_p[0] = 0;
 	return 0;
 }
 void sprd_release_faceid_firmware(struct xvp *xvp)
@@ -435,149 +265,88 @@ void sprd_release_faceid_firmware(struct xvp *xvp)
 }
 int sprd_request_faceid_firmware(struct xvp *xvp)
 {
-#if 0
-	int ret = request_firmware(&xvp->firmware2, FACEID_FIRMWARE, xvp->dev);
-#else
 	int ret = request_firmware(&xvp->firmware2_sign, FACEID_FIRMWARE, xvp->dev);
 
-	if (ret < 0)
+	if (unlikely(ret < 0))
 	{
 		pr_err("request firmware failed ret:%d\n" ,ret);
 		return ret;
 	}
-#endif
+
 	return ret;
 }
 
 int sprd_iommu_map_faceid_fwbuffer(struct xvp *xvp)
 {
 	int ret = -EFAULT;
-	if(xvp->firmware2_viraddr == NULL) {
+	if(unlikely(xvp->ion_faceid_fw.addr_p[0] == 0)) {
 		pr_err("map faceid fw addr is NULL \n");
 		return ret;
 	}
-	{
-		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc,
-				&xvp->ion_faceid_fw , IOMMU_ALL);
-		if(ret) {
-			pr_err("map faceid fw buffer failed\n");
-			return ret;
-		}
-		xvp->dsp_firmware_addr = xvp->ion_faceid_fw.iova[0];
+
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc,
+			&xvp->ion_faceid_fw , IOMMU_ALL);
+	if(unlikely(ret)) {
+		pr_err("map faceid fw buffer failed\n");
+		return ret;
 	}
+	xvp->dsp_firmware_addr = xvp->ion_faceid_fw.iova[0];
+
 	pr_debug("iomap:%p --> %lx\n",
-			xvp->firmware2_viraddr,(unsigned long)xvp->dsp_firmware_addr);
+			xvp->ion_faceid_fw.addr_p[0],(unsigned long)xvp->dsp_firmware_addr);
 	return ret;
 }
 int sprd_iommu_unmap_faceid_fwbuffer(struct xvp *xvp)
 {
-	int ret = -EFAULT;
-	int ret1 = 0;
+	int ret = 0;
 
-	if(xvp->firmware2_viraddr == NULL) {
+	if(unlikely(xvp->ion_faceid_fw.addr_p[0] == 0)) {
 		pr_err("unmap faceid fw addr is NULL\n");
-		return ret;
-	}
-	{
-		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-				&xvp->ion_faceid_fw , IOMMU_ALL);
-		if(ret) {
-			ret1 = -EFAULT;
-			pr_err("unmap faceid fw fialed\n");
-		}
+		return -EFAULT;
 	}
 
-	pr_debug("unmap faceid fw :%p , ret:%d, ret1:%d\n",
-	       xvp->firmware2_viraddr , ret , ret1);
-	return ((ret!=0)||(ret1!=0)) ? -EFAULT : 0;
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
+			&xvp->ion_faceid_fw , IOMMU_ALL);
+	if(unlikely(ret)) {
+		pr_err("unmap faceid fw fialed, ret %d\n",ret);
+		return -EFAULT;
+	}
+
+	pr_debug("unmap faceid fw :%p \n",xvp->ion_faceid_fw.addr_p[0]);
+	return 0;
 }
-int sprd_iommu_map_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf,int fd)
+unsigned long sprd_faceid_get_ion_phy(int fd)
 {
 	int ret;
+	struct ion_buf tmp = {0};
 
-	ion_buf->mfd[0] = fd;
-	ion_buf->dev = xvp->dev;
-
-	ret = xvp->vdsp_mem_desc->ops->mem_get_ionbuf(xvp->vdsp_mem_desc, ion_buf);
-	if (ret) {
-		pr_err("fail to get ion_buf\n");
-		return -EFAULT;
-	}
-	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc,
-			ion_buf, IOMMU_ALL);
-	if (ret) {
-		pr_err("fail to iommu map ion\n");
-		return -EFAULT;
-	}
-
-	pr_debug("Get ion iova %X\n",(uint32_t)ion_buf->iova[0]);
-	return 0;
-}
-int sprd_iommu_ummap_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf)
-{
-	int ret = -EFAULT;
-
-	if(NULL == (void*)ion_buf->iova[0]) {
-		pr_err("unmap faceid ion addr is NULL\n");
-		return ret;
-	}
+	ret = sprd_ion_get_buffer(fd,
+		tmp.dmabuf_p[0],
+		&tmp.buf[0],
+		&tmp.size[0]);
+	if (ret)
 	{
-		ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-				ion_buf, IOMMU_ALL);
-		if(ret) {
-			pr_err("unmap ion buffer failed\n");
-			return ret;
-		}
+		pr_err("fail to get %d ionbuf \n",fd);
+		return 0;
 	}
 
-	return 0;
+	ret = sprd_ion_get_phys_addr(fd,tmp.dmabuf_p[0],&tmp.addr_p[0],&tmp.size[0]);
+	if (ret)
+	{
+		pr_err("fail to get %d phy_addr, ret %d\n",fd,ret);
+		return 0;
+	}
+
+	pr_debug("Get ion %d phy %llX\n", fd,tmp.addr_p[0]);
+	return tmp.addr_p[0];
 }
-int sprd_kernel_map_faceid_ion(struct xvp *xvp,
-		struct ion_buf *ion_buf,int fd)
-{
-	int ret;
 
-	ion_buf->mfd[0] = fd;
-	ion_buf->dev = xvp->dev;
-
-	ret = xvp->vdsp_mem_desc->ops->mem_get_ionbuf(xvp->vdsp_mem_desc,
-			ion_buf);
-	if (ret) {
-		pr_err("fail to get ion_buf\n");
-		return -EFAULT;
-	}
-
-	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc,
-			ion_buf);
-	if(0 != ret) {
-		pr_err("fail to kmap ion_buf\n");
-		return -EFAULT;
-	}
-
-	pr_debug("kmap addr_p %lx  vaddr:%lx,size %ld\n",
-			ion_buf->addr_p[0], ion_buf->addr_k[0],ion_buf->size[0]);
-	return 0;
-}
-int sprd_kernel_unmap_faceid_ion(struct xvp *xvp,struct ion_buf *ion_buf)
-{
-	unsigned long dst_viraddr = ion_buf->addr_k[0];
-	if(dst_viraddr) {
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, ion_buf);
-	}
-	return 0;
-}
 int sprd_faceid_sec_sign(struct xvp *xvp)
 {
 	bool ret;
 	KBC_LOAD_TABLE_V  table;
 	unsigned long mem_addr_p;
 	size_t img_len;
-
-	/*copy fw to continuous physical address*/
-	memcpy((void*)xvp->ion_faceid_fw_sign.addr_k[0],(void*)xvp->firmware2_sign->data,xvp->firmware2_sign->size);
-
-	xvp->firmware2.data = (void*)xvp->ion_faceid_fw_sign.addr_k[0] + SIGN_HEAD_SIZE;
-	xvp->firmware2.size = xvp->firmware2_sign->size - SIGN_HEAD_SIZE - SIGN_TAIL_SIZE;
 
 	ret = trusty_kernelbootcp_connect();
 	if(!ret)
@@ -601,16 +370,10 @@ int sprd_faceid_sec_sign(struct xvp *xvp)
 	if(!ret)
 	{
 		pr_err("bootcp verify fail\n");
+		trusty_kernelbootcp_disconnect();
 		return -EACCES;
 	}
-#if 0
-	ret = kernel_bootcp_unlock_ddr(&table);
-	if(!ret)
-	{
-		pr_err("bootcp unlock ddr fail\n");
-		return -EACCES;
-	}
-#endif
+
 	trusty_kernelbootcp_disconnect();
 	return 0;
 }
@@ -618,6 +381,11 @@ int sprd_faceid_sec_sign(struct xvp *xvp)
 int sprd_faceid_secboot_entry(struct xvp *xvp)
 {
 	bool ret;
+
+	/*copy fw to continuous physical address*/
+	memcpy((void*)xvp->ion_faceid_fw_sign.addr_k[0],
+		(void*)xvp->firmware2_sign->data,
+		xvp->firmware2_sign->size);
 
 	if(xvp->tee_con)
 	{
@@ -661,15 +429,308 @@ int sprd_faceid_secboot_exit(struct xvp *xvp)
 	}
 	return 0;
 }
+
+int sprd_faceid_load_firmware(struct xvp *xvp)
+{
+	bool ret;
+
+	if(xvp->tee_con)
+	{
+		struct vdsp_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_LOAD_FW;
+		ret = vdsp_set_sec_mode(&msg);
+		if(!ret)
+		{
+			pr_err("load fw fail\n");
+			return -EACCES;
+		}
+	}
+	else
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+	return 0;
+}
+
+int sprd_faceid_sync_vdsp(struct xvp *xvp)
+{
+	bool ret;
+	struct vdsp_side_sync_data *hw_sync_data = NULL;
+	struct vdsp_sync_msg msg;
+	size_t sz = 0;
+
+	if(xvp->tee_con == false)
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+
+	msg.vdsp_type = TA_CADENCE_VQ6;
+	msg.msg_cmd = TA_FACEID_SYNC_VDSP;
+
+	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz,
+	xvp->ion_vdsp_log.addr_p[0]);
+	if (unlikely(!hw_sync_data)) {
+		return -ENOMEM;
+	}
+
+	msg.device_mmio_base = hw_sync_data->device_mmio_base;
+	msg.host_irq_mode = hw_sync_data->host_irq_mode;
+	msg.host_irq_offset = hw_sync_data->host_irq_offset;
+	msg.host_irq_bit = hw_sync_data->host_irq_bit;
+	msg.device_irq_mode = hw_sync_data->device_irq_mode;
+	msg.device_irq_offset = hw_sync_data->device_irq_offset;
+	msg.device_irq_bit = hw_sync_data->device_irq_bit;
+	msg.device_irq = hw_sync_data->device_irq;
+	msg.vdsp_log_addr = 0;
+
+	ret = vdsp_sync_sec(&msg);
+	kfree(hw_sync_data);
+
+	if(!ret)
+	{
+		pr_err("sync vdsp fail\n");
+		return -EACCES;
+	}
+	return 0;
+}
+
+int sprd_faceid_halt_vdsp(struct xvp *xvp)
+{
+	bool ret;
+
+	if(xvp->tee_con)
+	{
+		struct vdsp_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_HALT_VDSP;
+		ret = vdsp_set_sec_mode(&msg);
+		if(!ret)
+		{
+			pr_err("halt vdsp fail\n");
+			return -EACCES;
+		}
+	}
+	else
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+	return 0;
+}
+int sprd_faceid_reset_vdsp(struct xvp *xvp)
+{
+	bool ret;
+
+	if(xvp->tee_con)
+	{
+		struct vdsp_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_RESET_VDSP;
+		ret = vdsp_set_sec_mode(&msg);
+		if(!ret)
+		{
+			pr_err("reset vdsp fail\n");
+			return -EACCES;
+		}
+	}
+	else
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+	return 0;
+}
+int sprd_faceid_release_vdsp(struct xvp *xvp)
+{
+	bool ret;
+
+	if(xvp->tee_con)
+	{
+		struct vdsp_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_RELEASE_VDSP;
+		ret = vdsp_set_sec_mode(&msg);
+		if(!ret)
+		{
+			pr_err("release vdsp fail\n");
+			return -EACCES;
+		}
+	}
+	else
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+	return 0;
+}
+int sprd_faceid_enable_vdsp(struct xvp *xvp)
+{
+	bool ret;
+
+	if(xvp->tee_con)
+	{
+		struct vdsp_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_ENABLE_VDSP;
+		ret = vdsp_set_sec_mode(&msg);
+		if(!ret)
+		{
+			pr_err("enable vdsp fail\n");
+			return -EACCES;
+		}
+	}
+	else
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+	return 0;
+}
+int sprd_faceid_disable_vdsp(struct xvp *xvp)
+{
+	bool ret;
+
+	if(xvp->tee_con)
+	{
+		struct vdsp_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_DISABLE_VDSP;
+		ret = vdsp_set_sec_mode(&msg);
+		if(!ret)
+		{
+			pr_err("disable vdsp fail\n");
+			return -EACCES;
+		}
+	}
+	else
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+	return 0;
+}
+
+void sprd_faceid_free_irq(struct xvp *xvp)
+{
+	if(xvp->irq_status == IRQ_STATUS_REQUESTED)
+	{
+		if(xvp->hw_ops->vdsp_free_irq) {
+			xvp->hw_ops->vdsp_free_irq(xvp->dev,xvp->hw_arg);
+			xvp->irq_status = IRQ_STATUS_FREED;
+		}
+		else {
+			pr_err("vdsp_free_irq ops is null \n");
+		}
+	}
+	else
+	{
+		pr_err("irq has been already freed \n");
+	}
+}
+
+int sprd_faceid_request_irq(struct xvp *xvp)
+{
+	int ret;
+
+	if(xvp->irq_status == IRQ_STATUS_FREED)
+	{
+		if(xvp->hw_ops->vdsp_request_irq) {
+			ret = xvp->hw_ops->vdsp_request_irq(xvp->dev,xvp->hw_arg);
+			if (ret < 0) {
+				pr_err("xvp_request_irq failed %d\n", ret);
+				return ret;
+			}
+			xvp->irq_status = IRQ_STATUS_REQUESTED;
+		}
+		else {
+			pr_err("vdsp_request_irq ops is null \n");
+			return -EACCES;
+		}
+	}
+	else
+	{
+		pr_err("irq has been already requested \n");
+	}
+	return 0;
+}
+
+int sprd_faceid_run_vdsp(struct xvp *xvp, uint32_t in_fd, uint32_t out_fd)
+{
+	bool ret;
+
+	if(xvp->tee_con)
+	{
+		struct vdsp_run_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_RUN_VDSP;
+
+		msg.fd_p_coffe_addr = xvp->faceid_pool.ion_fd_weights_p.addr_p[0];
+		msg.fd_r_coffe_addr = xvp->faceid_pool.ion_fd_weights_r.addr_p[0];
+		msg.fd_o_coffe_addr = xvp->faceid_pool.ion_fd_weights_o.addr_p[0];
+		msg.fp_coffe_addr = xvp->faceid_pool.ion_fp_weights.addr_p[0];
+		msg.flv_coffe_addr = xvp->faceid_pool.ion_flv_weights.addr_p[0];
+		msg.fv_coffe_addr = xvp->faceid_pool.ion_fo_weights.addr_p[0];
+		msg.mem_pool_addr = xvp->faceid_pool.ion_fd_mem_pool.addr_p[0];
+
+		msg.in_addr = sprd_faceid_get_ion_phy(in_fd);
+		msg.out_addr = 0;
+
+		if(0 == msg.in_addr)
+			return -1;
+
+		pr_debug("fd_p %X,fd_r %X,fd_o %X,fp %X,flv %X,fv %X,mem pool %X,in %llX\n",
+			msg.fd_p_coffe_addr, msg.fd_r_coffe_addr,
+			msg.fd_o_coffe_addr, msg.fp_coffe_addr,
+			msg.flv_coffe_addr, msg.fv_coffe_addr,
+			msg.mem_pool_addr,msg.in_addr);
+
+		ret = vdsp_run_vdsp(&msg);
+		if(!ret)
+		{
+			pr_err("run vdsp fail\n");
+		}
+
+		return 0;
+	}
+	else
+	{
+		pr_err("vdsp tee connect fail\n");
+		return -EACCES;
+	}
+}
+
 int sprd_faceid_secboot_init(struct xvp *xvp)
 {
-	xvp->secmode = true;
+	bool ret;
+
+	sprd_faceid_free_irq(xvp);
+
 	xvp->tee_con = vdsp_ca_connect();
 	if(!xvp->tee_con)
 	{
 		pr_err("vdsp_ca_connect fail\n");
+		sprd_faceid_request_irq(xvp);
 		return -EACCES;
 	}
+	else
+	{
+		struct vdsp_msg msg;
+		msg.vdsp_type = TA_CADENCE_VQ6;
+		msg.msg_cmd = TA_FACEID_INIT;
+		ret = vdsp_set_sec_mode(&msg);
+		if(!ret)
+		{
+			pr_err("faceid init fail\n");
+			vdsp_ca_disconnect();
+			xvp->tee_con = false;
+			sprd_faceid_request_irq(xvp);
+			return -EACCES;
+		}
+	}
+	xvp->secmode = true;
 	return 0;
 }
 int sprd_faceid_secboot_deinit(struct xvp *xvp)
@@ -678,7 +739,6 @@ int sprd_faceid_secboot_deinit(struct xvp *xvp)
 
 	if(xvp->secmode)
 	{
-		xvp->secmode = false;
 		if(xvp->tee_con)
 		{
 			struct vdsp_msg msg;
@@ -691,20 +751,30 @@ int sprd_faceid_secboot_deinit(struct xvp *xvp)
 			vdsp_ca_disconnect();
 			xvp->tee_con = false;
 		}
+		xvp->secmode = false;
 	}
-	return 0;
+
+	return sprd_faceid_request_irq(xvp);
 }
 
 int sprd_faceid_init(struct xvp *xvp)
 {
 	int ret = 0;
 
-	ret = sprd_alloc_faceid_fwbuffer(xvp);
-	if(ret < 0)
+	ret = sprd_alloc_faceid_combuffer(xvp);
+	if(ret < 0) {
 		return ret;
+	}
+
+	ret = sprd_alloc_faceid_fwbuffer(xvp);
+	if(ret < 0) {
+		sprd_free_faceid_combuffer(xvp);
+		return ret;
+	}
 	ret = sprd_request_faceid_firmware(xvp);
 	if(ret < 0)
 	{
+		sprd_free_faceid_combuffer(xvp);
 		sprd_free_faceid_fwbuffer(xvp);
 		return ret;
 	}
@@ -716,6 +786,7 @@ int sprd_faceid_deinit(struct xvp *xvp)
 {
 	sprd_release_faceid_firmware(xvp);
 	sprd_free_faceid_fwbuffer(xvp);
+	sprd_free_faceid_combuffer(xvp);
 	sprd_faceid_release_weights(xvp);
 	return 0;
 }

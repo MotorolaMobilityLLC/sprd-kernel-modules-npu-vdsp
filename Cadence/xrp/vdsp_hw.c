@@ -19,14 +19,17 @@
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/clk.h>
+
 #include <asm/cacheflush.h>
 #include "xrp_kernel_defs.h"
 #include "vdsp_hw.h"
-#include <linux/clk.h>
 #include "xrp_internal.h"
+#if 0 //gki
+#include <linux/soc/sprd/hwfeature.h>
 #include "sprd_dvfs_vdsp.h"
 #include "vdsp_dvfs_sharkl5pro.h"
-
+#endif
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -166,7 +169,7 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 	}
 
 	*hw_sync_data = (struct vdsp_side_sync_data){
-			.device_mmio_base = hw->ipi_phys,
+			.device_mmio_base = (__u32)hw->ipi_phys,
 			.host_irq_mode = hw->host_irq_mode,
 			.host_irq_offset = hw->host_irq[0],
 			.host_irq_bit = hw->host_irq[1],
@@ -177,14 +180,14 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 			.vdsp_smsg_addr = (unsigned int)*sz,
 			.vdsp_log_addr = log_addr,
 	};
-	pr_debug("mmio_base:%x, (host_irq)mode:%d, offset:%d, bit:%d,"
-		"(device_irq)mode:%d, offset:%d, bit:%d, irq:%d",
-		"vdsp_smsg addr:0x%lx, vdsp_log_addr:0x%lx\n",
+	pr_debug("mmio_base:%x,(host_irq)mode:%d,offset:%d, bit:%d,"
+		"(device_irq)mode:%d, offset:%d,bit:%d, irq:%d\n",
 		hw_sync_data->device_mmio_base, hw_sync_data->host_irq_mode,
 		hw_sync_data->host_irq_offset, hw_sync_data->host_irq_bit,
 		hw_sync_data->device_irq_mode, hw_sync_data->device_irq_offset,
-		hw_sync_data->device_irq_bit, hw_sync_data->device_irq,
-		hw_sync_data->vdsp_smsg_addr, hw_sync_data->vdsp_log_addr);
+		hw_sync_data->device_irq_bit, hw_sync_data->device_irq);
+
+	pr_debug("vdsp_smsg_addr:%x, vdsp_log_addr:%x",hw_sync_data->vdsp_smsg_addr, hw_sync_data->vdsp_log_addr);
 
 	*sz = sizeof(*hw_sync_data);
 
@@ -215,6 +218,21 @@ static void release(void *hw_arg)
 	pr_debug("arg:%p ,offset:%x, value:0\n", hw->ahb, REG_RUNSTALL);
 	reg_write32_clearbit(hw_arg, hw->ahb + REG_RUNSTALL, ~(1 << 2));
 }
+
+static void get_max_freq(uint32_t *max_freq)
+{
+#if 0 //gki
+	char chip_type[HWFEATURE_STR_SIZE_LIMIT];
+	sprd_kproperty_get("auto/efuse" ,chip_type, "-1");
+	if(!strcmp(chip_type , "T618")) {
+		*max_freq = T618_MAX_FREQ;
+	} else {
+		*max_freq = T610_MAX_FREQ;
+	}
+	pr_debug("get max_freq:%d\n", *max_freq);
+#endif
+}
+
 static int enable(void *hw_arg)
 {
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
@@ -249,16 +267,25 @@ static int enable(void *hw_arg)
 static void disable(void *hw_arg)
 {
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
-
-	pr_debug("arg:%p, offset:%x, value:0\n", hw->ahb, REG_LP_CTL);
+	volatile unsigned int rdata = 0;
+	uint32_t count = 0;
 	/*vdma disable*/
 	reg_write32_clearbit(hw_arg, hw->ahb, ~(1 << 3));
 	/*IPI disbale*/
 	reg_write32_clearbit(hw_arg, hw->ahb, ~(1 << 6));
 	/*vdsp_stop_en = 1*/
 	reg_write32_setbit(hw_arg, hw->ahb + REG_LP_CTL, 1 << 2);
+	/*mask all int*/
+	reg_write32_setbit(hw_arg , hw->ahb + 0x3094 , 0x1ffff);
 	/*pmu ap_vdsp_core_int_disable set 1*/
 	reg_write32_setbit(hw_arg, hw->pmu + 0x07f8, 1);
+	udelay(1);
+	/*wait for vdsp enter pwait mode*/
+	while((rdata & (0x1 << 5)) == 0) {
+		count++;
+		rdata = reg_read32(hw_arg, hw->ahb + 0x3090);
+	}
+	pr_debug("disable wait count:%d\n", count);
 	/*pmu auto shutdown by vdsp core*/
 	reg_write32_clearbit(hw_arg, hw->pmu + 0x07e4, ~(1 << 27));
 	reg_write32_setbit(hw_arg, hw->pmu + 0x07e4, (1 << 24));
@@ -282,6 +309,7 @@ static void disable_dvfs(void *hw_arg)
 
 static uint32_t translate_dvfsindex_to_freq(uint32_t index)
 {
+#if 0	//gki
 	switch (index) {
 	case 0:
 		return SHARKL5PRO_VDSP_CLK256M;
@@ -298,6 +326,9 @@ static uint32_t translate_dvfsindex_to_freq(uint32_t index)
 	default:
 		return SHARKL5PRO_VDSP_CLK256M;
 	}
+#else
+	return 0;
+#endif
 }
 
 static void setdvfs(void *hw_arg, uint32_t index)
@@ -305,7 +336,9 @@ static void setdvfs(void *hw_arg, uint32_t index)
 	uint32_t freq = translate_dvfsindex_to_freq(index);
 
 	pr_debug("freq:%d, index:%d\n", freq, index);
+#if 0	//gki
 	vdsp_dvfs_notifier_call_chain(&freq);
+#endif
 }
 
 static void send_irq(void *hw_arg)
@@ -336,6 +369,43 @@ static void memset_hw_function(
 	return;
 }
 
+int vdsp_request_irq(void *xvp_arg,
+	void *hw_arg)
+{
+	struct device *dev = (struct device *)xvp_arg;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
+	int ret;
+	//struct platform_device *pdev = container_of(dev, struct platform_device, dev);
+
+	pr_debug("dev %p ,request irq %d handle %p hw %p\n",
+					dev,
+					hw->client_irq,
+					hw->vdsp_ipi_desc->ops->irq_handler,
+					hw);
+	ret = devm_request_irq(dev,
+		hw->client_irq,
+		hw->vdsp_ipi_desc->ops->irq_handler,
+		IRQF_SHARED,
+		DRIVER_NAME,
+		hw);
+	if(ret < 0) {
+		pr_err("devm_request_irq fail, ret %d",ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+void vdsp_free_irq(void *xvp_arg,
+	void *hw_arg)
+{
+	struct device *dev = (struct device *)xvp_arg;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
+
+	pr_debug("free irq %d dev %p hw %p\n",hw->client_irq,dev,hw);
+	devm_free_irq(dev, hw->client_irq, hw);
+}
+
 static const struct xrp_hw_ops hw_ops = {
 	.halt = halt,
 	.release = release,
@@ -350,8 +420,10 @@ static const struct xrp_hw_ops hw_ops = {
 	.disable_dvfs = disable_dvfs,
 	.setdvfs = setdvfs,
 	.set_qos = set_qos,
+	.vdsp_request_irq = vdsp_request_irq,
+	.vdsp_free_irq = vdsp_free_irq,
+	.get_max_freq = get_max_freq,
 };
-
 
 static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 	struct vdsp_hw *hw,
@@ -359,12 +431,11 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 	enum vdsp_init_flags *init_flags)
 {
 	struct resource *mem;
-	int irq;
 	long ret;
 
 	/*ahb */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, mem_idx);
-	if (!mem) {
+	if (unlikely(!mem)) {
 		ret = -ENODEV;
 		goto err;
 	}
@@ -374,7 +445,7 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 
 	/*ipi */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, mem_idx + 1);
-	if (!mem) {
+	if (unlikely(!mem)) {
 		ret = -ENODEV;
 		goto err;
 	}
@@ -384,7 +455,7 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 
 	/*pmu 0x327e0000*/
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, mem_idx + 2);
-	if (!mem) {
+	if (unlikely(!mem)) {
 		ret = -ENODEV;
 		goto err;
 	}
@@ -393,7 +464,7 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 
 	/*dvfs */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, mem_idx + 3);
-	if (!mem) {
+	if (unlikely(!mem)) {
 		ret = -ENODEV;
 		goto err;
 	}
@@ -427,7 +498,7 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 		ret = of_property_read_u32(pdev->dev.of_node,
 				"device-irq-mode",
 				&device_irq_mode);
-		if (device_irq_mode < XRP_IRQ_MAX)
+		if (likely(device_irq_mode < XRP_IRQ_MAX))
 			hw->device_irq_mode = device_irq_mode;
 		else
 			ret = -ENOENT;
@@ -453,36 +524,31 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 		ret = of_property_read_u32(pdev->dev.of_node,
 				"host-irq-mode",
 				&host_irq_mode);
-		if (host_irq_mode < XRP_IRQ_MAX)
+		if (likely(host_irq_mode < XRP_IRQ_MAX))
 			hw->host_irq_mode = host_irq_mode;
 		else
 			ret = -ENOENT;
 	}
 
 	if (ret == 0 && hw->host_irq_mode != XRP_IRQ_NONE)
-		irq = platform_get_irq(pdev, 0);
+		hw->client_irq = platform_get_irq(pdev, 0);
 	else
-		irq = -1;
+		hw->client_irq = -1;
 
 	pr_debug("irq is:%d , ret:%ld , host_irq_mode:%d\n",
-		irq, ret, hw->host_irq_mode);
-	if (irq >= 0) {
-		pr_debug("host IRQ = %d,", irq);
+		hw->client_irq, ret, hw->host_irq_mode);
+	if (hw->client_irq >= 0) {
+		pr_debug("host IRQ = %d,", hw->client_irq);
 		hw->vdsp_ipi_desc = get_vdsp_ipi_ctx_desc();
 		if (hw->vdsp_ipi_desc) {
 			hw->vdsp_ipi_desc->base_addr = hw->ahb_phys;
 			hw->vdsp_ipi_desc->vir_addr = hw->ahb;
 			hw->vdsp_ipi_desc->ipi_addr = hw->ipi;
 			hw->vdsp_ipi_desc->irq_mode = hw->host_irq_mode;
-			ret = devm_request_irq(&pdev->dev,
-				irq,
-				hw->vdsp_ipi_desc->ops->irq_handler,
-				IRQF_SHARED,
-				pdev->name,
-				hw);
 
+			ret = vdsp_request_irq(&pdev->dev, hw);
 			if (ret < 0) {
-				pr_err("request_irq %d failed\n", irq);
+				pr_err("request_irq %d failed\n", hw->client_irq);
 				goto err;
 			}
 
@@ -507,7 +573,7 @@ static long init_sprd(struct platform_device *pdev, struct vdsp_hw *hw)
 	enum vdsp_init_flags init_flags = 0;
 
 	ret = sprd_vdsp_parse_hw_dt(pdev, hw, 0, &init_flags);
-	if (ret < 0)
+	if (unlikely(ret < 0))
 		return ret;
 	return sprd_vdsp_init(pdev, init_flags, &hw_ops, hw);
 }
@@ -546,7 +612,6 @@ static int vdsp_driver_probe(struct platform_device *pdev)
 		hw->xrp = ERR_PTR(ret);
 		return 0;
 	}
-
 }
 
 static int vdsp_driver_remove(struct platform_device *pdev)
@@ -571,6 +636,6 @@ static struct platform_driver vdsp_driver = {
 
 module_platform_driver(vdsp_driver);
 
-MODULE_DESCRIPTION("Sprd CAM Driver");
-MODULE_AUTHOR("Multimedia_Camera@Spreadtrum");
-MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Sprd Vdsp Driver");
+MODULE_AUTHOR("VisionDSP");
+MODULE_LICENSE("GPL v2");

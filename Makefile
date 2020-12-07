@@ -1,6 +1,4 @@
 #
-# vdsp_sipc.ko
-# vdsp_spipe.ko
 # sprd_vdsp.ko
 #
 # Makefile: for external make invocation
@@ -10,8 +8,6 @@
 #   done in this Makefile
 #
 
-KO_MODULE_NAME := vdsp_sipc
-KO_MODULE_NAME := vdsp_spipe
 KO_MODULE_NAME := sprd_vdsp
 KO_MODULE_OUT := $(BSP_MODULES_OUT)/sprd_vdsp
 KO_MODULE_KBUILD := $(CURDIR)/Kbuild

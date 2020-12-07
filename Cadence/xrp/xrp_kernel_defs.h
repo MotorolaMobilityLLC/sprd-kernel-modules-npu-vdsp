@@ -38,6 +38,8 @@
 #define XRP_IOCTL_FACEID_CMD    _IO(XRP_IOCTL_MAGIC,6)
 #define XRP_IOCTL_SET_POWERHINT _IO(XRP_IOCTL_MAGIC,7)
 
+#define XRP_NAMESPACE_ID_SIZE   32
+
 struct xrp_ioctl_alloc {
 	__u32 size;
 	__u32 align;

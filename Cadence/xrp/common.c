@@ -48,30 +48,30 @@ int xtlib_verify_magic(Elf32_Ehdr *header)
 	Elf32_Byte magic_no;
 
 	magic_no = header->e_ident[EI_MAG0];
-	if (magic_no != 0x7f) {
+	if (unlikely(magic_no != 0x7f)) {
 		pr_err("error 0\n");
 		return -1;
 	}
 
 	magic_no = header->e_ident[EI_MAG1];
-	if (magic_no != 'E') {
+	if (unlikely(magic_no != 'E')) {
 		pr_err("error 1\n");
 		return -1;
 	}
 
 	magic_no = header->e_ident[EI_MAG2];
-	if (magic_no != 'L') {
+	if (unlikely(magic_no != 'L')) {
 		pr_err("error 2\n");
 		return -1;
 	}
 
 	magic_no = header->e_ident[EI_MAG3];
-	if (magic_no != 'F') {
+	if (unlikely(magic_no != 'F')) {
 		pr_err("error 3\n");
 		return -1;
 	}
 
-	if (header->e_ident[EI_CLASS] != ELFCLASS32)
+	if (unlikely(header->e_ident[EI_CLASS] != ELFCLASS32))
 	{
 		pr_err("error 4\n");
 		return -1;

@@ -21,10 +21,6 @@
 #include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-
-#include <linux/sprd_iommu.h>
-#include <linux/sprd_ion.h>
-#include "ion.h"
 #include "vdsp_smem.h"
 
 #ifdef pr_fmt
@@ -116,7 +112,7 @@ static int vdsp_mem_alloc(struct vdsp_mem_desc *ctx,
 	int ret = 0;
 
 	memset(ion_buf, 0x00, sizeof(*ion_buf));
-	ion_buf->dmabuf_p[0] = ion_new_alloc(size, heap_type, 0);
+	ion_buf->dmabuf_p[0] = ion_alloc(size, heap_type, 0);
 	if (IS_ERR_OR_NULL(ion_buf->dmabuf_p[0])) {
 		pr_err("ion_alloc buffer fail\n");
 		ret = -ENOMEM;
@@ -149,7 +145,7 @@ static int vdsp_mem_alloc(struct vdsp_mem_desc *ctx,
 	return 0;
 
 failed:
-	ion_free(ion_buf->dmabuf_p[0]);
+	dma_buf_put(ion_buf->dmabuf_p[0]);
 	ion_buf->dmabuf_p[0] = NULL;
 	ion_buf->buf[0] = NULL;
 	ion_buf->size[0] = 0;
@@ -170,7 +166,7 @@ static int vdsp_mem_free(struct vdsp_mem_desc *ctx,
 
 	dmabuf = ion_buf->dmabuf_p[0];
 	if (dmabuf) {
-		ion_free(dmabuf);
+		dma_buf_put(dmabuf);
 		ion_buf->dmabuf_p[0] = NULL;
 		ion_buf->mfd[0] = 0;
 		ion_buf->size[0] = 0;
@@ -251,6 +247,37 @@ static int vdsp_mem_kunmap(struct vdsp_mem_desc *ctx,
 	return ret;
 }
 
+static int vdsp_mem_kmap_userbuf(struct ion_buf *buf_info)
+{
+
+	if ((buf_info == NULL) || (buf_info->mfd[0] < 0)) {
+		pr_err("[ERROR]ion dsp pool is NULL\n");
+		return -EINVAL;
+	}
+	buf_info->dmabuf_p[0] = dma_buf_get(buf_info->mfd[0]);
+	if (IS_ERR_OR_NULL(buf_info->dmabuf_p[0])) {
+		pr_err("[ERROR]dma_buf_get fd:%d\n", buf_info->mfd[0]);
+		return -EINVAL;
+	}
+	buf_info->addr_k[0] = (unsigned long)sprd_ion_map_kernel(buf_info->dmabuf_p[0] , 0);
+	/*buffer index 0 is input lib buffer*/
+	if (IS_ERR_OR_NULL((void *)buf_info->addr_k[0])) {
+		pr_err("[ERROR] mfd:%d , dev:%p addr:%lx err\n" , buf_info->mfd[0], buf_info->dev , (unsigned long)buf_info->addr_k[0]);
+		return -EFAULT;
+	}
+	pr_debug("[kmap]mfd:%d, dev:%p, map vaddr is:%lx\n",
+		buf_info->mfd[0], buf_info->dev, (unsigned long)buf_info->addr_k[0]);
+	return 0;
+}
+
+static int vdsp_mem_kunmap_userbuf(struct ion_buf *buf_info)
+{
+	sprd_ion_unmap_kernel(buf_info->dmabuf_p[0] , 0);
+	dma_buf_put(buf_info->dmabuf_p[0]);
+	buf_info->addr_k[0] = 0;
+	buf_info->dmabuf_p[0] = NULL;
+	return 0;
+}
 
 
 static int vdsp_mem_get_ionbuf(struct vdsp_mem_desc *ctx,
@@ -398,7 +425,6 @@ static int vdsp_mem_iommu_unmap(struct vdsp_mem_desc *ctx,
 	return ret;
 }
 
-
 static int vdsp_mem_register_callback(struct vdsp_mem_desc *ctx,
 	unsigned int idx, mem_cb_t cb, void *arg)
 {
@@ -432,6 +458,8 @@ struct vdsp_mem_ops vdsp_mem_ops = {
 	.mem_free = vdsp_mem_free,
 	.mem_kmap = vdsp_mem_kmap,
 	.mem_kunmap = vdsp_mem_kunmap,
+	.mem_kmap_userbuf = vdsp_mem_kmap_userbuf,
+	.mem_kunmap_userbuf = vdsp_mem_kunmap_userbuf,
 	.mem_iommu_map = vdsp_mem_iommu_map,
 	.mem_iommu_unmap = vdsp_mem_iommu_unmap,
 	.mem_get_ionbuf = vdsp_mem_get_ionbuf,
@@ -442,7 +470,6 @@ struct vdsp_mem_ops vdsp_mem_ops = {
 static struct vdsp_mem_desc s_vdsp_mem_desc = {
 	.ops = &vdsp_mem_ops,
 };
-
 
 /*
  * Global function
