@@ -300,6 +300,9 @@ enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request 
 			load_flag = XRP_UNLOAD_LIB_FLAG;
 		} else {
 			tempbuffer = vmalloc(indata_size);
+			if(unlikely(tempbuffer == NULL)) {
+				return -ENOMEM;
+			}
 			if(unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
 				vfree(tempbuffer);
 				return -EFAULT;	//there return -EFAULT, it different from enum load_unload_flag
@@ -525,6 +528,9 @@ static int32_t xrp_library_getloadunload_libname(struct xvp *xvp, struct xrp_req
 			snprintf(outlibname, XRP_NAMESPACE_ID_SIZE, "%s", ((char*)(rq->ioctl_queue.in_data_addr) + 1));
 		} else {
 			tempbuffer = vmalloc(indata_size);
+			if(unlikely(tempbuffer == NULL)) {
+				return -ENOMEM;
+			}
 			if(unlikely(copy_from_user(tempbuffer , tempsrc , indata_size))) {
 				pr_err("[ERROR]copy from user failed\n");
 				ret = -EINVAL;
@@ -610,6 +616,10 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 			tempsrc = (void*)(rq->in_data);
 
 		tempbuffer = vmalloc(indata_size);
+		if(unlikely(tempbuffer == NULL)) {
+			pr_err("[ERROR]vmalloc failed\n");
+			return -ENOMEM;
+		}
 		if (unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
 			pr_err("[ERROR]copy from user failed\n");
 			vfree(tempbuffer);
@@ -908,7 +918,7 @@ int32_t xrp_create_unload_cmd(struct file *filp, struct loadlib_info *libinfo, s
 	//set lib name
 	memset(rq, 0, sizeof(*rq));
 	/*nsid to load/unload nsid*/
-	sprintf(rq->nsid, "%s", LIBRARY_LOAD_UNLOAD_NSID);
+	snprintf(rq->nsid , XRP_DSP_CMD_NAMESPACE_ID_SIZE , "%s" , LIBRARY_LOAD_UNLOAD_NSID);
 	kvaddr[0] = XRP_UNLOAD_LIB_FLAG;  /*unload*/
 	strncpy(kvaddr + 1, libname, 33); /*libname*/
 	*((uint32_t *)(kvaddr + 40)) = libinfo->pil_info;

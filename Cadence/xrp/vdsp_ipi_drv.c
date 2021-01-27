@@ -12,6 +12,8 @@
  */
 
 
+#include <linux/regmap.h>
+#include <linux/mfd/syscon.h>
 #include <linux/delay.h>
 #include "vdsp_ipi_drv.h"
 #include "vdsp_hw.h"
@@ -50,6 +52,32 @@ static void *ipi_isr_param[IPI_IDX_MAX] = {
 	[IPI_IDX_3] = NULL,
 };
 
+static int regmap_write_ipi_raw(struct regmap *regmap,
+        uint32_t reg, uint32_t mask, uint32_t val)
+{
+        uint32_t temp = 0;
+	uint32_t orig = 0;
+        int32_t ret;
+
+        if(!regmap) {
+		pr_err("regmap is null\n");
+                return -EINVAL;
+	}
+        ret = regmap_read(regmap , reg , &orig);
+        if(ret) {
+		pr_err("regmap_read failed reg:%x , ret:%d\n" , reg , ret);
+                return -EFAULT;
+	}
+        temp = orig & ~mask;
+        temp |= val & mask;
+	ret = regmap_write(regmap , reg , temp);
+	if(ret) {
+		pr_err("regmap_write failed reg:%x , temp:%x , ret:%d\n",
+			reg , temp , ret);
+	}
+        return ret;
+}
+
 static int vdsp_ipi_reg_irq_handle(int idx,
 	irq_handler_t handler, void *param)
 {
@@ -80,8 +108,9 @@ static int vdsp_ipi_send_irq(int idx)
 		/* fallthrough */
 	case XRP_IRQ_LEVEL:
 		wmb();
-		if (s_ipi_desc.ipi_addr)
+		if (s_ipi_desc.ipi_addr) {
 			IPI_HREG_OWR(s_ipi_desc.ipi_addr, 0x1 << idx);
+		}
 
 		break;
 	default:
@@ -100,7 +129,6 @@ static irqreturn_t irq_handler(int irq, void *arg)
 	unsigned long flags;
 	struct vdsp_hw *hw = (struct vdsp_hw*) arg;
 	struct vdsp_ipi_ctx_desc *ctx = hw->vdsp_ipi_desc;
-
 	spin_lock_irqsave(&ctx->ipi_spinlock, flags);
 	/*if irq active is 0 ,the ipi may be disabled ,so return here*/
 	if (ctx->ipi_active == 0) {
@@ -132,9 +160,9 @@ static int vdsp_ipi_ctx_init(struct vdsp_ipi_ctx_desc *ctx)
 {
 	unsigned long flags;
 
-	IPI_HREG_OWR(ctx->vir_addr, 0x1 << 6);
+	regmap_update_bits(ctx->base_addr ,0x0, (1 << 6), (1 << 6));
 	udelay(1);
-	IPI_HREG_WR((ctx->vir_addr + 0x3094), 0xd85f);
+	regmap_write_ipi_raw(ctx->base_addr , REG_VDSP_INT_CTL , 0x1ffff , 0xd85f);
 	IPI_HREG_OWR((ctx->ipi_addr + 8), 0xFF);
 	spin_lock_init(&ctx->ipi_spinlock);
 	spin_lock_irqsave(&ctx->ipi_spinlock, flags);
@@ -150,8 +178,9 @@ static int vdsp_ipi_ctx_deinit(struct vdsp_ipi_ctx_desc *ctx)
 	spin_lock_irqsave(&ctx->ipi_spinlock, flags);
 	ctx->ipi_active = 0;
 	IPI_HREG_OWR((ctx->ipi_addr + 8), 0xFF);
-	IPI_HREG_WR(ctx->vir_addr, (IPI_HREG_RD(ctx->vir_addr) & (~(0x1 << 6))));
-	IPI_HREG_WR((ctx->vir_addr + 0x3094), 0x1ffff);
+
+	regmap_update_bits(ctx->base_addr , 0x0 , (1 << 6) , 0);
+	regmap_write_ipi_raw(ctx->base_addr , REG_VDSP_INT_CTL , 0x1ffff , 0x1ffff);
 	spin_unlock_irqrestore(&ctx->ipi_spinlock, flags);
 	return 0;
 }

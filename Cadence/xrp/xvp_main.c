@@ -58,11 +58,7 @@
 #include <linux/semaphore.h>
 #include <linux/slab.h>
 #include <linux/sort.h>
-#if 0 //gki
 #include <linux/soc/sprd/sprd_systimer.h>
-#else
-#define sprd_sysfrt_read()	(long long)0
-#endif
 #include <linux/timer.h>
 #include <asm/mman.h>
 #include <asm/uaccess.h>

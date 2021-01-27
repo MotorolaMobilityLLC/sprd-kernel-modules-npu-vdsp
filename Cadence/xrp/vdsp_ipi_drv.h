@@ -38,8 +38,7 @@ enum xrp_irq_mode {
 
 struct vdsp_ipi_ops;
 struct vdsp_ipi_ctx_desc {
-	phys_addr_t  base_addr;
-	void __iomem *vir_addr;
+	struct regmap * base_addr;
 	void __iomem *ipi_addr;
 	/* how IRQ is used to notify the device of incoming data */
 	enum xrp_irq_mode irq_mode;

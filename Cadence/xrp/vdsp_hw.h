@@ -24,12 +24,20 @@
 #define VDSP_DRAM_SIZE       (256*1024)
 
 #define DRIVER_NAME "vdsp"
-#define REG_RESET           (0x04)
-#define REG_RUNSTALL        (0x3084)
+#define REG_RESET		(0x04)
+#define REG_RUNSTALL	(0x3084)
 #define REG_LP_CTL          (0x3090)
+#define REG_VDSP_INT_CTL         (0x3094)
 #define REG_QOS_THRESHOLD   (0xBC)
 #define REG_QOS_3           (0xD4)
 #define REG_QOS_SEL3        (0xD8)
+
+#define REG_PD_AP_VDSP_CFG   (0x7e4)
+#define REG_PD_AP_VDSP_CORE_INT_DISABLE   (0x7f8)
+#define REG_PD_AP_VDSP_DLSP_ENA    (0x804)
+#define REG_ISPPLL_REL_CFG       (0x8c)
+
+#define REG_AP_DFS_EN_CTL      (0x8)
 
 #define T610_MAX_FREQ      768
 #define T618_MAX_FREQ      936
@@ -71,16 +79,13 @@ struct qos_info {
 
 struct vdsp_hw {
 	struct xvp *xrp;
-	phys_addr_t ahb_phys;
-	void __iomem *ahb;
-	phys_addr_t clk_phys;
-	void __iomem *clk;
+	struct regmap *ahb_regmap;
+	struct regmap *pmu_regmap;
 	phys_addr_t ipi_phys;
 	void __iomem *ipi;
-	phys_addr_t pmu_phys;
-	void __iomem *pmu;
-	phys_addr_t dvfs_phys;
-	void __iomem *dvfs;
+	phys_addr_t clk_phys;
+	void __iomem *clk;
+
 	/* how IRQ is used to notify the device of incoming data */
 	enum xrp_irq_mode device_irq_mode;
 	/*

@@ -161,7 +161,7 @@ void vdsp_ca_disconnect(void)
 	struct vdsp_ca_ctrl *ca = &vdsp_ca;
 
 	wake_up_interruptible_all(&ca->readq);
-
+	mutex_lock(&ca->wlock);
 	ca_free_msg_buf_list(&ca->rx_msg_queue);
 	ca->con_init = false;
 
@@ -172,7 +172,7 @@ void vdsp_ca_disconnect(void)
 
 	 /*todo for Stability test */
 	tipc_chan_destroy(ca->chan);
-
+	mutex_unlock(&ca->wlock);
 	pr_debug("disconnect\n");
 }
 bool vdsp_ca_write(void *buf, size_t len)
@@ -223,7 +223,14 @@ ssize_t vdsp_ca_read(void *buf, size_t max_len)
 		return -ETIMEDOUT;
 	}
 
+	mutex_lock(&ca->rlock);
 	mb = list_first_entry(&ca->rx_msg_queue, struct tipc_msg_buf, node);
+	if(!mb)
+	{
+		pr_err("get msg fail\n");
+		mutex_unlock(&ca->rlock);
+		return -ENOMEM;
+	}
 
 	len = mb_avail_data(mb);
 	if (len > max_len)
@@ -233,7 +240,7 @@ ssize_t vdsp_ca_read(void *buf, size_t max_len)
 
 	list_del(&mb->node);
 	tipc_chan_put_rxbuf(ca->chan, mb);
-
+	mutex_unlock(&ca->rlock);
 	return len;
 }
 
@@ -496,7 +503,7 @@ void trusty_kernelbootcp_disconnect(void)
 	struct bootcp_ca_ctrl *ca = &bootcp_ca;
 
 	wake_up_interruptible_all(&ca->readq);
-
+	mutex_lock(&ca->wlock);
 	ca_free_msg_buf_list(&ca->rx_msg_queue);
 	ca->con_init = false;
 
@@ -507,7 +514,7 @@ void trusty_kernelbootcp_disconnect(void)
 
 	 /*todo for Stability test */
 	tipc_chan_destroy(ca->chan);
-
+	mutex_unlock(&ca->wlock);
 	pr_debug("bootcp disconnect\n");
 
 }
@@ -560,7 +567,14 @@ ssize_t bootcp_ca_read(void *buf, size_t max_len)
 		return -ETIMEDOUT;
 	}
 
+	mutex_lock(&ca->rlock);
 	mb = list_first_entry(&ca->rx_msg_queue, struct tipc_msg_buf, node);
+	if(!mb)
+	{
+		pr_err("get msg fail\n");
+		mutex_unlock(&ca->rlock);
+		return -ENOMEM;
+	}
 
 	len = mb_avail_data(mb);
 	if (len > max_len)
@@ -570,6 +584,7 @@ ssize_t bootcp_ca_read(void *buf, size_t max_len)
 
 	list_del(&mb->node);
 	tipc_chan_put_rxbuf(ca->chan, mb);
+	mutex_unlock(&ca->rlock);
 
 	return len;
 }
