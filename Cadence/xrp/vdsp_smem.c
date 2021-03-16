@@ -29,6 +29,78 @@
 #define pr_fmt(fmt) "sprd-vdsp: smem %d %d %s : "\
 	fmt, current->pid, __LINE__, __func__
 
+
+static int vdsp_dma_set_mask_and_coherent(struct device *dev)
+{
+	if (dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64))) {
+		if (dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32))) {
+			pr_err("vdsp: failed to set dma mask!\n");
+			return -1;
+		}
+	} else {
+		pr_debug("vdsp: set dma mask as 64bit\n");
+	}
+	return 0;
+}
+
+static int vdsp_dmabuf_unmap(struct ion_buf *pfinfo)
+{
+	pr_debug("[IN]unmap dmabuf fd[%d]\n", pfinfo->mfd[0]);
+	if (IS_ERR_OR_NULL(pfinfo->dmabuf_p[0])) {
+		pr_err("dmabuf failed\n");
+		return -1;
+	}
+	// 1.dma buf unmap
+	if (pfinfo->table[0]) {
+		dma_buf_unmap_attachment(pfinfo->attachment[0], pfinfo->table[0], DMA_BIDIRECTIONAL);
+		pfinfo->table[0] = NULL;
+	}
+	// 2.dma buf detach
+	if (pfinfo->attachment[0]) {
+		dma_buf_detach(pfinfo->dmabuf_p[0], pfinfo->attachment[0]);
+		pfinfo->attachment[0] = NULL;
+	}
+	// 3. dma buf put
+	dma_buf_put(pfinfo->dmabuf_p[0]);
+
+	pr_debug("[OUT]vdsp dmabuf unmap end\n");
+	return 0;
+}
+
+static int vdsp_dmabuf_map(struct ion_buf *pfinfo)
+{
+	struct dma_buf_attachment *attachment = NULL;
+	struct sg_table *table = NULL;
+
+	// 1. get dma buf from fd.
+	pr_debug("[IN]map dmabuf fd[%d]\n", pfinfo->mfd[0]);
+	pfinfo->dmabuf_p[0] = dma_buf_get(pfinfo->mfd[0]);
+	if (IS_ERR_OR_NULL(pfinfo->dmabuf_p[0])) {
+		pr_err("dmabuf failed\n");
+		return -1;
+	}
+	// 2. dma buf attch.
+	attachment = dma_buf_attach(pfinfo->dmabuf_p[0], pfinfo->dev);
+	if (IS_ERR_OR_NULL(attachment)) {
+		pr_err("dmabuf attach failed\n");
+		goto done;
+	}
+	pfinfo->attachment[0] = attachment;
+	// 3. dma buf map.
+	table = dma_buf_map_attachment(attachment, DMA_BIDIRECTIONAL);
+	if (IS_ERR_OR_NULL(table)) {
+		pr_err("dmabuf map attachment failed\n");
+		goto done;
+	}
+	pfinfo->table[0] = table;
+
+	pr_debug("[OUT]vdsp dmabuf map\n");
+	return 0;
+done:
+	vdsp_dmabuf_unmap(pfinfo);
+	return -1;
+}
+
 static int __vdsp_mem_iommu_map(struct ion_buf *pfinfo, int idx)
 {
 	int i = 0, ret = 0;
@@ -259,10 +331,11 @@ static int vdsp_mem_kmap_userbuf(struct ion_buf *buf_info)
 		pr_err("[ERROR]dma_buf_get fd:%d\n", buf_info->mfd[0]);
 		return -EINVAL;
 	}
-	buf_info->addr_k[0] = (unsigned long)sprd_ion_map_kernel(buf_info->dmabuf_p[0] , 0);
+	buf_info->addr_k[0] = (unsigned long)sprd_ion_map_kernel(buf_info->dmabuf_p[0], 0);
 	/*buffer index 0 is input lib buffer*/
 	if (IS_ERR_OR_NULL((void *)buf_info->addr_k[0])) {
-		pr_err("[ERROR] mfd:%d , dev:%p addr:%lx err\n" , buf_info->mfd[0], buf_info->dev , (unsigned long)buf_info->addr_k[0]);
+		pr_err("[ERROR] mfd:%d , dev:%p addr:%lx err\n",
+			buf_info->mfd[0], buf_info->dev, (unsigned long)buf_info->addr_k[0]);
 		return -EFAULT;
 	}
 	pr_debug("[kmap]mfd:%d, dev:%p, map vaddr is:%lx\n",
@@ -465,6 +538,9 @@ struct vdsp_mem_ops vdsp_mem_ops = {
 	.mem_get_ionbuf = vdsp_mem_get_ionbuf,
 	.mem_register_callback = vdsp_mem_register_callback,
 	.mem_unregister_callback = vdsp_mem_unregister_callback,
+	.mem_dmabuf_map = vdsp_dmabuf_map,
+	.mem_dmabuf_unmap = vdsp_dmabuf_unmap,
+	.mem_dma_set_mask_and_coherent = vdsp_dma_set_mask_and_coherent,
 };
 
 static struct vdsp_mem_desc s_vdsp_mem_desc = {

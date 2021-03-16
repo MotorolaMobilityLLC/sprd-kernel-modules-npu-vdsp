@@ -87,7 +87,7 @@
         fmt, current->pid, __LINE__, __func__
 
 #define XRP_DEFAULT_TIMEOUT 20
-
+#define DRIVER_MAP	1
 enum {
 	/* normal work mode */
 	LOOPBACK_NORMAL,
@@ -831,14 +831,19 @@ static int sprd_unmap_request(
                 pr_debug("[UNMAP] krqflag is 1 [OUT]\n");
                 return 0;
         }
-	if (rq->ioctl_queue.in_data_size >
-		XRP_DSP_CMD_INLINE_DATA_SIZE) {
+	if (rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
+#ifdef DRIVER_MAP
+		ret |= xvp->vdsp_mem_desc->ops->mem_dmabuf_unmap(&rq->ion_in_buf);
+#endif
 		ret |= xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
 			xvp->vdsp_mem_desc,
 			&rq->ion_in_buf,
 			IOMMU_ALL);
 	}
 	if (rq->ioctl_queue.out_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
+#ifdef DRIVER_MAP
+		ret |= xvp->vdsp_mem_desc->ops->mem_dmabuf_unmap(&rq->ion_out_buf);
+#endif
 		ret |= xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
 			xvp->vdsp_mem_desc,
 			&rq->ion_out_buf,
@@ -865,6 +870,9 @@ static int sprd_unmap_request(
 				rq->dsp_buf);
 		kfree(rq->dsp_buf);
 		for (i = 0; i < n_buffers; ++i) {
+#ifdef DRIVER_MAP
+			ret |= xvp->vdsp_mem_desc->ops->mem_dmabuf_unmap(&rq->ion_dsp_pool[i]);
+#endif
 			ret |= xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
 				xvp->vdsp_mem_desc,
 				&rq->ion_dsp_pool[i],
@@ -1004,6 +1012,14 @@ static int sprd_map_request(
 			ret = -EFAULT;
 			goto free_indata_err;
 		}
+#ifdef DRIVER_MAP
+		ret = xvp->vdsp_mem_desc->ops->mem_dmabuf_map(p_in_buf);
+		if (ret) {
+			pr_err("[ERROR]fail to mem_dmabuf_map!!!!\n");
+			ret = -EFAULT;
+			goto free_indata_err;
+		}
+#endif
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
 			xvp->vdsp_mem_desc,
 			p_in_buf,
@@ -1042,6 +1058,14 @@ static int sprd_map_request(
 			ret = -EFAULT;
 			goto share_err;
 		}
+#ifdef DRIVER_MAP
+		ret = xvp->vdsp_mem_desc->ops->mem_dmabuf_map(p_out_buf);
+		if (ret) {
+			pr_err("[ERROR]fail to mem_dmabuf_map!!!!\n");
+			ret = -EFAULT;
+			goto share_err;
+		}
+#endif
 		ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
 			xvp->vdsp_mem_desc,
 			p_out_buf,
@@ -1085,6 +1109,14 @@ static int sprd_map_request(
 						ret = -EFAULT;
 						goto share_err;
 					}
+#ifdef DRIVER_MAP
+					ret = xvp->vdsp_mem_desc->ops->mem_dmabuf_map(p_dsp_buf);
+					if (ret) {
+						pr_err("[ERROR]fail to mem_dmabuf_map!!!!\n");
+						ret = -EFAULT;
+						goto share_err;
+					}
+#endif
 					ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
 						xvp->vdsp_mem_desc,
 						p_dsp_buf,
@@ -1128,6 +1160,14 @@ static int sprd_map_request(
 					ret = -EFAULT;
 					goto share_err;
 				}
+#ifdef DRIVER_MAP
+				ret = xvp->vdsp_mem_desc->ops->mem_dmabuf_map(p_dsp_buf);
+				if (ret) {
+					pr_err("[ERROR]fail to mem_dmabuf_map!!!!\n");
+					ret = -EFAULT;
+					goto share_err;
+				}
+#endif
 				ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(
 					xvp->vdsp_mem_desc,
 					p_dsp_buf,
@@ -2128,6 +2168,9 @@ static long vdsp_init_common(struct platform_device *pdev,
 	ret = misc_register(&xvp->miscdev);
 	if (unlikely(ret < 0))
 		goto err_free_id;
+
+	xvp->vdsp_mem_desc->ops->mem_dma_set_mask_and_coherent(&pdev->dev);
+
 	return PTR_ERR(xvp);
 err_free_id:
 	ida_simple_remove(&xvp_nodeid, nodeid);

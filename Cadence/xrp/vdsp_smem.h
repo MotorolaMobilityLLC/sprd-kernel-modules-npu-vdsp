@@ -24,25 +24,26 @@
 typedef phys_addr_t (*mem_cb_t)(void *);
 
 enum {
-	IOMMU_MSTI = 0,
+	IOMMU_MSTI = 0,	//VDSP
 	IOMMU_MSTD,
-	IOMMU_IDMA,
-	IOMMU_VDMA,
+	IOMMU_IDMA,		//IDMA
+	IOMMU_VDMA,		//VDMA
 	IOMMU_ALL,
 };
 
 struct ion_buf {
 	struct device *dev;
-	int mfd[3];
+	int mfd[3];			//meaning fd == file descriptor
 	unsigned int num; /*valid buf num,max 3*/
 	struct sg_table *table[3];
 	void *buf[3];
 	size_t size[3];
-	unsigned long addr_k[3];
-	unsigned long iova[3];
+	unsigned long addr_k[3];	//kernel virtual addr (user only use fd)
+	unsigned long iova[3];		//vdsp addr -0x80000000
 	struct dma_buf *dmabuf_p[3];
 	unsigned int offset[3];
-	unsigned long addr_p[3];
+	unsigned long addr_p[3];	//phys addr
+	struct dma_buf_attachment *attachment[1];
 };
 
 struct vdsp_mem_ops;
@@ -85,6 +86,9 @@ struct vdsp_mem_ops {
 				     unsigned int idx, mem_cb_t cb, void *arg);
 	int (*mem_unregister_callback)(struct vdsp_mem_desc *ctx,
 				       unsigned int idx);
+	int (*mem_dmabuf_map)(struct ion_buf *buf_info);
+	int (*mem_dmabuf_unmap)(struct ion_buf *buf_info);
+	int (*mem_dma_set_mask_and_coherent)(struct device *dev);
 };
 
 struct vdsp_mem_desc *get_vdsp_mem_ctx_desc(struct device *dev);

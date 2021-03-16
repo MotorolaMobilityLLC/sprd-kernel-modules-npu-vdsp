@@ -309,6 +309,7 @@ int xrp_request_firmware(struct xvp *xvp)
 
 	ret = xrp_load_firmware(xvp);
 	release_firmware(xvp->firmware);
+	xvp->firmware = NULL;
 	tv2 = ktime_to_us(ktime_get());
 	pr_info("[TIME]request&load firmware,total:%lld(us),request:%lld(us),load:%lld(us)\n",
 		tv2 - tv0, tv1 - tv0, tv2 - tv1);
