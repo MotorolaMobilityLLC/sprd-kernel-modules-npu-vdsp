@@ -348,7 +348,6 @@ static int vdsp_mem_kunmap_userbuf(struct ion_buf *buf_info)
 	sprd_ion_unmap_kernel(buf_info->dmabuf_p[0] , 0);
 	dma_buf_put(buf_info->dmabuf_p[0]);
 	buf_info->addr_k[0] = 0;
-	buf_info->dmabuf_p[0] = NULL;
 	return 0;
 }
 
