@@ -266,6 +266,24 @@ static void get_max_freq(uint32_t *max_freq)
 #endif
 }
 
+#if 1 //k54 dvfs workaround
+#define VDSP_DVFS_CONFIG	(0x20200000)
+
+static inline void reg_write32(void *addr, u32 v)
+{
+	__raw_writel(v, addr);
+}
+static void dvfs_fix_workaround(void)
+{
+	void __iomem *dvfs_config = NULL;
+
+	pr_debug("dvfs workaround,set512M\n");
+	dvfs_config = ioremap(VDSP_DVFS_CONFIG, 0x1000);
+	//clock 5:936M, 4: 768M, 3:614.4M, 2:512M
+	reg_write32((void *)(dvfs_config + 0xb0), (u32)0x2);
+	iounmap(dvfs_config);
+}
+#endif
 static int enable(void *hw_arg)
 {
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
@@ -279,6 +297,7 @@ static int enable(void *hw_arg)
 	regmap_write_vdsp_hw_raw(hw->ahb_regmap , REG_LP_CTL , 0xC , 0x8);
 	/*isppll open for 936M*/
 	regmap_write_vdsp_hw(hw->pmu_regmap, REG_ISPPLL_REL_CFG , (0x1 << 0), 0x1);
+
 	/* loop PD_AD_VDSP_STATE*/
 	do {
 		if (regmap_read_vdsp_hw(hw->pmu_regmap, 0xbc, 0xff000000, &rdata)){
@@ -292,6 +311,8 @@ static int enable(void *hw_arg)
 	/*vdsp_all_int_mask = 0*/
 	regmap_write_vdsp_hw_raw(hw->ahb_regmap , REG_VDSP_INT_CTL , (0x1 << 13), 0);
 
+	/* force set vdsp 512M*/
+	dvfs_fix_workaround();
 	return ret;
 }
 
@@ -377,7 +398,7 @@ static irqreturn_t xrp_hw_irq_handler(int irq, void *dev_id)
 
 	return xrp_irq_handler(irq, hw->xrp);
 }
-
+#if 0
 static void memcpy_hw_function(
 	void __iomem *dst, const void *src, size_t sz)
 {
@@ -391,7 +412,7 @@ static void memset_hw_function(
 	memset(dst, c, sz);
 	return;
 }
-
+#endif
 int vdsp_request_irq(void *xvp_arg,
 	void *hw_arg)
 {
@@ -435,8 +456,8 @@ static const struct xrp_hw_ops hw_ops = {
 	.reset = reset,
 	.get_hw_sync_data = get_hw_sync_data,
 	.send_irq = send_irq,
-	.memcpy_tohw = memcpy_hw_function,
-	.memset_hw = memset_hw_function,
+	.memcpy_tohw = NULL,/*memcpy_hw_function, set NULL use io interface*/
+	.memset_hw = NULL,/*memset_hw_function, set NULL use io interface*/
 	.enable = enable,
 	.disable = disable,
 	.enable_dvfs = NULL,
