@@ -1,5 +1,5 @@
 #
-# sprd_vdsp.ko
+# vdsp_sipc.ko
 #
 # Makefile: for external make invocation
 #
