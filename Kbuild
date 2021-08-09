@@ -8,7 +8,7 @@
 #   done is this Kbuild file
 #
 
-VDSP_DIR := $(BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE)
+VDSP_DIR := Cadence
 
 #
 # Source List

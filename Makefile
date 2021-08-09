@@ -14,7 +14,7 @@ KO_MODULE_KBUILD := $(CURDIR)/Kbuild
 
 .PHONY: modules modules_install clean
 
-ifneq ($(BSP_BOARD_CAMERA_MODULE_VDSP_DEVICE),Cadence)
+ifndef BSP_BOARD_PRODUCT_USING_VDSP
 modules modules_install clean:
 	@echo "Skipped, Kbuild only for Cadence vdsp!"
 else
