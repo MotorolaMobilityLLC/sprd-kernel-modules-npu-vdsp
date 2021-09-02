@@ -272,26 +272,6 @@ static void get_max_freq(uint32_t * max_freq)
 	pr_debug("get max_freq:%d\n", *max_freq);
 }
 
-#if 1				//k54 dvfs workaround
-#define VDSP_DVFS_CONFIG	(0x20200000)
-
-static inline void reg_write32(void *addr, u32 v)
-{
-	__raw_writel(v, addr);
-}
-
-static void dvfs_fix_workaround(void)
-{
-	void __iomem *dvfs_config = NULL;
-
-	pr_debug("dvfs workaround,set512M\n");
-	dvfs_config = ioremap(VDSP_DVFS_CONFIG, 0x1000);
-	//clock 5:936M, 4: 768M, 3:614.4M, 2:512M
-	reg_write32((void *)(dvfs_config + 0xb0), (u32) 0x2);
-	iounmap(dvfs_config);
-}
-#endif
-
 static int enable(void *hw_arg)
 {
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
@@ -327,8 +307,6 @@ static int enable(void *hw_arg)
 	regmap_write_vdsp_hw_raw(hw->ahb_regmap, REG_VDSP_INT_CTL, (0x1 << 13),
 				 0);
 
-	/* force set vdsp 512M */
-	dvfs_fix_workaround();
 	return ret;
 }
 
@@ -376,22 +354,22 @@ static void disable(void *hw_arg)
 
 static uint32_t translate_dvfsindex_to_freq(uint32_t index)
 {
-	// switch (index) {
-	// case 0:
-	//  return SHARKL5PRO_VDSP_CLK256M;
-	// case 1:
-	//  return SHARKL5PRO_VDSP_CLK384M;
-	// case 2:
-	//  return SHARKL5PRO_VDSP_CLK512M;
-	// case 3:
-	//  return SHARKL5PRO_VDSP_CLK614M4;
-	// case 4:
-	//  return SHARKL5PRO_VDSP_CLK768M;
-	// case 5:
-	//  return SHARKL5PRO_VDSP_CLK936M;
-	// default:
-	//  return SHARKL5PRO_VDSP_CLK256M;
-	// }
+	switch (index) {
+	case 0:
+		return SHARKL5PRO_VDSP_CLK256M;
+	case 1:
+		return SHARKL5PRO_VDSP_CLK384M;
+	case 2:
+		return SHARKL5PRO_VDSP_CLK512M;
+	case 3:
+		return SHARKL5PRO_VDSP_CLK614M4;
+	case 4:
+		return SHARKL5PRO_VDSP_CLK768M;
+	case 5:
+		return SHARKL5PRO_VDSP_CLK936M;
+	default:
+		return SHARKL5PRO_VDSP_CLK256M;
+	}
 	return 0;
 }
 
@@ -400,7 +378,7 @@ static void setdvfs(void *hw_arg, uint32_t index)
 	uint32_t freq = translate_dvfsindex_to_freq(index);
 
 	pr_debug("freq:%d, index:%d\n", freq, index);
-	// vdsp_dvfs_notifier_call_chain(&freq);
+	vdsp_dvfs_notifier_call_chain(&freq);
 }
 
 static void send_irq(void *hw_arg)
