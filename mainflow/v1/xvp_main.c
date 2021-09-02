@@ -1286,7 +1286,8 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
 	struct xrp_comm *queue = xvp->queue;
-	struct xrp_request xrp_rq, *rq = &xrp_rq;
+	struct xrp_request xrp_rq = { 0 };
+	struct xrp_request *rq = &xrp_rq;
 	long ret = 0;
 	bool went_off = false;
 	enum load_unload_flag load_flag = XRP_LOAD_LIB_FLAG_MAX;

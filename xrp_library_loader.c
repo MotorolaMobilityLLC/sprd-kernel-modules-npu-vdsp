@@ -469,6 +469,7 @@ enum load_unload_flag xrp_check_load_unload(struct xvp *xvp,
 			if (unlikely(tempbuffer == NULL)) {
 				return -ENOMEM;
 			}
+			memset(tempbuffer, 0, indata_size);
 			if (unlikely
 			    (copy_from_user(tempbuffer, tempsrc, indata_size)))
 			{
@@ -801,6 +802,7 @@ static int32_t xrp_library_getloadunload_libname(struct xvp *xvp,
 			if (unlikely(tempbuffer == NULL)) {
 				return -ENOMEM;
 			}
+			memset(tempbuffer, 0, indata_size);
 			if (unlikely
 			    (copy_from_user(tempbuffer, tempsrc, indata_size)))
 			{
@@ -907,6 +909,7 @@ static int32_t xrp_library_load_prepare(struct file *filp,
 			pr_err("[ERROR]vmalloc failed\n");
 			return -ENOMEM;
 		}
+		memset(tempbuffer, 0, indata_size);
 		if (unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
 			pr_err("[ERROR]copy from user failed\n");
 			vfree(tempbuffer);
@@ -1150,6 +1153,7 @@ static int32_t xrp_library_load_prepare(struct file *filp,
 			pr_err("[ERROR]vmalloc failed\n");
 			return -ENOMEM;
 		}
+		memset(tempbuffer, 0, indata_size);
 		if (unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
 			pr_err("[ERROR]copy from user failed\n");
 			vfree(tempbuffer);
