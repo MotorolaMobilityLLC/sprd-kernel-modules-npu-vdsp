@@ -27,8 +27,7 @@ static struct heap_config heap_configs[] = {
 	{
 	 .type = SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED,
 	 .options.unified = {
-			     .gfp_type =
-			     (GFP_HIGHUSER | __GFP_ZERO) & ~__GFP_RECLAIM,
+			     .gfp_type = GFP_KERNEL | __GFP_ZERO,
 			     },
 	 .to_dev_addr = NULL,
 	 },
