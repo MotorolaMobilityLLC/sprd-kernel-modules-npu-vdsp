@@ -33,6 +33,8 @@ struct xvp_buf {
 	struct list_head xvp_file_list_node;
 	unsigned long owner;
 	uint64_t buf_hnd;
+	int isfixed;                // flag for fixed map, 0: no 1:fixed_offset 2:fixed_addr
+	unsigned long fixed_data;   // fixed map addr or offset
 } __attribute__ ((aligned(8)));
 
 int sprd_vdsp_mem_xvp_init(struct xvp *xvp);

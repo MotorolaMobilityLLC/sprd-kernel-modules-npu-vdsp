@@ -1445,6 +1445,9 @@ int _sprd_vdsp_mem_map_iova(struct sprd_vdsp_iommus *iommus,
 	map_conf.buf_addr = (unsigned long)pfinfo->buf;
 	map_conf.iova_size = pfinfo->size;
 	map_conf.table = pfinfo->table;
+	map_conf.isfixed=pfinfo->isfixed;
+	map_conf.fixed_data=pfinfo->fixed_data;
+
 	ret = iommus->ops->map_all(iommus, &map_conf);
 	if (ret) {
 		pr_err("map fail to get iommu kaddr\n");
@@ -1455,7 +1458,7 @@ int _sprd_vdsp_mem_map_iova(struct sprd_vdsp_iommus *iommus,
 	return ret;
 }
 
-int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id)
+int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsigned long fixed_data)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -1495,10 +1498,13 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id)
 		buffer->map_buf.buf = buffer;
 		buffer->map_buf.size = buffer->request_size;
 		buffer->map_buf.offset = 0;
+		buffer->map_buf.isfixed = isfixed;
+		buffer->map_buf.fixed_data=fixed_data;
 		if (trace_mem_iommu_map)
-			pr_debug("sgt %p, buffer %p, size %zu",
+			pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = %d\n",
 				 buffer->map_buf.table, buffer->map_buf.buf,
-				 buffer->map_buf.size);
+				 buffer->map_buf.size,buffer->map_buf.isfixed,
+				 buffer->map_buf.fixed_data);
 		iommus = mem_ctx->xvp->iommus;
 
 		ret = _sprd_vdsp_mem_map_iova(iommus, &buffer->map_buf);

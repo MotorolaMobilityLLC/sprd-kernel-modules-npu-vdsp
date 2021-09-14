@@ -127,6 +127,6 @@ int sprd_vdsp_mem_signal_fence(struct mem_ctx *ctx, int buf_id);
 /*
 * related to stream MMU context (constains IMGMMU functionality in general)
 */
-int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id);
+int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsigned long fixed_data);
 int sprd_vdsp_mem_unmap_iova(struct mem_ctx *mem_ctx, int buf_id);
 #endif /* SPRD_VDSP_MEM_MAN_H */

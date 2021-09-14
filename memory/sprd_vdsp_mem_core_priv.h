@@ -81,6 +81,8 @@ struct map_buf {
 	unsigned int offset;
 	unsigned long addr_p;
 	unsigned int map_flags;
+	int isfixed;                // flag for fixed map, 0: no 1:fixed_offset 2:fixed_addr
+	unsigned long fixed_data;   // fixed map addr or offset
 };
 
 /* An MMU mapping of a buffer */

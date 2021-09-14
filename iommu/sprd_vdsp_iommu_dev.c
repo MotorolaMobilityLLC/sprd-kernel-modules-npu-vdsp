@@ -95,13 +95,6 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 
 	BUG_ON(!iommu_dev->ctrl_reg);
 
-// #ifdef KERNEL_VERSION_54
-//     iommu_dev->iova_base = 0x40000000;
-//     iommu_dev->iova_size = 0x20000000;
-//  pr_debug("iova_base:0x%x\n", val32);
-//  pr_debug("iova_size:0x%x\n", val32);
-// #else
-	//iova-base iova-size
 	ret = of_property_read_u32(iommu_dev_of_node, "sprd,iova-base", &val32);
 	if (ret < 0) {
 		ret =
@@ -143,9 +136,9 @@ static void iommu_dev_dt_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 
 static int iommu_dev_iova_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
-
-	struct sprd_vdsp_iommu_iova *iova = NULL;
 	int ret = 0;
+#ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
+	struct sprd_vdsp_iommu_iova *iova = NULL;
 
 	if (unlikely(iommu_dev == NULL)) {
 		pr_err("Error: iommu_dev is NULL!\n");
@@ -171,12 +164,13 @@ static int iommu_dev_iova_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 	    iova->ops->iova_init(iova, iommu_dev->iova_base,
 				 iommu_dev->iova_size, 12);
 	pr_debug("iommu_dev_iova_init sucess\n");
+#endif
 	return ret;
 }
 
 static void iommu_dev_iova_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
-
+#ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 	struct sprd_vdsp_iommu_iova *iova = NULL;
 
 	iova = iommu_dev->iova_dev;
@@ -185,6 +179,7 @@ static void iommu_dev_iova_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 		return;
 	}
 	iova->ops->iova_release(iova);
+#endif
 	return;
 }
 
@@ -311,6 +306,7 @@ static void iommu_dev_hw_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 
 static int iommu_dev_map_record_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
+#ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 	struct sprd_vdsp_iommu_map_record *record = NULL;
 
 	if (unlikely(iommu_dev == NULL)) {
@@ -329,12 +325,13 @@ static int iommu_dev_map_record_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 	record->ops = &iommu_map_record_ops;
 	record->ops->init(record);
 	iommu_dev->record_dev = record;
-
+#endif
 	return 0;
 }
 
 static void iommu_dev_map_record_relsase(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
+#ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 	struct sprd_vdsp_iommu_map_record *record = NULL;
 
 	record = iommu_dev->record_dev;
@@ -342,6 +339,7 @@ static void iommu_dev_map_record_relsase(struct sprd_vdsp_iommu_dev *iommu_dev)
 		record->ops->release(record);
 		devm_kfree(iommu_dev->dev, iommu_dev->record_dev);
 	}
+#endif
 	return;
 }
 
@@ -425,7 +423,7 @@ static void iommu_dev_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 	iommu_dev_dt_release(iommu_dev);
 	return;
 }
-
+#ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 			 struct sprd_vdsp_iommu_map_conf *map_conf)
 {
@@ -480,14 +478,27 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 	}
 	sg_table = map_conf->table;
 
-	iova = iova_dev->ops->iova_alloc(iova_dev, map_conf->iova_size);
-	if (iova == 0) {
-		pr_err("Error: iova_alloc failed\n");
-		ret = iova;
-		mutex_unlock(&iommu_dev->mutex);
-		return ret;
+	if(map_conf->isfixed==1|| map_conf->isfixed==2){
+		iova=map_conf->fixed_data;
+		if(map_conf->isfixed==1){ // 1:fixed offset 2:fixed addr
+			iova=iova+iova_dev->iova_base;
+		}
+		ret=iova_dev->ops->iova_alloc_fixed(iova_dev,&iova,map_conf->iova_size);
+		if(ret){
+			pr_err("Error: iova_alloc_fixed failed\n");
+			mutex_unlock(&iommu_dev->mutex);
+			return ret;
+		}
 	}
-
+	else{
+		iova = iova_dev->ops->iova_alloc(iova_dev, map_conf->iova_size);
+		if (iova < 0) {
+			pr_err("Error: iova_alloc failed\n");
+			ret = iova;
+			mutex_unlock(&iommu_dev->mutex);
+			return ret;
+		}
+	}
 	memset(&map_param, 0, sizeof(map_param));
 	map_param.start_virt_addr = iova;
 	map_param.total_map_size = map_conf->iova_size;
@@ -514,7 +525,81 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 
 	return ret;
 }
+#else
+static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
+			 struct sprd_vdsp_iommu_map_conf *map_conf)
+{
 
+	struct sprd_vdsp_iommu_iova *iova_dev = NULL;
+	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
+	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
+	struct sg_table *sg_table = NULL;
+	unsigned long iova = 0;
+	struct sprd_iommu_map_param map_param;
+	unsigned long irq_flag = 0;
+	int ret;
+
+	if (unlikely(iommu_dev == NULL || map_conf == NULL)) {
+		pr_err("Error: iommu_dev or map_conf is NULL!\n");
+		return -EINVAL;
+	}
+
+	if (unlikely(!map_conf->buf_addr)) {
+		pr_err("Error: map_conf->buf_addr is NULL!\n");
+		return -EINVAL;
+	}
+
+	iova_dev = iommu_dev->iommus->iova_dev;
+	if (unlikely(!iova_dev)) {
+		pr_err("Error iommus iova_dev is NULL!\n");
+		return -EINVAL;
+	}
+	iommu_hw_dev = iommu_dev->iommu_hw_dev;
+	if (unlikely(!iommu_hw_dev)) {
+		pr_err("Error: iommu_hw_dev is NULL!\n");
+		return -EINVAL;
+	}
+	if (unlikely(iommu_hw_dev->p_iommu_tbl->map == NULL)) {
+		pr_err("Error: iommu_hw_dev->p_iommu_tbl->map is NULL!\n");
+		return -EINVAL;
+	}
+	record_dev = iommu_dev->iommus->record_dev;
+	if (unlikely(!record_dev)) {
+		pr_err("Error: iommus record_dev is NULL!\n");
+		return -EINVAL;
+	}
+	mutex_lock(&iommu_dev->mutex);
+	if (record_dev->
+	    ops->map_check(record_dev, map_conf->buf_addr,
+			   (unsigned long *)&iova)) {
+		map_conf->iova_addr = iova;
+		pr_warn("Warning: buf 0x%lx has been mapped,iova = 0x%lx\n",
+			map_conf->buf_addr, iova);
+		mutex_unlock(&iommu_dev->mutex);
+		return 0;
+	}
+	sg_table = map_conf->table;
+
+	memset(&map_param, 0, sizeof(map_param));
+	map_param.start_virt_addr = map_conf->iova_addr;
+	map_param.total_map_size = map_conf->iova_size;
+	map_param.p_sg_table = sg_table;
+
+	spin_lock_irqsave(&iommu_dev->pgt_lock, irq_flag);
+	ret = iommu_hw_dev->p_iommu_tbl->map(iommu_hw_dev, &map_param);
+	spin_unlock_irqrestore(&iommu_dev->pgt_lock, irq_flag);
+
+	if (ret) {
+		pr_err("Error:iommu_hw_dev->p_iommu_tbl->map fialed:ret = %x\n",ret);
+		mutex_unlock(&iommu_dev->mutex);
+		return ret;
+	}
+	mutex_unlock(&iommu_dev->mutex);
+	return ret;
+}
+#endif
+
+#ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
 			   struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
 {
@@ -577,7 +662,59 @@ static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
 	mutex_unlock(&iommu_dev->mutex);
 	return 0;
 }
+#else
+static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
+			   struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
+{
+	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
+	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
+	struct sprd_iommu_unmap_param unmap_param;	//临时，兼容变量
+	unsigned long irq_flag = 0;
+	int ret;
 
+	if (unlikely(iommu_dev == NULL || unmap_conf == NULL)) {
+		pr_err("Error: iommu_dev or unmap_conf is NULL!\n");
+		return -EINVAL;
+	}
+	iommu_hw_dev = iommu_dev->iommu_hw_dev;
+	if (unlikely(!iommu_hw_dev)) {
+		pr_err("Error: iommu_hw_dev is NULL!\n");
+		return -EINVAL;
+	}
+	if (unlikely(iommu_hw_dev->p_iommu_tbl->unmap == NULL)) {
+		pr_err("Error: iommu_hw_dev->p_iommu_tbl->map is NULL!\n");
+		return -EINVAL;
+	}
+	record_dev = iommu_dev->iommus->record_dev;
+	if (unlikely(!record_dev)) {
+		pr_err("Error: record_dev is NULL!\n");
+		return -EINVAL;
+	}
+	mutex_lock(&iommu_dev->mutex);
+	if (!(record_dev->ops->unmap_check(record_dev, unmap_conf->buf_addr))) {
+		pr_err("Error: buf_addr 0x%lx is not iova mapped \n",
+		       unmap_conf->buf_addr);
+		mutex_unlock(&iommu_dev->mutex);
+		return -EINVAL;
+	}
+
+	memset(&unmap_param, 0, sizeof(unmap_param));
+	unmap_param.start_virt_addr = unmap_conf->iova_addr;
+	unmap_param.total_map_size = unmap_conf->iova_size;
+
+	spin_lock_irqsave(&iommu_dev->pgt_lock, irq_flag);
+	ret = iommu_hw_dev->p_iommu_tbl->unmap(iommu_hw_dev, &unmap_param);
+	spin_unlock_irqrestore(&iommu_dev->pgt_lock, irq_flag);
+
+	if (ret) {
+		pr_err("Error: iommu_hw_dev->p_iommu_tbl->unmap failed\n");
+		mutex_unlock(&iommu_dev->mutex);
+		return -1;
+	}
+	mutex_unlock(&iommu_dev->mutex);
+	return 0;
+}
+#endif
 struct sprd_vdsp_iommu_dev_ops iommu_dev_ops = {
 	.init = iommu_dev_init,
 	.release = iommu_dev_release,

@@ -20,7 +20,8 @@ VERSION_DIR := v2
 CONFIG_NEWIOMMUANDMEM := y
 ccflags-y += -DMYN6
 endif
-
+# iommu dirver use signal iova
+ccflags-y += -DVDSP_IOMMU_USE_SIGNAL_IOVA
 ccflags-y += -DDEBUG
 ccflags-y += -g
 #

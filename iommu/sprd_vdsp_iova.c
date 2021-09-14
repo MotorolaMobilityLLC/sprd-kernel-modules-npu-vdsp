@@ -6,6 +6,7 @@
 
 #include <linux/genalloc.h>
 #include <linux/module.h>
+#include <linux/slab.h>
 #include "sprd_vdsp_iova.h"
 
 #ifdef pr_fmt
@@ -64,12 +65,148 @@ static unsigned long genalloc_iova_alloc(struct sprd_vdsp_iommu_iova *iova,
 static void genalloc_iova_free(struct sprd_vdsp_iommu_iova *iova,
 			       unsigned long iova_addr, size_t iova_length)
 {
+	struct iova_reserve *reserve = iova->reserve_data;
+	int i;
+
 	if (trace_iova_alloc_free) {
 		pr_debug("iova->pool:0x%lx\n", (unsigned long)iova->pool);
 		pr_debug("iova_addr:0x%lx\n", iova_addr);
 	}
+	// 释放的的是reserve的iova内存
+	if (reserve) {
+		for (i = 0; i < iova->reserve_num; i++) {
+			if ((iova_addr == reserve->iova_addr)
+			    && (iova_length == reserve->size)) {
+				reserve->status = 0;
+				return;
+			}
+		}
+	}
+
 	gen_pool_free(iova->pool, iova_addr, iova_length);	//return type of void
 	return;
+}
+
+static int genalloc_reserve_init(struct sprd_vdsp_iommu_iova *iova,
+				 struct iova_reserve reserve_data[],
+				 unsigned int reserve_num)
+{
+	unsigned long iova_addr = 0;
+	struct iova_reserve *reserve = NULL;
+	int i;
+	if (reserve_data != NULL && reserve_num > 0) {
+
+		reserve =
+		    (struct iova_reserve *)kmalloc(sizeof(struct iova_reserve) *
+						   reserve_num, GFP_KERNEL);
+		if (!reserve) {
+			pr_err("Error: kmalloc  failed\n");
+			return -ENOMEM;
+		}
+		memcpy(reserve, reserve_data,
+		       sizeof(struct iova_reserve) * reserve_num);
+
+		for (i = 0; i < reserve_num; i++) {
+			iova_addr =
+			    gen_pool_alloc_algo(iova->pool, reserve[i].size,
+						gen_pool_fixed_alloc,
+						&reserve[i].fixed);
+			if (!iova_addr) {
+				pr_err("Error: gen_pool_alloc_algo failed!\n");
+				goto error_alloc_faied;
+			}
+			reserve[i].iova_addr = iova_addr;
+		}
+	}
+	reserve->status = 0;
+	iova->reserve_data = reserve;
+	iova->reserve_num = reserve_num;
+	pr_debug("iova_reserve_init sucessed\n");
+	return 0;
+
+error_alloc_faied:
+	for (i = 0; i < reserve_num; i++) {
+		if (reserve_data[i].iova_addr) {
+			gen_pool_free(iova->pool, reserve_data[i].iova_addr,
+				      reserve_data[i].size);
+		}
+	}
+	return -1;
+}
+
+static void genalloc_reserve_release(struct sprd_vdsp_iommu_iova *iova)
+{
+
+	struct iova_reserve *reserve = iova->reserve_data;
+	int i;
+	if (reserve) {
+		for (i = 0; i < iova->reserve_num; i++) {
+			if (reserve->status == 1) {
+				pr_warn("Warning: iova reserver [%s] is uesd\n",
+					reserve->name);
+			}
+			gen_pool_free(iova->pool, reserve->iova_addr, reserve->size);	//return type of void
+			reserve->iova_addr = 0;
+			reserve->status = 0;
+		}
+	}
+	kfree(iova->reserve_data);
+	iova->reserve_data = NULL;
+	iova->reserve_num = 0;
+	return;
+}
+
+static int genalloc_iova_alloc_fixed(struct sprd_vdsp_iommu_iova *iova,
+				     unsigned long *iova_addr,
+				     size_t iova_length)
+{
+	unsigned long iova_start = *iova_addr;
+	struct iova_reserve *res;
+	int i;
+	int matchflag = 0;
+	struct genpool_data_fixed fixed;
+
+	if ((iova_start < iova->iova_base)
+	    || (iova_start + iova_length > iova->iova_base + iova->iova_size)) {
+		pr_err("Error: input parameter error\n");
+		return -EINVAL;
+	}
+
+	if (iova->reserve_data != NULL) {
+		for (i = 0; i < iova->reserve_num; i++) {
+			res = &iova->reserve_data[i];
+			// if(strcmp(res->name,name)==0){
+			if ((res->iova_addr == iova_start)
+				&& (res->size == iova_length)) {
+				pr_err("mydebug:%s match %s\n", __func__, res->name);
+				matchflag = 1;
+			}
+		}
+	}
+	if (matchflag) {	// use reserve iova
+		if (res->status == 1) {
+			pr_err("Error: reserve_data is used\n");
+			*iova_addr = 0;
+			return -1;
+		} else {
+			res->status = 1;
+			return 0;
+		}
+	} else {		// try fixed alloc
+		pr_warning
+		    ("Warning: reserve iova match failed,try fixed alloc\n");
+		fixed.offset = iova_start - iova->iova_base;
+		if (gen_pool_alloc_algo
+		    (iova->pool, iova_length, gen_pool_fixed_alloc, &fixed)) {
+			pr_debug("fixed alloc sucessed\n");
+			return 0;
+		} else {
+			pr_err("Error:genalloc_iova_alloc_fixed failed\n");
+			*iova_addr = 0;
+			return -1;
+		}
+	}
+	return 0;
 }
 
 struct iommu_iova_ops version12_iova_ops = {
@@ -77,4 +214,7 @@ struct iommu_iova_ops version12_iova_ops = {
 	.iova_release = genalloc_iova_release,
 	.iova_alloc = genalloc_iova_alloc,
 	.iova_free = genalloc_iova_free,
+	.iova_reserve_init = genalloc_reserve_init,
+	.iova_reserve_relsase = genalloc_reserve_release,
+	.iova_alloc_fixed = genalloc_iova_alloc_fixed,
 };

@@ -409,7 +409,7 @@ int xvp_buf_iommu_map(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		return 0;
 	}
 
-	ret = sprd_vdsp_mem_map_iova(mem_ctx, xvp_buf->buf_id);
+	ret = sprd_vdsp_mem_map_iova(mem_ctx, xvp_buf->buf_id,xvp_buf->isfixed,xvp_buf->fixed_data);
 	if (unlikely(ret)) {
 		pr_err("Error: \"%s\" iommu_map fialed\n", xvp_buf->name);
 		return ret;

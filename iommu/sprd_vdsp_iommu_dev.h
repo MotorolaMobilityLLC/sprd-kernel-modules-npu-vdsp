@@ -11,6 +11,8 @@ struct sprd_vdsp_iommu_map_conf {
 	unsigned int sg_offset;
 	unsigned long iova_addr;	/*output */
 	size_t iova_size;
+	int isfixed;                // flag for fixed map, 0: no 1:fixed_offset 2:fixed_addr
+	unsigned long fixed_data;   // fixed map addr or offset
 };
 
 struct sprd_vdsp_iommu_unmap_conf {
@@ -40,6 +42,7 @@ struct sprd_vdsp_iommu_dev {
 	struct device *dev;
 	struct sprd_vdsp_iommu_dev_ops *ops;	//iommu ops
 	struct sprd_vdsp_iommu_iova *iova_dev;	// iommu iova manager
+	struct sprd_vdsp_iommus *iommus;      //parent iommus
 
 	// struct sprd_vdsp_iommu_hw_ops *hw_ops; // iommu hw ops
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev;	// iommu hw dev

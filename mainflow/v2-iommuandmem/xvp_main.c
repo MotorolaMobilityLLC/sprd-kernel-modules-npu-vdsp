@@ -151,6 +151,14 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 // xrp debug para
 static struct xrp_debug_para xrp_para;
 
+struct iova_reserve iova_reserve_data[1]={
+	[0]={
+		.name = "fw_buf",
+		.fixed.offset = 0,
+		.size = 6*1024 *1024,
+	},
+};
+
 static void init_files_know_info(struct xvp *xvp)
 {
 	int i;
@@ -1888,8 +1896,11 @@ int sprd_vdsp_misc_bufs_init(struct xvp *xvp)
 		pr_err("Error: xvp_buf_kmap failed\n");
 		goto err_xvp_buf_kmap;
 	}
+
 	// fw buffer iommu map
-	if (xvp_buf_iommu_map(xvp, xvp->fw_buf)) {	//NOTE:: fw buffer iova must be 0x40000000
+	xvp->fw_buf->isfixed=1;    // iommu map fixed offset
+	xvp->fw_buf->fixed_data=0;  // finxed offset
+	if (xvp_buf_iommu_map(xvp, xvp->fw_buf)) {	//NOTE:: fw buffer iova must offset 0
 		goto err_extrabuf_iommu_map;
 	}
 	// ipc buffer  iommu map
@@ -2426,6 +2437,14 @@ static long vdsp_init_common(struct platform_device *pdev,
 	}
 	//mem init ---end
 
+	// iova_reserve_init --- start
+	ret=xvp->iommus->ops->reserve_init(xvp->iommus,iova_reserve_data,ARRAY_SIZE(iova_reserve_data));
+	if (ret) {
+		pr_err("Error: iova_reserve_init failed\n");
+		goto err_iova_reserve_init;
+	}
+	// iova_reserve_init --- end
+
 	mutex_init(&(xvp->load_lib.libload_mutex));
 	mutex_init(&(xvp->dvfs_info.dvfs_lock));
 	mutex_init(&xvp_global_lock);
@@ -2508,6 +2527,7 @@ err_parse_soft_dt:
 	sprd_vdsp_free_buffer(xvp);
 err_vdsp_init_bufs:
 	pr_err("Error: err_vdsp_init_bufs \n");
+err_iova_reserve_init:
 	sprd_vdsp_mem_xvp_release(xvp->mem_dev);
 err_mem_xvp_init:
 	pr_err("Error: err_mem_xvp_init \n");
@@ -2547,6 +2567,7 @@ int sprd_vdsp_deinit(struct platform_device *pdev)
 	sprd_vdsp_free_buffer(xvp);
 	vdsp_log_deinit(xvp);
 	sprd_vdsp_mem_destroy_proc_ctx(xvp->drv_mem_ctx);
+	xvp->iommus->ops->reserve_release(xvp->iommus);
 	sprd_vdsp_mem_xvp_release(xvp->mem_dev);
 	xvp->iommus->ops->release(xvp->iommus);
 	ida_simple_remove(&xvp_nodeid, xvp->nodeid);
