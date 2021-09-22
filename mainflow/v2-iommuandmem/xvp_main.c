@@ -1488,8 +1488,7 @@ static long xrp_ioctl_mem_query(struct file *filp,
 			info->id = id;
 			info->type = type;
 			info->attributes = attrs;
-		} else
-			continue;
+		}
 	}
 	if (copy_to_user(arg, &data, sizeof(data)))
 		return -EFAULT;
@@ -2279,7 +2278,10 @@ static int sprd_vdsp_init_buffer(struct platform_device *pdev, struct xvp *xvp)
 static int sprd_vdsp_free_buffer(struct xvp *xvp)
 {
 	xvp_buf_kunmap(xvp, xvp->ipc_buf);
-	xvp_buf_free(xvp, xvp->ipc_buf);
+	if(xvp_buf_free(xvp, xvp->ipc_buf)<0){
+		pr_err("Error: xvp_buf_free failed\n");
+		return -1;
+	}
 #ifdef FACEID_VDSP_FULL_TEE
 	sprd_faceid_deinit(xvp);
 #endif

@@ -198,7 +198,6 @@ static int32_t xrp_library_load_internal(struct file *filp, const char *buffer,
 	size = xtlib_pi_library_size((xtlib_packaged_library *) buffer);
 	if (size <= 0) {
 		pr_err("library size is invaild\n");
-		while (1) ;
 		return -EFAULT;
 	}
 	/*alloc lib buffer */

@@ -180,8 +180,10 @@ static void iommu_dev_iova_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 	struct sprd_vdsp_iommu_iova *iova = NULL;
 
 	iova = iommu_dev->iova_dev;
-	if (!iova)
+	if (!iova){
 		pr_err(" iova is NULL\n");
+		return;
+	}
 	iova->ops->iova_release(iova);
 	return;
 }
@@ -479,7 +481,7 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 	sg_table = map_conf->table;
 
 	iova = iova_dev->ops->iova_alloc(iova_dev, map_conf->iova_size);
-	if (iova < 0) {
+	if (iova == 0) {
 		pr_err("Error: iova_alloc failed\n");
 		ret = iova;
 		mutex_unlock(&iommu_dev->mutex);

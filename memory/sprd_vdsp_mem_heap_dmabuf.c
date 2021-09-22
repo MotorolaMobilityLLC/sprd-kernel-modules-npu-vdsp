@@ -122,6 +122,7 @@ static int dmabuf_heap_import(struct device *device, struct heap *heap,
 		}
 	}
 	if (PAGE_SIZE == data->dma_buf->size) {
+		sgl = data->sgt->sgl;
 		buffer->paddr = sg_phys(sgl);
 	}
 

@@ -48,11 +48,8 @@ void debug_xvp_buf_print(struct xvp_buf *buf)
 {
 
 	pr_debug("-------------------------\n");
-	if (buf->name == NULL) {
-		pr_debug("xvp_buf->name      :NULL\n");
-	} else {
-		pr_debug("xvp_buf->name      :%s\n", buf->name);
-	}
+
+	pr_debug("xvp_buf->name      :%s\n", buf->name);
 	pr_debug("xvp_buf->buf_id    :%d\n", buf->buf_id);
 	pr_debug("xvp_buf->size      :%d\n", buf->size);
 	pr_debug("xvp_buf->heap_type :%d\n", buf->heap_type);
