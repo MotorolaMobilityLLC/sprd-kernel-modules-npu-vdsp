@@ -57,7 +57,7 @@ static unsigned long genalloc_iova_alloc(struct sprd_vdsp_iommu_iova *iova,
 	iova_addr = gen_pool_alloc(iova->pool, iova_length);	//gen_pool_alloc failed return 0
 	if (!iova_addr) {
 		pr_err("Error: gen_pool_alloc failed!\n");
-		return -ENOMEM;
+		return 0;
 	}
 	return iova_addr;
 }
@@ -75,8 +75,8 @@ static void genalloc_iova_free(struct sprd_vdsp_iommu_iova *iova,
 	// 释放的的是reserve的iova内存
 	if (reserve) {
 		for (i = 0; i < iova->reserve_num; i++) {
-			if ((iova_addr == reserve->iova_addr)
-			    && (iova_length == reserve->size)) {
+			if ((iova_addr == reserve[i].iova_addr)
+			    && (iova_length == reserve[i].size)) {
 				reserve->status = 0;
 				return;
 			}
@@ -97,10 +97,10 @@ static int genalloc_reserve_init(struct sprd_vdsp_iommu_iova *iova,
 	if (reserve_data != NULL && reserve_num > 0) {
 
 		reserve =
-		    (struct iova_reserve *)kmalloc(sizeof(struct iova_reserve) *
+		    (struct iova_reserve *)kzalloc(sizeof(struct iova_reserve) *
 						   reserve_num, GFP_KERNEL);
 		if (!reserve) {
-			pr_err("Error: kmalloc  failed\n");
+			pr_err("Error: kzalloc  failed\n");
 			return -ENOMEM;
 		}
 		memcpy(reserve, reserve_data,
@@ -116,9 +116,9 @@ static int genalloc_reserve_init(struct sprd_vdsp_iommu_iova *iova,
 				goto error_alloc_faied;
 			}
 			reserve[i].iova_addr = iova_addr;
+			reserve[i].status = 0;
 		}
 	}
-	reserve->status = 0;
 	iova->reserve_data = reserve;
 	iova->reserve_num = reserve_num;
 	pr_debug("iova_reserve_init sucessed\n");
@@ -131,6 +131,7 @@ error_alloc_faied:
 				      reserve_data[i].size);
 		}
 	}
+	kfree(reserve);
 	return -1;
 }
 
