@@ -261,14 +261,23 @@ static void release(void *hw_arg)
 
 static void get_max_freq(uint32_t * max_freq)
 {
-	char chip_type[HWFEATURE_STR_SIZE_LIMIT];
+	struct device_node *hwf;
+	const char *chip_type;
 
-	sprd_kproperty_get("auto/efuse", chip_type, "-1");
+	hwf = of_find_node_by_path("/hwfeature/auto");
+	if (!hwf) {
+		*max_freq = T610_MAX_FREQ;
+		goto efuse_out;
+	}
+	chip_type = of_get_property(hwf, "efuse", NULL);
+	pr_info("efuse was %s\n", chip_type);
+
 	if (!strcmp(chip_type, "T618")) {
 		*max_freq = T618_MAX_FREQ;
 	} else {
 		*max_freq = T610_MAX_FREQ;
 	}
+efuse_out:
 	pr_debug("get max_freq:%d\n", *max_freq);
 }
 
