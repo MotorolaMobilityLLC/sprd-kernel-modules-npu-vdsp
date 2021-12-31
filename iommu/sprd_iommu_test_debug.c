@@ -143,7 +143,7 @@ void show_iommus_all_record(struct sprd_vdsp_iommus *iommus)
 	}
 	for (index = 0; index < SPRD_VDSP_IOMMU_MAX - 1; index++) {
 		iommu_dev = iommus->iommu_devs[index];
-        if(iommu_dev){
+        if(iommu_dev==NULL){
             pr_err("Error: iommus->iommu_devs[%d] is NULL\n",index);
             continue;
         }
