@@ -1,3 +1,6 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
 
 /*
  * Data structures and constants for generic XRP interface between
@@ -116,8 +119,7 @@ struct xrp_dsp_cmd {
 	};
 	union {
 		__u32 buffer_addr;
-		struct xrp_dsp_buffer
-		    buffer_data[XRP_DSP_CMD_INLINE_BUFFER_COUNT];
+		struct xrp_dsp_buffer buffer_data[XRP_DSP_CMD_INLINE_BUFFER_COUNT];
 		__u8 buffer_alignment[XRP_DSP_CMD_INLINE_DATA_SIZE];
 	};
 	__u8 nsid[XRP_DSP_CMD_NAMESPACE_ID_SIZE];

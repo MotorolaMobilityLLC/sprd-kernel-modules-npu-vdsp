@@ -25,26 +25,20 @@ struct sprd_vdsp_iommu_map_record {
 };
 
 struct sprd_vdsp_iommu_map_record_ops {
-	int (*init) (struct sprd_vdsp_iommu_map_record * record_dev);
-	void (*release) (struct sprd_vdsp_iommu_map_record * record_dev);
+	int (*init) (struct sprd_vdsp_iommu_map_record *record_dev);
+	void (*release) (struct sprd_vdsp_iommu_map_record *record_dev);
 
-	 bool(*insert_slot) (struct sprd_vdsp_iommu_map_record * record_dev,
-			     unsigned long sg_table_addr,
-			     unsigned long buf_addr,
-			     unsigned long iova_addr, unsigned long iova_size);
-	 bool(*remove_slot) (struct sprd_vdsp_iommu_map_record * record_dev,
-			     unsigned long iova_addr);
-	 bool(*map_check) (struct sprd_vdsp_iommu_map_record * record_dev,
-			   unsigned long buf_addr, unsigned long *iova_addr);
-	 bool(*unmap_check) (struct sprd_vdsp_iommu_map_record * record_dev,
-			     unsigned long buf_addr);
-	void (*show_all) (struct sprd_vdsp_iommu_map_record * record_dev);
-	 bool(*iova_find_buf) (struct sprd_vdsp_iommu_map_record * record_dev,
-			       unsigned long iova_addr,
-			       size_t iova_size, unsigned long *buf);
-	 bool(*buf_find_iova) (struct sprd_vdsp_iommu_map_record * record_dev,
-			       unsigned long buf_addr,
-			       size_t iova_size, unsigned long *iova_addr);
+	bool (*insert_slot) (struct sprd_vdsp_iommu_map_record *record_dev, unsigned long sg_table_addr,
+		unsigned long buf_addr, unsigned long iova_addr, unsigned long iova_size);
+	bool (*remove_slot) (struct sprd_vdsp_iommu_map_record *record_dev, unsigned long iova_addr);
+	bool (*map_check) (struct sprd_vdsp_iommu_map_record *record_dev, unsigned long buf_addr,
+		unsigned long *iova_addr);
+	bool (*unmap_check) (struct sprd_vdsp_iommu_map_record *record_dev, unsigned long buf_addr);
+	void (*show_all) (struct sprd_vdsp_iommu_map_record *record_dev);
+	bool (*iova_find_buf) (struct sprd_vdsp_iommu_map_record *record_dev, unsigned long iova_addr,
+		size_t iova_size, unsigned long *buf);
+	bool (*buf_find_iova) (struct sprd_vdsp_iommu_map_record *record_dev, unsigned long buf_addr,
+		size_t iova_size, unsigned long *iova_addr);
 };
 
 extern struct sprd_vdsp_iommu_map_record_ops iommu_map_record_ops;

@@ -17,7 +17,7 @@
 
 #define TA_RESP_BIT		(1 << 31)
 
-/*Todo for faceid sec funcation*/
+ /*Todo for faceid sec funcation*/
 #define CAM_FACEID_SEC
 #define FACEID_VERSION      1
 #define GET_TXBUF_TIMEOUT   10
@@ -55,7 +55,7 @@ struct vdsp_sync_msg {
 	uint32_t msg_cmd;
 
 	uint32_t vdsp_log_addr;
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
 struct vdsp_run_msg {
 	uint32_t vdsp_type;
@@ -68,13 +68,13 @@ struct vdsp_run_msg {
 	uint32_t mem_pool_addr;
 	uint64_t in_addr;
 	uint64_t out_addr;
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
 struct vdsp_load_msg {
 	uint32_t vdsp_type;
 	uint32_t msg_cmd;
 	uint32_t firmware_size;
-} __attribute__ ((__packed__));
+} __attribute__((__packed__));
 
 enum vdsp_cmdack {
 	TA_CMD_DONE = 0,
@@ -172,7 +172,7 @@ struct bootcp_ca_ctrl {
 
 bool trusty_kernelbootcp_connect(void);
 void trusty_kernelbootcp_disconnect(void);
-bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V * table);
-bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V * table);
+bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V *table);
+bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V *table);
 
 #endif

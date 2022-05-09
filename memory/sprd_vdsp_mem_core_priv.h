@@ -2,7 +2,7 @@
 /*!
  *****************************************************************************
  *
- * @File       img_mem_man_priv.h
+ * @File       sprd_vdsp_mem_core_priv.h
  * ---------------------------------------------------------------------------
  *
  * Copyright (c) Imagination Technologies Ltd.
@@ -44,8 +44,8 @@
  *
  *****************************************************************************/
 
-#ifndef IMG_MEM_MAN_PRIV_H
-#define IMG_MEM_MAN_PRIV_H
+#ifndef SPRD_VDSP_MEM_CORE_PRIV_H
+#define SPRD_VDSP_MEM_CORE_PRIV_H
 
 #include <linux/list.h>
 #include <linux/idr.h>
@@ -121,28 +121,24 @@ struct buffer {
 };
 
 struct heap_ops {
-	int (*alloc) (struct device * device, struct heap * heap,
-		      size_t size, enum sprd_vdsp_mem_attr attr,
-		      struct buffer * buffer);
-	int (*import) (struct device * device, struct heap * heap,
-		       size_t size, enum sprd_vdsp_mem_attr attr,
-		       uint64_t buf_hnd, struct buffer * buffer);
-	int (*export) (struct device * device, struct heap * heap, size_t size,
-		       enum sprd_vdsp_mem_attr attr, struct buffer * buffer,
-		       uint64_t * buf_hnd);
-	void (*free) (struct heap * heap, struct buffer * buffer);
-	int (*map_um) (struct heap * heap, struct buffer * buffer,
-		       struct vm_area_struct * vma);
-	int (*unmap_um) (struct heap * heap, struct buffer * buffer);
-	int (*map_km) (struct heap * heap, struct buffer * buffer);
-	int (*unmap_km) (struct heap * heap, struct buffer * buffer);
-	int (*get_sg_table) (struct heap * heap, struct buffer * buffer,
-			     struct sg_table ** sg_table);
-	int (*get_page_array) (struct heap * heap, struct buffer * buffer,
-			       uint64_t ** addrs);
-	void (*sync_cpu_to_dev) (struct heap * heap, struct buffer * buffer);
-	void (*sync_dev_to_cpu) (struct heap * heap, struct buffer * buffer);
-	void (*destroy) (struct heap * heap);
+	int (*alloc) (struct device *device, struct heap *heap, size_t size, enum sprd_vdsp_mem_attr attr,
+		struct buffer *buffer);
+	int (*import) (struct device *device, struct heap *heap, size_t size, enum sprd_vdsp_mem_attr attr,
+		uint64_t buf_fd, struct page **pages, struct buffer *buffer);
+	int (*export) (struct device *device, struct heap *heap, size_t size, enum sprd_vdsp_mem_attr attr,
+		struct buffer *buffer, uint64_t *buf_hnd);
+	void (*free) (struct heap *heap, struct buffer *buffer);
+	int (*map_um) (struct heap *heap, struct buffer *buffer, struct vm_area_struct *vma);
+	int (*unmap_um) (struct heap *heap, struct buffer *buffer);
+	int (*map_km) (struct heap *heap, struct buffer *buffer);
+	int (*unmap_km) (struct heap *heap, struct buffer *buffer);
+	int (*get_sg_table) (struct heap *heap, struct buffer *buffer, struct sg_table **sg_table,
+		bool *use_sg_dma);
+	int (*get_page_array) (struct heap *heap, struct buffer *buffer, uint64_t **addrs);
+	void (*sync_cpu_to_dev) (struct heap *heap, struct buffer *buffer);
+	void (*sync_dev_to_cpu) (struct heap *heap, struct buffer *buffer);
+	int (*set_offset)(struct heap *heap, size_t offs);
+	void (*destroy) (struct heap *heap);
 };
 
 struct heap {
@@ -150,29 +146,23 @@ struct heap {
 	enum sprd_vdsp_mem_heap_type type;
 	struct heap_ops *ops;
 	union heap_options options;
-	 phys_addr_t(*to_dev_addr) (union heap_options * opts,
-				    phys_addr_t addr);
-	 phys_addr_t(*to_host_addr) (union heap_options * opts,
-				     phys_addr_t addr);
+	phys_addr_t(*to_dev_addr) (union heap_options *opts, phys_addr_t addr);
+	phys_addr_t(*to_host_addr) (union heap_options *opts, phys_addr_t addr);
 	bool cache_sync;
 	enum sprd_vdsp_mem_attr alt_cache_attr;
 	void *priv;
 };
 
-int sprd_vdsp_mem_unified_init(const struct heap_config *config,
-			       struct heap *heap);
+int sprd_vdsp_mem_unified_init(const struct heap_config *config, struct heap *heap);
 
-int sprd_vdsp_mem_dmabuf_init(const struct heap_config *config,
-			      struct heap *heap);
+int sprd_vdsp_mem_dmabuf_init(const struct heap_config *config, struct heap *heap);
 
 int sprd_vdsp_mem_ion_init(const struct heap_config *config, struct heap *heap);
 
-int sprd_vdsp_mem_anonymous_init(const struct heap_config *config,
-				 struct heap *heap);
-
-int sprd_vdsp_mem_carveout_init(const struct heap_config *config,
-				struct heap *heap);
-
+int sprd_vdsp_mem_anonymous_init(const struct heap_config *config, struct heap *heap);
+#ifdef CONFIG_GENERIC_ALLOCATOR
+int sprd_vdsp_mem_carveout_init(const struct heap_config *config, struct heap *heap);
+#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
 typedef int vm_fault_t;
 #endif

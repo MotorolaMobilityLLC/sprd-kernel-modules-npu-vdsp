@@ -23,8 +23,7 @@ void putbits(ulong reg_addr, u32 dst_value, u8 highbitoffset, u8 lowbitoffset)
 {
 	u32 org_value = 0;
 	u32 new_value = 0;
-	u32 mask = (FULL_MASK >> (32 - (highbitoffset - lowbitoffset + 1)))
-	    << lowbitoffset;
+	u32 mask = (FULL_MASK >> (32 - (highbitoffset - lowbitoffset + 1))) << lowbitoffset;
 
 	org_value = reg_read_dword(reg_addr);
 	new_value = (org_value & ~mask) | ((dst_value << lowbitoffset) & mask);
@@ -46,7 +45,7 @@ void mmu_vau_enable(ulong ctrl_base_addr, u32 iommu_id, u32 mmu_enable)
  * vaorbypass, clkgate and enable in a single function.
  */
 void mmu_vau_vaorbypass_clkgate_enable_combined(ulong ctrl_base_addr,
-						u32 iommu_id)
+	u32 iommu_id)
 {
 	ulong reg_addr = ctrl_base_addr + MMU_EN;
 	u32 reg_value = 0;
@@ -65,7 +64,7 @@ void mmu_vau_clock_gate_enable(ulong ctrl_base_addr, u32 cg_enable)
 }
 
 void mmu_vau_vaout_bypass_enable(ulong ctrl_base_addr, u32 iommu_id,
-				 u32 iommu_type, bool vaor_bp_en)
+	u32 iommu_type, bool vaor_bp_en)
 {
 	ulong reg_addr = ctrl_base_addr + MMU_EN;
 
@@ -182,7 +181,7 @@ void mmu_vau_reg_authority(ulong ctrl_base_addr, u32 iommu_id, ulong reg_ctrl)
 }
 
 void mmu_vau_write_pate_totable(ulong pgt_base_addr,
-				u32 entry_index, u32 ppn_addr)
+	u32 entry_index, u32 ppn_addr)
 {
 	ulong pgt_addr = pgt_base_addr + entry_index * 4;
 

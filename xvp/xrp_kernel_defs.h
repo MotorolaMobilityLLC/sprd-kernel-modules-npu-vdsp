@@ -1,3 +1,6 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
 
 /*
  * XRP driver IOCTL codes and data structures
@@ -38,7 +41,6 @@
 #define XRP_IOCTL_SET_DVFS      _IO(XRP_IOCTL_MAGIC,5)
 #define XRP_IOCTL_FACEID_CMD    _IO(XRP_IOCTL_MAGIC,6)
 #define XRP_IOCTL_SET_POWERHINT _IO(XRP_IOCTL_MAGIC,7)
-#ifdef IOMMUANDMEM
 #define XRP_IOCTL_MEM_QUERY  _IO(XRP_IOCTL_MAGIC,8)
 #define XRP_IOCTL_MEM_IMPORT _IO(XRP_IOCTL_MAGIC,9)
 #define XRP_IOCTL_MEM_EXPORT _IO(XRP_IOCTL_MAGIC,10)
@@ -48,17 +50,14 @@
 #define XRP_IOCTL_MEM_IOMMU_UNMAP  _IO(XRP_IOCTL_MAGIC,14)
 #define XRP_IOCTL_MEM_CPU_TO_DEVICE  _IO(XRP_IOCTL_MAGIC,15)
 #define XRP_IOCTL_MEM_DEVICE_TO_CPU  _IO(XRP_IOCTL_MAGIC,16)
-#endif
 
 #define XRP_NAMESPACE_ID_SIZE   32
 
-#ifdef IOMMUANDMEM
 struct xrp_ioctl_alloc {
 	__u32 size;
 	__u32 align;
 	__u64 addr;
 };
-#endif
 
 enum {
 	XRP_FLAG_READ = 0x1,
@@ -107,7 +106,6 @@ struct xrp_powerhint_ctrl {
 	__u32 acquire_release;
 };
 
-#ifdef IOMMUANDMEM
 struct xrp_faceid_ctrl {
 	__u32 inout_fd;
 	__u32 img_fd;
@@ -130,21 +128,23 @@ struct xrp_heaps_ctrl {
 
 /* parameters to allocate a device buffer */
 struct xrp_alloc_ctrl {
-	__u64 size;		/* [IN] Size of device memory (in bytes)    */
-	__u32 heap_id;		/* [IN] Heap ID of allocator */
+	__u64 size;		/* [IN] Size of device memory (in bytes) */
+	__u32 heap_id;	/* [IN] Heap ID of allocator */
 	__u32 attributes;	/* [IN] Attributes of buffer */
-	char name[8];		/* [IN] short name for buffer               */
-	__u32 buf_id;		/* [OUT] Generated buffer ID                */
+	char name[8];		/* [IN] short name for buffer */
+	__u32 buf_id;		/* [OUT] Generated buffer ID */
 } __attribute__ ((aligned(8)));
 
 /* parameters to import a device buffer */
 struct xrp_import_ctrl {
 	__u64 size;		/* [IN] Size of device memory (in bytes)    */
-	__u64 buf_hnd;		/* [IN] File descriptor/cpu pointer of buffer to import */
-	__u32 heap_id;		/* [IN] Heap ID of allocator                */
-	__u32 attributes;	/* [IN] Attributes of buffer                */
-	char name[8];		/* [IN] short name for buffer               */
-	__u32 buf_id;		/* [OUT] Generated buffer ID                */
+	//__u64 buf_hnd;	/* [IN] File descriptor/cpu pointer of buffer to import */
+	__u64 buf_fd;		/* [IN] File descriptor */
+	__u64 cpu_ptr;	/* [IN] Cpu pointer of buffer to import */
+	__u32 heap_id;	/* [IN] Heap ID of allocator  */
+	__u32 attributes;	/* [IN] Attributes of buffer */
+	char name[8];		/* [IN] short name for buffer */
+	__u32 buf_id;		/* [OUT] Generated buffer ID */
 } __attribute__ ((aligned(8)));
 
 /* parameters to export a device buffer */
@@ -152,7 +152,7 @@ struct xrp_export_ctrl {
 	__u32 buf_id;		/* [IN] Buffer ID to be exported */
 	__u64 size;		/* [IN] Size to be exported */
 	__u32 attributes;	/* [IN] Attributes of buffer */
-	__u64 buf_hnd;		/* [OUT] Buffer handle (file descriptor) */
+	__u64 buf_hnd;	/* [OUT] Buffer handle (file descriptor) */
 } __attribute__ ((aligned(8)));
 
 struct xrp_free_ctrl {
@@ -161,23 +161,23 @@ struct xrp_free_ctrl {
 
 /* parameters to map a buffer into device */
 struct xrp_map_ctrl {
-	__u32 buf_id;		/* [IN] ID of device buffer to map        */
-	__u32 flags;		/* [IN] Mapping flags                     */
+	__u32 buf_id;		/* [IN] ID of device buffer to map */
+	__u32 flags;		/* [IN] Mapping flags */
 } __attribute__ ((aligned(8)));
 
 struct xrp_unmap_ctrl {
-	__u32 buf_id;		/* [IN] ID of device buffer to unmap      */
+	__u32 buf_id;		/* [IN] ID of device buffer to unmap */
 } __attribute__ ((aligned(8)));
 
 struct xrp_sync_cpu_to_device_ctrl {
-	__u32 buf_id;		/* [IN] ID of device buffer to sync      */
+	__u32 buf_id;		/* [IN] ID of device buffer to sync */
 } __attribute__ ((aligned(8)));
 
 struct xrp_sync_device_to_cpu_ctrl {
-	__u32 buf_id;		/* [IN] ID of device buffer to sync      */
+	__u32 buf_id;		/* [IN] ID of device buffer to sync */
 } __attribute__ ((aligned(8)));
 
-#else
+#if 0
 struct xrp_faceid_ctrl {
 	__u32 in_fd;
 	__u32 out_fd;

@@ -114,10 +114,6 @@ struct vdsp_hw {
 
 	struct regmap *mm_ahb;
 	struct regmap *mailbox;
-	struct regmap *mm_dvfs;
-	struct regmap *mm_clkcfg;
-	struct regmap *vdsp_uart;
-	struct regmap *vdsp_qos;
 	phys_addr_t mmahb_base;
 	phys_addr_t mbox_phys;
 
@@ -209,8 +205,7 @@ struct xrp_hw_ops {
 	 * \param sz: return size of sync data here
 	 * \return a buffer allocated with kmalloc that the caller will free
 	 */
-	void *(*get_hw_sync_data) (void *hw_arg, size_t * sz,
-				   uint32_t log_addr);
+	void *(*get_hw_sync_data) (void *hw_arg, size_t *sz, uint32_t log_addr);
 
 	/*!
 	 * Send IRQ to the core.
@@ -227,8 +222,7 @@ struct xrp_hw_ops {
 	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
 	 *                time
 	 */
-	 bool(*cacheable) (void *hw_arg, unsigned long pfn,
-			   unsigned long n_pages);
+	bool(*cacheable) (void *hw_arg, unsigned long pfn, unsigned long n_pages);
 	/*!
 	 * Synchronize region of memory for DSP access.
 	 *
@@ -236,9 +230,8 @@ struct xrp_hw_ops {
 	 *                time
 	 * \param flags: XRP_FLAG_{READ,WRITE,READWRITE}
 	 */
-	void (*dma_sync_for_device) (void *hw_arg,
-				     void *vaddr, phys_addr_t paddr,
-				     unsigned long sz, unsigned flags);
+	void (*dma_sync_for_device) (void *hw_arg, void *vaddr, phys_addr_t paddr,
+		unsigned long sz, unsigned flags);
 	/*!
 	 * Synchronize region of memory for host access.
 	 *
@@ -246,9 +239,8 @@ struct xrp_hw_ops {
 	 *                time
 	 * \param flags: XRP_FLAG_{READ,WRITE,READWRITE}
 	 */
-	void (*dma_sync_for_cpu) (void *hw_arg,
-				  void *vaddr, phys_addr_t paddr,
-				  unsigned long sz, unsigned flags);
+	void (*dma_sync_for_cpu) (void *hw_arg, void *vaddr, phys_addr_t paddr,
+		unsigned long sz, unsigned flags);
 
 	/*!
 	 * memcpy data/code to device-specific memory.
@@ -285,17 +277,16 @@ struct xrp_hw_ops {
 	/*free irq */
 	void (*vdsp_free_irq) (void *xvp_arg, void *hw_arg);
 	/*get max_freq */
-	void (*get_max_freq) (uint32_t * max_freq);
+	void (*get_max_freq) (uint32_t *max_freq);
 	void (*stop_vdsp) (void *hw_arg);
 	 /**/ int (*init_communication_hw) (void *hw_arg);
 	int (*deinit_communication_hw) (void *hw_arg);
-	enum sprd_vdsp_kernel_power_level (*translate_powerlevel) (int32_t in);
-	enum sprd_vdsp_kernel_power_level (*get_maxsupported_level) (void
-								     *xvp_arg);
+	enum sprd_vdsp_kernel_power_level(*translate_powerlevel) (int32_t in);
+	enum sprd_vdsp_kernel_power_level(*get_maxsupported_level) (void *xvp_arg);
 };
 
 long sprd_vdsp_init(struct platform_device *pdev, enum vdsp_init_flags flags,
-		    const struct xrp_hw_ops *hw, void *hw_arg);
+	const struct xrp_hw_ops *hw, void *hw_arg);
 int sprd_vdsp_deinit(struct platform_device *pdev);
 
 /*!
@@ -315,4 +306,8 @@ int vdsp_runtime_resume(struct device *dev);
 int vdsp_runtime_suspend(struct device *dev);
 
 int vdsp_irq_register(void *data);
+
+int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val);
+
 #endif

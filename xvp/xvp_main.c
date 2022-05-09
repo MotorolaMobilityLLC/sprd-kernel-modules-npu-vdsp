@@ -1,3 +1,6 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
 
 /*
  * XRP: Linux device driver for Xtensa Remote Processing
@@ -68,7 +71,6 @@
 #include "xrp_internal.h"
 #include "xrp_kernel_defs.h"
 #include "xrp_kernel_dsp_interface.h"
-#include "xrp_private_alloc.h"
 #include "xvp_main.h"
 #ifdef MYN6P
 #include "vdsp_mailbox_drv.h"
@@ -90,75 +92,36 @@
 #include "sprd_iommu_test_debug.h"
 #include "sprd_vdsp_mem_test_debug.h"
 
-#ifndef __io_virt
-#define __io_virt(a) ((void __force *)(a))
-#endif
-
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
 #define pr_fmt(fmt) "sprd-vdsp: xvp_main %d %d %s : "\
-        fmt, current->pid, __LINE__, __func__
+	fmt, current->pid, __LINE__, __func__
 
-#ifdef MYL5
-#define XRP_DEFAULT_TIMEOUT 2000	// set dvfs fix 512M so timeout set 2000
-#endif
-#ifdef MYN6
-#define XRP_DEFAULT_TIMEOUT 2000
-#endif
-
-enum {
-	/* normal work mode */
-	LOOPBACK_NORMAL,
-	/* don't communicate with FW, but still load it and control DSP */
-	LOOPBACK_NOIO,
-	/* don't comminicate with FW or use DSP MMIO, but still load the FW */
-	LOOPBACK_NOMMIO,
-	/* don't communicate with FW or use DSP MMIO, don't load the FW */
-	LOOPBACK_NOFIRMWARE,
-};
-
+#define XRP_DEFAULT_TIMEOUT 	200
 static struct mutex xvp_global_lock;
 static unsigned long firmware_command_timeout = XRP_DEFAULT_TIMEOUT;
-
-#ifdef MYN6
 static unsigned long firmware_boot_timeout = 25;
-#endif
-#ifdef MYL5
-static unsigned long firmware_boot_timeout = 25;
-#endif
 
 module_param(firmware_command_timeout, ulong, 0644);
-MODULE_PARM_DESC(firmware_command_timeout,
-		 "Firmware command timeout in seconds.");
+MODULE_PARM_DESC(firmware_command_timeout, "Firmware command timeout in seconds.");
 static int firmware_reboot = 1;
 module_param(firmware_reboot, int, 0644);
-
 MODULE_PARM_DESC(firmware_reboot, "Reboot firmware on command timeout.");
-static int loopback = 0;
-module_param(loopback, int, 0644);
-
-MODULE_PARM_DESC(loopback, "Don't use actual DSP, perform everything locally.");
-
 static DEFINE_IDA(xvp_nodeid);
-int xrp_boot_firmware(struct xvp *xvp);
-static inline void xvp_dsp_setdvfs(struct xvp *xvp, uint32_t index);
-static inline void xvp_dsp_enable_dvfs(struct xvp *xvp);
-static inline void xvp_dsp_disable_dvfs(struct xvp *xvp);
-static long xrp_ioctl_submit_sync(struct file *filp,
-				  struct xrp_ioctl_queue __user * p,
-				  struct xrp_request *pkernel);
-// xrp debug para
-static struct xrp_debug_para xrp_para;
 
-struct iova_reserve iova_reserve_data[1]={
-	[0]={
+static long xrp_ioctl_submit_sync(struct file *filp, struct xrp_ioctl_queue __user * p,
+	struct xrp_request *pkernel);
+
+struct iova_reserve iova_reserve_data[1] = {
+	[0] = {
 		.name = "fw_buf",
 		.fixed.offset = 0,
-		.size = 6*1024 *1024,
+		.size = 6 * 1024 * 1024,
 	},
 };
 
+/**************** know file start *****************/
 static void init_files_know_info(struct xvp *xvp)
 {
 	int i;
@@ -166,120 +129,6 @@ static void init_files_know_info(struct xvp *xvp)
 	for (i = 0; i < (1 << 10); i++)
 		xvp->xrp_known_files[i].first = NULL;
 	mutex_init(&xvp->xrp_known_files_lock);
-}
-
-static int compare_queue_priority(const void *a, const void *b)
-{
-	const void *const *ppa = a;
-	const void *const *ppb = b;
-	const struct xrp_comm *pa = *ppa, *pb = *ppb;
-
-	if (pa->priority == pb->priority)
-		return 0;
-	else
-		return pa->priority < pb->priority ? -1 : 1;
-}
-
-static inline void xrp_comm_write32(volatile void __iomem * addr, u32 v)
-{
-	__raw_writel(v, addr);
-}
-
-static inline u32 xrp_comm_read32(volatile void __iomem * addr)
-{
-	return __raw_readl(addr);
-}
-
-static inline void __iomem *xrp_comm_put_tlv(void __iomem ** addr,
-					     uint32_t type, uint32_t length)
-{
-	struct xrp_dsp_tlv __iomem *tlv = *addr;
-
-	xrp_comm_write32(&tlv->type, type);
-	xrp_comm_write32(&tlv->length, length);
-	*addr = tlv->value + ((length + 3) / 4);
-
-	return tlv->value;
-}
-
-static inline void __iomem *xrp_comm_get_tlv(void __iomem ** addr,
-					     uint32_t * type, uint32_t * length)
-{
-	struct xrp_dsp_tlv __iomem *tlv = *addr;
-
-	*type = xrp_comm_read32(&tlv->type);
-	*length = xrp_comm_read32(&tlv->length);
-	*addr = tlv->value + ((*length + 3) / 4);
-
-	return tlv->value;
-}
-
-static inline void xrp_comm_write(volatile void __iomem * addr,
-				  const void *p, size_t sz)
-{
-	size_t sz32 = sz & ~3;
-	u32 v = 0;
-
-	while (sz32) {
-		memcpy(&v, p, sizeof(v));
-		__raw_writel(v, addr);
-		p += 4;
-		addr += 4;
-		sz32 -= 4;
-	}
-
-	sz &= 3;
-	if (sz) {
-		v = 0;
-		memcpy(&v, p, sz);
-		__raw_writel(v, addr);
-	}
-}
-
-static inline void xrp_comm_read(volatile void __iomem * addr,
-				 void *p, size_t sz)
-{
-	size_t sz32 = sz & ~3;
-	u32 v = 0;
-
-	while (sz32) {
-		v = __raw_readl(addr);
-		memcpy(p, &v, sizeof(v));
-		p += 4;
-		addr += 4;
-		sz32 -= 4;
-	}
-
-	sz &= 3;
-	if (sz) {
-		v = __raw_readl(addr);
-		memcpy(p, &v, sz);
-	}
-}
-
-#ifdef MYN6
-static inline int xrp_send_device_irq(struct xvp *xvp)
-{
-	if (likely(xvp->hw_ops->send_irq))
-		return xvp->hw_ops->send_irq(xvp->hw_arg);
-	else
-		return -ENOSYS;
-}
-#endif
-#ifdef MYL5
-static inline void xrp_send_device_irq(struct xvp *xvp)
-{
-	if (likely(xvp->hw_ops->send_irq))
-		xvp->hw_ops->send_irq(xvp->hw_arg);
-}
-#endif
-
-static inline bool xrp_panic_check(struct xvp *xvp)
-{
-	if (unlikely(xvp->hw_ops->panic_check))
-		return xvp->hw_ops->panic_check(xvp->hw_arg);
-	else
-		return false;
 }
 
 static void xrp_add_known_file(struct file *filp)
@@ -303,8 +152,7 @@ static void xrp_remove_known_file(struct file *filp)
 	struct xvp *xvp = ((struct xvp_file *)(filp->private_data))->xvp;
 
 	mutex_lock(&xvp->xrp_known_files_lock);
-	hash_for_each_possible(xvp->xrp_known_files, p, node,
-			       (unsigned long)filp) {
+	hash_for_each_possible(xvp->xrp_known_files, p, node, (unsigned long)filp) {
 		if (p->filp == filp) {
 			hash_del(&p->node);
 			pf = p;
@@ -316,43 +164,136 @@ static void xrp_remove_known_file(struct file *filp)
 		kfree(pf);
 }
 
+/**************** know file end *****************/
+static int compare_queue_priority(const void *a, const void *b)
+{
+	const void *const *ppa = a;
+	const void *const *ppb = b;
+
+	const struct xrp_comm *pa = *ppa, *pb = *ppb;
+
+	if (pa->priority == pb->priority)
+		return 0;
+	else
+		return pa->priority < pb->priority ? -1 : 1;
+}
+
+static inline void xrp_comm_write32(volatile void __iomem *addr, u32 v)
+{
+	__raw_writel(v, addr);
+}
+
+static inline u32 xrp_comm_read32(volatile void __iomem *addr)
+{
+	return __raw_readl(addr);
+}
+
+static inline void __iomem *xrp_comm_put_tlv(void __iomem **addr,
+        uint32_t type, uint32_t length)
+{
+	struct xrp_dsp_tlv __iomem *tlv = *addr;
+	xrp_comm_write32(&tlv->type, type);
+	xrp_comm_write32(&tlv->length, length);
+	*addr = tlv->value + ((length + 3) / 4);
+	return tlv->value;
+}
+
+static inline void __iomem *xrp_comm_get_tlv(void __iomem **addr,
+        uint32_t *type, uint32_t *length)
+{
+	struct xrp_dsp_tlv __iomem *tlv = *addr;
+	*type = xrp_comm_read32(&tlv->type);
+	*length = xrp_comm_read32(&tlv->length);
+	*addr = tlv->value + ((*length + 3) / 4);
+	return tlv->value;
+}
+
+static inline void xrp_comm_write(volatile void __iomem *addr, const void *p, size_t sz)
+{
+	size_t sz32 = sz & ~3;
+	u32 v = 0;
+
+	while (sz32) {
+		memcpy(&v, p, sizeof(v));
+		__raw_writel(v, addr);
+		p += 4;
+		addr += 4;
+		sz32 -= 4;
+	}
+
+	sz &= 3;
+
+	if (sz) {
+		v = 0;
+		memcpy(&v, p, sz);
+		__raw_writel(v, addr);
+	}
+}
+
+static inline void xrp_comm_read(volatile void __iomem *addr, void *p, size_t sz)
+{
+	size_t sz32 = sz & ~3;
+	u32 v = 0;
+
+	while (sz32) {
+		v = __raw_readl(addr);
+		memcpy(p, &v, sizeof(v));
+		p += 4;
+		addr += 4;
+		sz32 -= 4;
+	}
+
+	sz &= 3;
+
+	if (sz) {
+		v = __raw_readl(addr);
+		memcpy(p, &v, sz);
+	}
+}
+
+static inline void xrp_send_device_irq(struct xvp *xvp)
+{
+	if (likely(xvp->hw_ops->send_irq))
+		xvp->hw_ops->send_irq(xvp->hw_arg);
+}
+
+static inline bool xrp_panic_check(struct xvp *xvp)
+{
+	if (unlikely(xvp->hw_ops->panic_check))
+		return xvp->hw_ops->panic_check(xvp->hw_arg);
+	else
+		return false;
+}
+
 static void xrp_sync_v2(struct xvp *xvp, void *hw_sync_data, size_t sz)
 {
 	unsigned i;
 	struct xrp_dsp_sync_v2 __iomem *queue_sync;
-	struct xrp_dsp_sync_v2 __iomem *shared_sync =
-	    xvp_buf_get_vaddr(xvp->ipc_buf);
+	struct xrp_dsp_sync_v2 __iomem *shared_sync = xvp_buf_get_vaddr(xvp->ipc_buf);
 	void __iomem *addr = shared_sync->hw_sync_data;
 	unsigned int log_para[2];	//mode+level
 
-	xrp_comm_write(xrp_comm_put_tlv(&addr,
-					XRP_DSP_SYNC_TYPE_HW_SPEC_DATA, sz),
-		       hw_sync_data, sz);
+	xrp_comm_write(xrp_comm_put_tlv(&addr, XRP_DSP_SYNC_TYPE_HW_SPEC_DATA, sz), hw_sync_data, sz);
 	if (xvp->n_queues > 1) {
-		xrp_comm_write(xrp_comm_put_tlv(&addr,
-						XRP_DSP_SYNC_TYPE_HW_QUEUES,
-						xvp->n_queues * sizeof(u32)),
-			       xvp->queue_priority,
-			       xvp->n_queues * sizeof(u32));
+		xrp_comm_write(xrp_comm_put_tlv(&addr, XRP_DSP_SYNC_TYPE_HW_QUEUES, xvp->n_queues * sizeof(u32)),
+			xvp->queue_priority, xvp->n_queues * sizeof(u32));
+
 		for (i = 1; i < xvp->n_queues; ++i) {
 			queue_sync = xvp->queue[i].comm;
 			xrp_comm_write32(&queue_sync->sync, XRP_DSP_SYNC_IDLE);
 		}
 	}
 	/*debugfs log */
-	log_para[0] = xrp_para.log_mode;
-	log_para[1] = xrp_para.log_level;
+	log_para[0] = vdsp_debugfs_log_mode();
+	log_para[1] = vdsp_debugfs_log_level();
 
-	xrp_comm_write(xrp_comm_put_tlv(&addr, XRP_DSP_SYNC_TYPE_LOG,
-					2 * sizeof(u32)),
-		       log_para, 2 * sizeof(u32));
+	xrp_comm_write(xrp_comm_put_tlv(&addr, XRP_DSP_SYNC_TYPE_LOG, 2 * sizeof(u32)), log_para, 2 * sizeof(u32));
 	xrp_comm_put_tlv(&addr, XRP_DSP_SYNC_TYPE_LAST, 0);
 }
 
 static int xrp_sync_complete_v2(struct xvp *xvp, size_t sz)
 {
-	struct xrp_dsp_sync_v2 __iomem *shared_sync =
-	    xvp_buf_get_vaddr(xvp->ipc_buf);
+	struct xrp_dsp_sync_v2 __iomem *shared_sync = xvp_buf_get_vaddr(xvp->ipc_buf);
 	void __iomem *addr = shared_sync->hw_sync_data;
 	u32 type, len;
 
@@ -372,11 +313,9 @@ static int xrp_sync_complete_v2(struct xvp *xvp, size_t sz)
 			return -EINVAL;
 		}
 		if (type & XRP_DSP_SYNC_TYPE_ACCEPT) {
-			xrp_comm_read(p, xvp->queue_priority,
-				      xvp->n_queues * sizeof(u32));
+			xrp_comm_read(p, xvp->queue_priority, xvp->n_queues * sizeof(u32));
 		} else {
-			pr_err
-			    ("Queue priority data not recognized by the DSP\n");
+			pr_err("Queue priority data not recognized by the DSP\n");
 			xvp->n_queues = 1;
 		}
 	}
@@ -387,10 +326,8 @@ static int xrp_synchronize(struct xvp *xvp)
 {
 	size_t sz = 0;
 	void *hw_sync_data;
-	unsigned long deadline = jiffies +
-	    (unsigned long)(firmware_boot_timeout * (unsigned long)HZ);
-	struct xrp_dsp_sync_v1 __iomem *shared_sync =
-	    xvp_buf_get_vaddr(xvp->ipc_buf);
+	unsigned long deadline = jiffies + (unsigned long)(firmware_boot_timeout * (unsigned long)HZ);
+	struct xrp_dsp_sync_v1 __iomem *shared_sync = xvp_buf_get_vaddr(xvp->ipc_buf);
 	int ret;
 	u32 v, v1;
 
@@ -401,9 +338,7 @@ static int xrp_synchronize(struct xvp *xvp)
 	 */
 
 	pr_debug("get smsg share memory address: 0x%lx\n", (unsigned long)sz);
-	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz,
-						     xvp_buf_get_iova
-						     (xvp->log_buf));
+	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz, xvp_buf_get_iova(xvp->log_buf));
 	if (unlikely(!hw_sync_data)) {
 		ret = -ENOMEM;
 		goto err;
@@ -419,28 +354,30 @@ static int xrp_synchronize(struct xvp *xvp)
 		if (xrp_panic_check(xvp))
 			goto err;
 		schedule();
-	}
-	while (time_before(jiffies, deadline));
+	} while (time_before(jiffies, deadline));
 	pr_debug("sync:%d\n", v);
 
 	switch (v) {
-	case XRP_DSP_SYNC_DSP_READY_V1:
-		if (xvp->n_queues > 1) {
-			pr_err("[ERROR]Queue priority data not recognized\n");
-			xvp->n_queues = 1;
-		}
-		xrp_comm_write(&shared_sync->hw_sync_data, hw_sync_data, sz);
-		break;
-	case XRP_DSP_SYNC_DSP_READY_V2:
-		xrp_sync_v2(xvp, hw_sync_data, sz);
-		break;
-	case XRP_DSP_SYNC_START:
-		pr_err("[ERROR]DSP is not ready for synchronization\n");
-		goto err;
-	default:
-		pr_err
-		    ("[ERROR]DSP response to XRP_DSP_SYNC_START is not recognized\n");
-		goto err;
+		case XRP_DSP_SYNC_DSP_READY_V1:
+			if (xvp->n_queues > 1) {
+				pr_err("[ERROR]Queue priority data not recognized\n");
+				xvp->n_queues = 1;
+			}
+
+			xrp_comm_write(&shared_sync->hw_sync_data, hw_sync_data, sz);
+			break;
+
+		case XRP_DSP_SYNC_DSP_READY_V2:
+			xrp_sync_v2(xvp, hw_sync_data, sz);
+			break;
+
+		case XRP_DSP_SYNC_START:
+			pr_err("[ERROR]DSP is not ready for synchronization\n");
+			goto err;
+
+		default:
+			pr_err("[ERROR]DSP response to XRP_DSP_SYNC_START is not recognized\n");
+			goto err;
 	}
 
 	mb();
@@ -454,11 +391,9 @@ static int xrp_synchronize(struct xvp *xvp)
 		if (xrp_panic_check(xvp))
 			goto err;
 		schedule();
-	}
-	while (time_before(jiffies, deadline));
+	} while (time_before(jiffies, deadline));
 	if (v1 != XRP_DSP_SYNC_DSP_TO_HOST) {
-		pr_err
-		    ("[ERROR]DSP haven't confirmed initialization data reception\n");
+		pr_err("[ERROR]DSP haven't confirmed initialization data reception\n");
 		goto err;
 	}
 
@@ -467,24 +402,13 @@ static int xrp_synchronize(struct xvp *xvp)
 		if (ret < 0)
 			goto err;
 	}
-#ifdef MYN6
-	ret = xrp_send_device_irq(xvp);
-	if (unlikely(ret != 0)) {
-		pr_err("send irq mode\n");
-	}
-#endif
-#ifdef MYL5
+
 	xrp_send_device_irq(xvp);
-#endif
-	pr_debug("completev2 end, send irq-32k timer[%lld]\n",
-		 sprd_sysfrt_read());
+	pr_debug("completev2 end, send irq-32k timer[%lld]\n", sprd_sysfrt_read());
 
 	if (xvp->host_irq_mode) {
 		int res = wait_for_completion_timeout(&xvp->queue[0].completion,
-						      (unsigned
-						       long)
-						      (firmware_boot_timeout *
-						       (unsigned long)HZ));
+			(unsigned long)(firmware_boot_timeout * (unsigned long)HZ));
 
 		ret = -ENODEV;
 		if (xrp_panic_check(xvp))
@@ -510,9 +434,8 @@ static bool xrp_cmd_complete(struct xrp_comm *xvp)
 	u32 flags = xrp_comm_read32(&cmd->flags);
 
 	rmb();
-	return (flags & (XRP_DSP_CMD_FLAG_REQUEST_VALID |
-			 XRP_DSP_CMD_FLAG_RESPONSE_VALID)) ==
-	    (XRP_DSP_CMD_FLAG_REQUEST_VALID | XRP_DSP_CMD_FLAG_RESPONSE_VALID);
+	return (flags & (XRP_DSP_CMD_FLAG_REQUEST_VALID | XRP_DSP_CMD_FLAG_RESPONSE_VALID)) ==
+	       (XRP_DSP_CMD_FLAG_REQUEST_VALID | XRP_DSP_CMD_FLAG_RESPONSE_VALID);
 }
 
 #ifdef MYN6
@@ -533,7 +456,7 @@ irqreturn_t xrp_irq_handler(void *msg, struct xvp * xvp)
 }
 #endif
 #ifdef MYL5
-irqreturn_t xrp_irq_handler(int irq, struct xvp * xvp)	// 就是第一个参数不一样啊
+irqreturn_t xrp_irq_handler(int irq, struct xvp * xvp)
 {
 	unsigned i, n = 0;
 
@@ -560,20 +483,8 @@ static irqreturn_t xrp_hw_irq_handler_ex(int irq, void *data)
 }
 #endif
 
-static inline void xvp_file_lock(struct xvp_file *xvp_file)
-{
-	spin_lock(&xvp_file->busy_list_lock);
-}
-
-static inline void xvp_file_unlock(struct xvp_file *xvp_file)
-{
-	spin_unlock(&xvp_file->busy_list_lock);
-}
-
-static long xvp_complete_cmd_irq(struct xvp *xvp,
-				 struct xrp_comm *comm,
-				 bool(*cmd_complete) (struct xrp_comm * p),
-				 uint32_t krqflag)
+static long xvp_complete_cmd_irq(struct xvp *xvp, struct xrp_comm *comm,
+	bool(*cmd_complete) (struct xrp_comm * p))
 {
 	long timeout = (long)((long)firmware_command_timeout * (long)HZ);
 
@@ -584,8 +495,7 @@ static long xvp_complete_cmd_irq(struct xvp *xvp,
 		return -EBUSY;
 	}
 	do {
-		timeout =
-		    wait_for_completion_timeout(&comm->completion, timeout);
+		timeout = wait_for_completion_timeout(&comm->completion, timeout);
 
 		pr_debug("wait_for_completion_timeout %ld\n", timeout);
 		if (cmd_complete(comm))
@@ -594,8 +504,7 @@ static long xvp_complete_cmd_irq(struct xvp *xvp,
 			pr_err("[error]xrp panic\n");
 			return -EBUSY;
 		}
-	}
-	while (timeout > 0);
+	} while (timeout > 0);
 
 	if (timeout == 0) {
 		pr_err("[error]vdsp timeout\n");
@@ -607,10 +516,9 @@ static long xvp_complete_cmd_irq(struct xvp *xvp,
 }
 
 static long xvp_complete_cmd_poll(struct xvp *xvp, struct xrp_comm *comm,
-				  bool(*cmd_complete) (struct xrp_comm * p))
+	bool(*cmd_complete) (struct xrp_comm * p))
 {
-	unsigned long deadline = jiffies +
-	    (unsigned long)(firmware_command_timeout * (unsigned long)HZ);
+	unsigned long deadline = jiffies + (unsigned long)(firmware_command_timeout * (unsigned long) HZ);
 
 	do {
 		if (cmd_complete(comm))
@@ -618,8 +526,7 @@ static long xvp_complete_cmd_poll(struct xvp *xvp, struct xrp_comm *comm,
 		if (xrp_panic_check(xvp))
 			return -EBUSY;
 		schedule();
-	}
-	while (time_before(jiffies, deadline));
+	} while (time_before(jiffies, deadline));
 
 	return -EBUSY;
 }
@@ -628,14 +535,11 @@ static inline int xvp_enable_dsp(struct xvp *xvp)
 {
 #ifdef FACEID_VDSP_FULL_TEE
 	if (xvp->secmode) {
-		if (loopback < LOOPBACK_NOMMIO)
-			return sprd_faceid_enable_vdsp(xvp);
-		else
-			return 0;
+		return sprd_faceid_enable_vdsp(xvp);
 	} else
 #endif
 	{
-		if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->enable)
+		if (xvp->hw_ops->enable)
 			return xvp->hw_ops->enable(xvp->hw_arg);
 		else
 			return 0;
@@ -646,12 +550,11 @@ static inline void xvp_disable_dsp(struct xvp *xvp)
 {
 #ifdef FACEID_VDSP_FULL_TEE
 	if (xvp->secmode) {
-		if (loopback < LOOPBACK_NOMMIO)
-			sprd_faceid_disable_vdsp(xvp);
+		sprd_faceid_disable_vdsp(xvp);
 	} else
 #endif
 	{
-		if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->disable)
+		if (xvp->hw_ops->disable)
 			xvp->hw_ops->disable(xvp->hw_arg);
 	}
 }
@@ -660,12 +563,11 @@ static inline void xrp_reset_dsp(struct xvp *xvp)
 {
 #ifdef FACEID_VDSP_FULL_TEE
 	if (xvp->secmode) {
-		if (loopback < LOOPBACK_NOMMIO)
-			sprd_faceid_reset_vdsp(xvp);
+		sprd_faceid_reset_vdsp(xvp);
 	} else
 #endif
 	{
-		if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->reset)
+		if (xvp->hw_ops->reset)
 			xvp->hw_ops->reset(xvp->hw_arg);
 	}
 }
@@ -674,12 +576,11 @@ static inline void xrp_halt_dsp(struct xvp *xvp)
 {
 #ifdef FACEID_VDSP_FULL_TEE
 	if (xvp->secmode) {
-		if (loopback < LOOPBACK_NOMMIO)
-			sprd_faceid_halt_vdsp(xvp);
+		sprd_faceid_halt_vdsp(xvp);
 	} else
 #endif
 	{
-		if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->halt)
+		if (xvp->hw_ops->halt)
 			xvp->hw_ops->halt(xvp->hw_arg);
 	}
 }
@@ -688,9 +589,8 @@ static inline void xrp_halt_dsp(struct xvp *xvp)
 static inline void xrp_stop_dsp(struct xvp *xvp)
 {
 	if (xvp->secmode) {
-		if (loopback < LOOPBACK_NOMMIO) ;
 	} else {
-		if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->stop_vdsp)
+		if (xvp->hw_ops->stop_vdsp)
 			xvp->hw_ops->stop_vdsp(xvp->hw_arg);
 	}
 }
@@ -700,55 +600,53 @@ static inline void xrp_release_dsp(struct xvp *xvp)
 {
 #ifdef FACEID_VDSP_FULL_TEE
 	if (xvp->secmode) {
-		if (loopback < LOOPBACK_NOMMIO)
-			sprd_faceid_release_vdsp(xvp);
+		sprd_faceid_release_vdsp(xvp);
 	} else
 #endif
 	{
-		if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->release)
+		if (xvp->hw_ops->release)
 			xvp->hw_ops->release(xvp->hw_arg);
 	}
-
 }
 
 static inline void xvp_dsp_enable_dvfs(struct xvp *xvp)
 {
-	if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->enable_dvfs)
+	if (xvp->hw_ops->enable_dvfs)
 		xvp->hw_ops->enable_dvfs(xvp->hw_arg);
 }
 
 static inline void xvp_dsp_disable_dvfs(struct xvp *xvp)
 {
-	if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->disable_dvfs)
+	if (xvp->hw_ops->disable_dvfs)
 		xvp->hw_ops->disable_dvfs(xvp->hw_arg);
 }
 
 static inline void xvp_dsp_setdvfs(struct xvp *xvp, uint32_t index)
 {
-	if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->setdvfs)
+	if (xvp->hw_ops->setdvfs)
 		xvp->hw_ops->setdvfs(xvp->hw_arg, index);
 }
 
 static inline void xvp_set_qos(struct xvp *xvp)
 {
-	if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->set_qos)
+	if (xvp->hw_ops->set_qos)
 		xvp->hw_ops->set_qos(xvp->hw_arg);
 }
 
 #ifdef MYN6
 static inline int xvp_init_communicaiton(struct xvp *xvp)
 {
-	if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->init_communication_hw)
+	if (xvp->hw_ops->init_communication_hw)
 		return xvp->hw_ops->init_communication_hw(xvp->hw_arg);
-	pr_err("func:%s invalid parameters\n", __func__);
+	pr_err("invalid parameters\n");
 	return -1;
 }
 
 static inline int xvp_deinit_communicaiton(struct xvp *xvp)
 {
-	if (loopback < LOOPBACK_NOMMIO && xvp->hw_ops->deinit_communication_hw)
+	if (xvp->hw_ops->deinit_communication_hw)
 		return xvp->hw_ops->deinit_communication_hw(xvp->hw_arg);
-	pr_err("func:%s invalid parameters\n", __func__);
+	pr_err("invalid parameters\n");
 	return -1;
 }
 #endif
@@ -771,36 +669,34 @@ static int xvp_file_release_list(struct file *filp)
 	libinfo = libinfo1 = temp = temp1 = NULL;
 	pr_debug("step 0: find lib in list\n");
 	mutex_lock(&(xvp->load_lib.libload_mutex));
+
+	/*
+	 * list_for_each_entry_safe(pos, n, head, member)
+	 * list_for_each_entry_safe - iterate over list of given type safe against removal of list entry
+	 * @pos :  the type * to use as a loop cursor
+	 * @n:		another tye * to  use as temporary storage
+	 * @head: the head for your list
+	 * @member: the name of the list_head within the struct.
+	 */
+
 	/*release lib load list */
-	list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list,
-				 node_libinfo) {
+	list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list, node_libinfo) {
 		find = 0;
 		/*check whether other xvp_file in system has loaded this lib */
 		mutex_lock(&xvp->xrp_known_files_lock);
 		hash_for_each(xvp->xrp_known_files, bkt, p, node) {
-			if (((struct file *)(p->filp))->private_data !=
-			    xvp_file) {
-				xvpfile_temp =
-				    (struct xvp_file
-				     *)(((struct file *)(p->filp))->
-					private_data);
+			if (((struct file *)(p->filp))->private_data != xvp_file) {
+				xvpfile_temp = (struct xvp_file *)(((struct file *)(p->filp))->private_data);
 				find = 0;
-				list_for_each_entry_safe(libinfo1, temp1,
-							 &xvpfile_temp->
-							 load_lib_list,
-							 node_libinfo) {
-					if (0 ==
-					    strcmp(libinfo1->libname,
-						   libinfo->libname)) {
+				list_for_each_entry_safe(libinfo1, temp1, &xvpfile_temp->load_lib_list, node_libinfo) {
+					if (0 == strcmp(libinfo1->libname, libinfo->libname)) {
 						/*find the same lib loaded by other file */
 						find = 1;
 						break;
 					}
 				}
 				if (1 == find) {
-					pr_debug("find :%s %s\n",
-						 libinfo1->libname,
-						 libinfo->libname);
+					pr_debug("find :%s %s\n", libinfo1->libname, libinfo->libname);
 					break;
 				}
 			}
@@ -812,22 +708,20 @@ static int xvp_file_release_list(struct file *filp)
 			pr_debug("step 1:create unload cmd\n");
 			ret = xrp_create_unload_cmd(filp, libinfo, &unloadinfo);
 			if (ret != LIB_RESULT_OK) {
-				pr_err
-				    ("xrp_create_unload_cmd failed, maybe library leak\n");
+				pr_err("xrp_create_unload_cmd failed, maybe library leak\n");
 				result = -EINVAL;
 				continue;
 			}
 			pr_debug("step 2:send unload cmd\n");
 			mutex_unlock(&(xvp->load_lib.libload_mutex));
 			libinfo->load_count = 1;	/*force set 1 here */
-			snprintf(libname, XRP_NAMESPACE_ID_SIZE, "%s",
-				 libinfo->libname);
+			snprintf(libname, XRP_NAMESPACE_ID_SIZE, "%s", libinfo->libname);
 			ret = xrp_ioctl_submit_sync(filp, NULL, unloadinfo.rq);
 			pr_debug("step 3: send cmd result,ret:%d\n", ret);
 			mutex_lock(&(xvp->load_lib.libload_mutex));
 			if (ret == -ENODEV) {
 				/*if went off , release here */
-				xrp_library_decrelease(filp, libname);
+				xrp_library_decrease(filp, libname);
 			}
 			xrp_free_unload_cmd(filp, &unloadinfo);
 			pr_debug("step 4: file release end\n");
@@ -843,54 +737,47 @@ static int xvp_file_release_list(struct file *filp)
 	return result;
 }
 
-int xrp_boot_firmware(struct xvp *xvp)
+static int xrp_boot_firmware(struct xvp *xvp)
 {
 	int ret;
-	struct xrp_dsp_sync_v1 __iomem *shared_sync =
-	    xvp_buf_get_vaddr(xvp->ipc_buf);
+	struct xrp_dsp_sync_v1 __iomem *shared_sync = xvp_buf_get_vaddr(xvp->ipc_buf);
 	s64 tv0, tv1, tv2;
 
 	tv0 = ktime_to_us(ktime_get());
 	xrp_halt_dsp(xvp);
 	xrp_reset_dsp(xvp);
+	pr_debug("boot firmware name:%s,\n", xvp->firmware_name);
 
-	pr_debug("firmware name:%s, loopback:%d\n", xvp->firmware_name,
-		 loopback);
 	if (likely(xvp->firmware_name)) {
-		if (loopback < LOOPBACK_NOFIRMWARE) {
-			ret = xrp_request_firmware(xvp);
-			if (ret < 0) {
-				/*may be halt vdsp here, and set went off true? */
-				xrp_halt_dsp(xvp);
-				xvp->off = true;
-				pr_err("xrp_request_firmware failed\n");
-				return ret;
-			}
+		ret = xrp_request_firmware(xvp);
+
+		if (ret < 0) {
+			/*may be halt vdsp here, and set went off true? */
+			xrp_halt_dsp(xvp);
+			xvp->off = true;
+			pr_err("xrp_request_firmware failed\n");
+			return ret;
 		}
 
-		if (loopback < LOOPBACK_NOIO) {
-			xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_IDLE);
-			mb();
-		}
+		xrp_comm_write32(&shared_sync->sync, XRP_DSP_SYNC_IDLE);
+		mb();
 	}
 
 	xrp_release_dsp(xvp);
 	tv1 = ktime_to_us(ktime_get());
+	ret = xrp_synchronize(xvp);
 
-	if (loopback < LOOPBACK_NOIO) {
-		ret = xrp_synchronize(xvp);
-		if (unlikely(ret < 0)) {
-			xrp_halt_dsp(xvp);
-			pr_err("couldn't synchronize with the DSP core\n");
-			xvp->off = true;
-			return ret;
-		}
+	if (unlikely(ret < 0)) {
+		xrp_halt_dsp(xvp);
+		pr_err("couldn't synchronize with the DSP core\n");
+		xvp->off = true;
+		return ret;
 	}
+
 	tv2 = ktime_to_us(ktime_get());
 	/*request firmware - sync */
-	pr_debug
-	    ("[TIME]boot firmware ok,request fw(%s):%lld (us), sync:%lld (us)\n",
-	     xvp->firmware_name, tv1 - tv0, tv2 - tv1);
+	pr_debug("[TIME]boot firmware ok,request fw(%s):%lld (us), sync:%lld (us)\n",
+		xvp->firmware_name, tv1 - tv0, tv2 - tv1);
 	return 0;
 }
 
@@ -903,8 +790,7 @@ static int sprd_vdsp_boot_firmware(struct xvp *xvp)
 	return xrp_boot_firmware(xvp);
 }
 
-static int sprd_unmap_request(struct file *filp,
-			      struct xrp_request *rq, uint32_t krqflag)
+static int sprd_unmap_request(struct file *filp, struct xrp_request *rq, uint32_t krqflag)
 {
 	struct xvp_file *xvp_file = filp->private_data;
 	size_t n_buffers = rq->n_buffers;
@@ -917,27 +803,16 @@ static int sprd_unmap_request(struct file *filp,
 		return 0;
 	}
 	if (rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
-		// ret |= xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
-		//  xvp->vdsp_mem_desc,
-		//  &rq->ion_in_buf,
-		//  IOMMU_ALL);
 		in_buf = xvpfile_buf_get(xvp_file, rq->ioctl_queue.in_data_fd);
 		if (!in_buf) {
 			pr_err("Error get in_buf failed\n");
 			ret |= -EFAULT;
 		}
-		// xvpfile_buf_kunmap(xvp_file, in_buf);
 	}
 	if (rq->ioctl_queue.out_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
-		// ret |= xvp->vdsp_mem_desc->ops->mem_iommu_unmap(
-		//  xvp->vdsp_mem_desc,
-		//  &rq->ion_out_buf,
-		//  IOMMU_ALL);
 	} else {
-		if (copy_to_user
-		    ((void __user *)(unsigned long)rq->ioctl_queue.
-		     out_data_addr, rq->out_data,
-		     rq->ioctl_queue.out_data_size)) {
+		if (copy_to_user((void __user*)(unsigned long)rq->ioctl_queue.out_data_addr,
+			rq->out_data, rq->ioctl_queue.out_data_size)) {
 			pr_err("out_data could not be copied\n");
 			ret |= -EFAULT;
 		}
@@ -954,8 +829,7 @@ static int sprd_unmap_request(struct file *filp,
 	return ret;
 }
 
-static int sprd_map_request(struct file *filp,
-			    struct xrp_request *rq, uint32_t krqflag)
+static int sprd_map_request(struct file *filp, struct xrp_request *rq, uint32_t krqflag)
 {
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xrp_ioctl_buffer __user *buffer;
@@ -979,15 +853,13 @@ static int sprd_map_request(struct file *filp,
 	}
 
 	if ((rq->ioctl_queue.flags & XRP_QUEUE_FLAG_NSID) &&
-	    copy_from_user(rq->nsid,
-			   (void __user *)(unsigned long)rq->ioctl_queue.
-			   nsid_addr, sizeof(rq->nsid))) {
+		copy_from_user(rq->nsid, (void __user*)(unsigned long)rq->ioctl_queue.nsid_addr,
+			sizeof(rq->nsid))) {
 		pr_err("[ERROR]nsid could not be copied\n");
 		return -EINVAL;
 	}
 
-	n_buffers =
-	    rq->ioctl_queue.buffer_size / sizeof(struct xrp_ioctl_buffer);
+	n_buffers = rq->ioctl_queue.buffer_size / sizeof(struct xrp_ioctl_buffer);
 	rq->n_buffers = n_buffers;
 	if (n_buffers) {
 		nbufferflag = 1;
@@ -995,9 +867,7 @@ static int sprd_map_request(struct file *filp,
 		size = n_buffers * sizeof(struct xrp_dsp_buffer);
 		heap_type = SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED;
 		attr = SPRD_VDSP_MEM_ATTR_WRITECOMBINE;
-		dsp_buf =
-		    xvpfile_buf_alloc_with_iommu(xvp_file, name, size,
-						 heap_type, attr);
+		dsp_buf = xvpfile_buf_alloc_with_iommu(xvp_file, name, size, heap_type, attr);
 		if (!dsp_buf) {
 			pr_err("Error:xvpfile_buf_creat_alloc_kmap faild\n");
 			return -1;
@@ -1010,8 +880,7 @@ static int sprd_map_request(struct file *filp,
 			xvpfile_buf_free_with_iommu(xvp_file, rq->dsp_buf);
 			return -EFAULT;
 		}
-		rq->id_dsp_pool = kzalloc(n_buffers * sizeof(*rq->id_dsp_pool),
-					  GFP_KERNEL);
+		rq->id_dsp_pool = kzalloc(n_buffers * sizeof(*rq->id_dsp_pool), GFP_KERNEL);
 		if (!rq->id_dsp_pool) {
 			pr_err("[ERROR]fail to kmalloc id_dsp_pool\n");
 			xvpfile_buf_kunmap(xvp_file, rq->dsp_buf);
@@ -1022,27 +891,23 @@ static int sprd_map_request(struct file *filp,
 	//in_data addr
 	if ((rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)) {
 		if (rq->ioctl_queue.in_data_fd < 0) {
-			pr_err("[ERROR]in data fd is:%d\n",
-			       rq->ioctl_queue.in_data_fd);
+			pr_err("[ERROR]in data fd is:%d\n", rq->ioctl_queue.in_data_fd);
 			ret = -EFAULT;
 			goto free_indata_err;
 		}
 
 		in_buf = xvpfile_buf_get(xvp_file, rq->ioctl_queue.in_data_fd);
 		if (!in_buf) {
-			pr_err("Error get in_buf failed,buf_id=%d\n",rq->ioctl_queue.in_data_fd);
+			pr_err("Error get in_buf failed,buf_id=%d\n", rq->ioctl_queue.in_data_fd);
 			ret = -EFAULT;
 			goto free_indata_err;
 		}
 		rq->in_buf = in_buf;
 		pr_debug("in_data_fd=%d, in_data_phys=0x%x size=%d\n",
-			 (int)in_buf->buf_id, (uint32_t) in_buf->iova,
-			 (uint32_t) in_buf->size);
+			(int)in_buf->buf_id, (uint32_t)in_buf->iova, (uint32_t)in_buf->size);
 	} else {
-		if (copy_from_user(rq->in_data,
-				   (void __user *)(unsigned long)
-				   rq->ioctl_queue.in_data_addr,
-				   rq->ioctl_queue.in_data_size)) {
+		if (copy_from_user(rq->in_data, (void __user*)(unsigned long)rq->ioctl_queue.in_data_addr,
+			rq->ioctl_queue.in_data_size)) {
 			pr_err("[ERROR]in_data could not be copied\n");
 			ret = -EFAULT;
 			goto free_indata_err;
@@ -1051,54 +916,44 @@ static int sprd_map_request(struct file *filp,
 
 	//out_data addr
 	if ((rq->ioctl_queue.out_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
-	    && (rq->ioctl_queue.out_data_fd >= 0)) {
-		out_buf =
-		    xvpfile_buf_get(xvp_file, rq->ioctl_queue.out_data_fd);
+		&& (rq->ioctl_queue.out_data_fd >= 0)) {
+		out_buf = xvpfile_buf_get(xvp_file, rq->ioctl_queue.out_data_fd);
 		if (!out_buf) {
-			pr_err("Error get out_buf failed,buf_id=%d\n",rq->ioctl_queue.out_data_fd);
+			pr_err("Error get out_buf failed,buf_id=%d\n", rq->ioctl_queue.out_data_fd);
 			ret = -EFAULT;
 			goto free_outdata_err;
 		}
 		rq->out_buf = out_buf;
 
 		pr_debug("out_data_fd=%d, out_data_phys=0x%x, size=%d\n",
-			 (int)out_buf->buf_id, (uint32_t) out_buf->iova,
-			 (uint32_t) out_buf->size);
+			(int)out_buf->buf_id, (uint32_t)out_buf->iova, (uint32_t)out_buf->size);
 	}
 	//bufer addr
 	pr_debug("n_buffers [%d]\n", n_buffers);
 	if (n_buffers) {
-		buffer =
-		    (void __user *)(unsigned long)rq->ioctl_queue.buffer_addr;
+		buffer = (void __user*)(unsigned long)rq->ioctl_queue.buffer_addr;
 
 		for (i = 0; i < n_buffers; ++i) {
 			struct xrp_ioctl_buffer ioctl_buffer;
 			struct xrp_dsp_buffer *dsp_buffer = NULL;
 
-			if (copy_from_user
-			    (&ioctl_buffer, buffer + i, sizeof(ioctl_buffer))) {
+			if (copy_from_user(&ioctl_buffer, buffer + i, sizeof(ioctl_buffer))) {
 				ret = -EFAULT;
 				pr_err("[ERROR]copy from user failed\n");
 				goto share_err;
 			}
 			if (ioctl_buffer.fd >= 0) {
 				rq->id_dsp_pool[i] = ioctl_buffer.fd;
-				addr =
-				    (unsigned long)rq->dsp_buf->vaddr +
-				    sizeof(struct xrp_dsp_buffer) * i;
-				dsp_buffer = (struct xrp_dsp_buffer *)addr;
+				addr = (unsigned long)rq->dsp_buf->vaddr + sizeof(struct xrp_dsp_buffer) * i;
+				dsp_buffer = (struct xrp_dsp_buffer*)addr;
 				dsp_buffer->flags = ioctl_buffer.flags;
 				dsp_buffer->size = ioctl_buffer.size;
-				dsp_buffer->addr = (uint32_t)
-				    xvpfile_buf_get_iova(xvpfile_buf_get
-							 (xvp_file,
-							  ioctl_buffer.fd));
+				dsp_buffer->addr = (uint32_t)xvpfile_buf_get_iova(
+					xvpfile_buf_get(xvp_file, ioctl_buffer.fd));
 				dsp_buffer->fd = ioctl_buffer.fd;
 
-				pr_debug
-				    ("dsp_buffer[%d] addr:0x%x, size:%d, fd:%d, flags:%d\n",
-				     i, dsp_buffer->addr, dsp_buffer->size,
-				     dsp_buffer->fd, dsp_buffer->flags);
+				pr_debug("dsp_buffer[%d] addr:0x%x, size:%d, fd:%d, flags:%d\n",
+					i, dsp_buffer->addr, dsp_buffer->size, dsp_buffer->fd, dsp_buffer->flags);
 			}
 		}
 	}
@@ -1114,39 +969,32 @@ free_indata_err:
 		xvpfile_buf_free_with_iommu(xvp_file, dsp_buf);
 		kfree(rq->id_dsp_pool);
 	}
-	pr_debug("[MAP][OUT] free_indata_err\n");
+	pr_err("[MAP][OUT] map request error\n");
 	return ret;
 }
 
 static void sprd_fill_hw_request(struct xrp_dsp_cmd __iomem * cmd,
-				 struct xrp_request *rq)
+	struct xrp_request *rq)
 {
 	xrp_comm_write32(&cmd->in_data_size, rq->ioctl_queue.in_data_size);
 	xrp_comm_write32(&cmd->out_data_size, rq->ioctl_queue.out_data_size);
-	xrp_comm_write32(&cmd->buffer_size,
-			 rq->n_buffers * sizeof(struct xrp_dsp_buffer));
+	xrp_comm_write32(&cmd->buffer_size, rq->n_buffers * sizeof(struct xrp_dsp_buffer));
 
 	if (rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
-		xrp_comm_write32(&cmd->in_data_addr,
-				 xvpfile_buf_get_iova(rq->in_buf));
+		xrp_comm_write32(&cmd->in_data_addr, xvpfile_buf_get_iova(rq->in_buf));
 	} else {
-		xrp_comm_write(&cmd->in_data, rq->in_data,
-			       rq->ioctl_queue.in_data_size);
+		xrp_comm_write(&cmd->in_data, rq->in_data, rq->ioctl_queue.in_data_size);
 	}
 
 	if (rq->ioctl_queue.out_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
-		xrp_comm_write32(&cmd->out_data_addr,
-				 xvpfile_buf_get_iova(rq->out_buf));
+		xrp_comm_write32(&cmd->out_data_addr, xvpfile_buf_get_iova(rq->out_buf));
 
 	if (rq->n_buffers) {
 		if (rq->n_buffers > XRP_DSP_CMD_INLINE_BUFFER_COUNT)
-			xrp_comm_write32(&cmd->buffer_addr,
-					 xvpfile_buf_get_iova(rq->dsp_buf));
+			xrp_comm_write32(&cmd->buffer_addr, xvpfile_buf_get_iova(rq->dsp_buf));
 		else
-			xrp_comm_write(&cmd->buffer_data,
-				       xvpfile_buf_get_vaddr(rq->dsp_buf),
-				       rq->n_buffers *
-				       sizeof(struct xrp_dsp_buffer));
+			xrp_comm_write(&cmd->buffer_data, xvpfile_buf_get_vaddr(rq->dsp_buf),
+				rq->n_buffers * sizeof(struct xrp_dsp_buffer));
 	}
 
 	if (rq->ioctl_queue.flags & XRP_QUEUE_FLAG_NSID)
@@ -1155,32 +1003,27 @@ static void sprd_fill_hw_request(struct xrp_dsp_cmd __iomem * cmd,
 	wmb();
 	/* update flags */
 	xrp_comm_write32(&cmd->flags,
-			 (rq->ioctl_queue.
-			  flags & ~XRP_DSP_CMD_FLAG_RESPONSE_VALID) |
-			 XRP_DSP_CMD_FLAG_REQUEST_VALID);
+		(rq->ioctl_queue.flags & ~XRP_DSP_CMD_FLAG_RESPONSE_VALID) |
+		XRP_DSP_CMD_FLAG_REQUEST_VALID);
 }
 
 static long sprd_complete_hw_request(struct xrp_dsp_cmd __iomem * cmd,
-				     struct xrp_request *rq)
+	struct xrp_request *rq)
 {
 	u32 flags = xrp_comm_read32(&cmd->flags);
 
 	if (rq->ioctl_queue.out_data_size <= XRP_DSP_CMD_INLINE_DATA_SIZE)
-		xrp_comm_read(&cmd->out_data, rq->out_data,
-			      rq->ioctl_queue.out_data_size);
-	if (rq->n_buffers <= XRP_DSP_CMD_INLINE_BUFFER_COUNT
-	    && rq->n_buffers != 0)
-		xrp_comm_read(&cmd->buffer_data,
-			      xvpfile_buf_get_vaddr(rq->dsp_buf),
-			      rq->n_buffers * sizeof(struct xrp_dsp_buffer));
+		xrp_comm_read(&cmd->out_data, rq->out_data, rq->ioctl_queue.out_data_size);
+	if (rq->n_buffers <= XRP_DSP_CMD_INLINE_BUFFER_COUNT && rq->n_buffers != 0)
+		xrp_comm_read(&cmd->buffer_data, xvpfile_buf_get_vaddr(rq->dsp_buf),
+			rq->n_buffers * sizeof(struct xrp_dsp_buffer));
 	xrp_comm_write32(&cmd->flags, 0);
 
 	return (flags & XRP_DSP_CMD_FLAG_RESPONSE_DELIVERY_FAIL) ? -ENXIO : 0;
 }
 
-static long xrp_ioctl_submit_sync(struct file *filp,
-				  struct xrp_ioctl_queue __user * p,
-				  struct xrp_request *pk_rq)
+static long xrp_ioctl_submit_sync(struct file *filp, struct xrp_ioctl_queue __user * p,
+	struct xrp_request *pk_rq)
 {
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
@@ -1197,7 +1040,7 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 
 	s64 tv0, tv1, tv2, tv3, tv4, tv5;
 
-	tv2 = tv3 = tv0 = tv1 = tv4 = tv5 = 0;
+	tv0 = tv1 = tv2 = tv3 = tv4 = tv5 = 0;
 	tv0 = ktime_to_us(ktime_get());
 	if (p != NULL) {
 		if (unlikely(copy_from_user(&rq->ioctl_queue, p, sizeof(*p))))
@@ -1216,8 +1059,8 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 	}
 
 	if (xvp->n_queues > 1) {
-		unsigned n = (rq->ioctl_queue.flags & XRP_QUEUE_FLAG_PRIO) >>
-		    XRP_QUEUE_FLAG_PRIO_SHIFT;
+		unsigned n = (rq->ioctl_queue.flags & XRP_QUEUE_FLAG_PRIO) >> XRP_QUEUE_FLAG_PRIO_SHIFT;
+
 		if (n >= xvp->n_queues)
 			n = xvp->n_queues - 1;
 		queue = xvp->queue_ordered[n];
@@ -1232,7 +1075,7 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 		return ret;
 	}
 
-	if (likely(loopback < LOOPBACK_NOIO)) {
+	{
 		int reboot_cycle;
 
 retry:
@@ -1249,13 +1092,10 @@ retry:
 			/*check whether libload command and if it is, do load */
 			tv2 = ktime_to_us(ktime_get());
 			load_flag = xrp_check_load_unload(xvp, rq, krqflag);
-			pr_debug
-			    ("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d, filp:[%lx]\n",
-			     rq->nsid, load_flag, (unsigned long)filp);
+			pr_debug("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d, filp:[%lx]\n",
+				rq->nsid, load_flag, (unsigned long)filp);
 			mutex_lock(&(xvp->load_lib.libload_mutex));
-			lib_result =
-			    xrp_pre_process_request(filp, rq, load_flag,
-						    libname, krqflag);
+			lib_result = xrp_pre_process_request(filp, rq, load_flag, libname, krqflag);
 			tv2 = ktime_to_us(ktime_get()) - tv2;	//lib load/unload
 			if (lib_result != 0) {
 				mutex_unlock(&queue->lock);
@@ -1264,40 +1104,23 @@ retry:
 				if (lib_result == -EEXIST) {
 					return 0;
 				} else {
-					pr_err
-					    ("xrp pre process failed lib_result:%d\n",
-					     lib_result);
+					pr_err("xrp pre process failed lib_result:%d\n", lib_result);
 					return lib_result;
 				}
-
-			} else if ((load_flag != XRP_UNLOAD_LIB_FLAG)
-				   && (load_flag != XRP_LOAD_LIB_FLAG)) {
+			} else if ((load_flag != XRP_UNLOAD_LIB_FLAG) && (load_flag != XRP_LOAD_LIB_FLAG)) {
 				mutex_unlock(&(xvp->load_lib.libload_mutex));
 			}
 
 			sprd_fill_hw_request(queue->comm, rq);
 			tv3 = ktime_to_us(ktime_get());
-#ifdef MYN6
-			ret = (long)xrp_send_device_irq(xvp);
-			if (unlikely(ret != 0)) {
-				pr_err("send irq error\n");
-			}
-#endif
-#ifdef MYL5
-			xrp_send_device_irq(xvp);
-#endif
 
-			pr_debug("send vdsp cmd-32k time[%lld]\n",
-				 sprd_sysfrt_read());
+			xrp_send_device_irq(xvp);
+			pr_debug("send vdsp cmd-32k time[%lld]\n", sprd_sysfrt_read());
 
 			if (xvp->host_irq_mode) {
-				ret = xvp_complete_cmd_irq(xvp, queue,
-							   xrp_cmd_complete,
-							   krqflag);
+				ret = xvp_complete_cmd_irq(xvp, queue, xrp_cmd_complete);
 			} else {
-				ret =
-				    xvp_complete_cmd_poll(xvp, queue,
-							  xrp_cmd_complete);
+				ret = xvp_complete_cmd_poll(xvp, queue, xrp_cmd_complete);
 			}
 			tv3 = ktime_to_us(ktime_get()) - tv3;	//send irq->reci
 
@@ -1306,21 +1129,15 @@ retry:
 			if (likely(ret == 0)) {
 				ret = sprd_complete_hw_request(queue->comm, rq);
 			} else if (ret == -EBUSY && firmware_reboot &&
-				   atomic_inc_return(&xvp->reboot_cycle) ==
-				   reboot_cycle + 1) {
+			           atomic_inc_return(&xvp->reboot_cycle) == reboot_cycle + 1) {
 				int rc;
 				unsigned i;
 
-				if ((load_flag == XRP_LOAD_LIB_FLAG)
-				    || (load_flag == XRP_UNLOAD_LIB_FLAG)) {
-					mutex_unlock(&
-						     (xvp->load_lib.
-						      libload_mutex));
+				if ((load_flag == XRP_LOAD_LIB_FLAG) || (load_flag == XRP_UNLOAD_LIB_FLAG)) {
+					mutex_unlock(&(xvp->load_lib.libload_mutex));
 				}
-#ifdef MYL5
 				//dump vdsp
 				vdsp_log_coredump(xvp);
-#endif
 				pr_debug("###enter reboot flow!###\n");
 				for (i = 0; i < xvp->n_queues; ++i)
 					if (xvp->queue + i != queue)
@@ -1332,59 +1149,39 @@ retry:
 				   the libraries loaded may be leaked because we don't know whether
 				   vdsp processing these resource or not */
 				if (rc == 0) {
-					mutex_lock(&
-						   (xvp->load_lib.
-						    libload_mutex));
+					mutex_lock(&(xvp->load_lib.libload_mutex));
 					xrp_library_release_all(xvp);
-					mutex_unlock(&
-						     (xvp->load_lib.
-						      libload_mutex));
+					mutex_unlock(&(xvp->load_lib.libload_mutex));
 				}
-				atomic_set(&xvp->reboot_cycle_complete,
-					   atomic_read(&xvp->reboot_cycle));
+				atomic_set(&xvp->reboot_cycle_complete, atomic_read(&xvp->reboot_cycle));
 				for (i = 0; i < xvp->n_queues; ++i)
 					if (xvp->queue + i != queue)
-						mutex_unlock(&xvp->queue[i].
-							     lock);
+						mutex_unlock(&xvp->queue[i].lock);
 				if (unlikely(rc < 0)) {
 					ret = rc;
 					went_off = xvp->off;
-					pr_err
-					    ("vdsp reboot failed may be encounter fatal error!!!\n");
+					pr_err("vdsp reboot failed may be encounter fatal error!!!\n");
 				}
 				pr_debug("###reboot flow end!###\n");
 				rebootflag = 1;
 			}
 			if (likely(0 == rebootflag)) {
-				if ((load_flag != XRP_LOAD_LIB_FLAG)
-				    && (load_flag != XRP_UNLOAD_LIB_FLAG))
-					mutex_lock(&
-						   (xvp->load_lib.
-						    libload_mutex));
+				if ((load_flag != XRP_LOAD_LIB_FLAG) && (load_flag != XRP_UNLOAD_LIB_FLAG))
+					mutex_lock(&(xvp->load_lib.libload_mutex));
 
-				lib_result =
-				    post_process_request(filp, rq, libname,
-							 load_flag, ret);
-				if ((load_flag == XRP_LOAD_LIB_FLAG)
-				    || (load_flag == XRP_UNLOAD_LIB_FLAG)) {
-					mutex_unlock(&
-						     (xvp->load_lib.
-						      libload_mutex));
+				lib_result = post_process_request(filp, rq, libname, load_flag, ret);
+
+				if ((load_flag == XRP_LOAD_LIB_FLAG) || (load_flag == XRP_UNLOAD_LIB_FLAG)) {
+					mutex_unlock(&(xvp->load_lib.libload_mutex));
 				} else {
 					if (unlikely(lib_result != 0)) {
 						mutex_unlock(&queue->lock);
-						mutex_unlock(&
-							     (xvp->load_lib.
-							      libload_mutex));
-						sprd_unmap_request(filp, rq,
-								   krqflag);
-						pr_err
-						    ("[ERROR]lib result error\n");
+						mutex_unlock(&(xvp->load_lib.libload_mutex));
+						sprd_unmap_request(filp, rq, krqflag);
+						pr_err("[ERROR]lib result error\n");
 						return -EFAULT;
 					} else {
-						mutex_unlock(&
-							     (xvp->load_lib.
-							      libload_mutex));
+						mutex_unlock(&(xvp->load_lib.libload_mutex));
 					}
 				}
 			}
@@ -1404,24 +1201,21 @@ retry:
 	 * this memory.
 	 */
 	tv5 = ktime_to_us(ktime_get());
-	pr_debug
-	    ("[TIME](cmd->nsid:%s)total:%lld(us),map:%lld(us),load/unload:%lld(us),"
+	pr_debug("[TIME](cmd->nsid:%s)total:%lld(us),map:%lld(us),load/unload:%lld(us),"
 	     "vdsp:%lld(us),unmap:%lld(us),ret:%d\n", rq->nsid, tv5 - tv0, tv1,
 	     tv2, tv3, tv5 - tv4, ret);
 
 	return ret;
 }
 
-static long xrp_ioctl_faceid_cmd(struct file *filp,
-				 struct xrp_faceid_ctrl __user * arg)
+static long xrp_ioctl_faceid_cmd(struct file *filp, struct xrp_faceid_ctrl __user *arg)
 {
 #ifdef FACEID_VDSP_FULL_TEE
 	struct xrp_faceid_ctrl faceid;
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
 
-	if (unlikely
-	    (copy_from_user(&faceid, arg, sizeof(struct xrp_faceid_ctrl)))) {
+	if (unlikely(copy_from_user(&faceid, arg, sizeof(struct xrp_faceid_ctrl)))) {
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
@@ -1432,8 +1226,7 @@ static long xrp_ioctl_faceid_cmd(struct file *filp,
 	return 0;
 }
 
-static long xrp_ioctl_set_dvfs(struct file *filp,
-			       struct xrp_dvfs_ctrl __user * arg)
+static long xrp_ioctl_set_dvfs(struct file *filp, struct xrp_dvfs_ctrl __user *arg)
 {
 	struct xrp_dvfs_ctrl dvfs;
 	struct xvp_file *xvp_file = filp->private_data;
@@ -1454,29 +1247,18 @@ static long xrp_ioctl_set_dvfs(struct file *filp,
 	return 0;
 }
 
-static long xrp_ioctl_set_powerhint(struct file *filp,
-				    struct xrp_powerhint_ctrl __user * arg)
+static long xrp_ioctl_set_powerhint(struct file *filp, struct xrp_powerhint_ctrl __user * arg)
 {
 	struct xrp_powerhint_ctrl powerhint;
 
-	if (unlikely
-	    (copy_from_user
-	     (&powerhint, arg, sizeof(struct xrp_powerhint_ctrl)))) {
+	if (unlikely(copy_from_user(&powerhint, arg, sizeof(struct xrp_powerhint_ctrl)))) {
 		pr_err("copy_from_user failed\n");
 		return -EFAULT;
 	}
-#ifdef MYN6
-	return (long)set_powerhint_flag(filp, powerhint.level,
-					powerhint.acquire_release);
-#endif
-#ifdef MYL5
-	set_powerhint_flag(filp, powerhint.level, powerhint.acquire_release);
-	return 0;
-#endif
+	return (long)set_powerhint_flag(filp, powerhint.level, powerhint.acquire_release);
 }
 
-static long xrp_ioctl_mem_query(struct file *filp,
-				struct xrp_heaps_ctrl __user * arg)
+static long xrp_ioctl_mem_query(struct file *filp, struct xrp_heaps_ctrl __user *arg)
 {
 	struct xrp_heaps_ctrl data;
 	int ret;
@@ -1485,7 +1267,7 @@ static long xrp_ioctl_mem_query(struct file *filp,
 	memset(&data, 0, sizeof(data));
 
 	for (id = SPRD_VDSP_MEM_MAN_MIN_HEAP;
-	     id <= SPRD_VDSP_MEM_MAN_MAX_HEAP && i < SPRD_MAX_HEAPS; id++) {
+		id <= SPRD_VDSP_MEM_MAN_MAX_HEAP && i < SPRD_MAX_HEAPS; id++) {
 		uint8_t type;
 		uint32_t attrs;
 
@@ -1504,34 +1286,26 @@ static long xrp_ioctl_mem_query(struct file *filp,
 	return 0;
 }
 
-static int xrp_ioctl_mem_import(struct file *filp,
-				struct xrp_import_ctrl __user * arg)
+static int xrp_ioctl_mem_import(struct file *filp, struct xrp_import_ctrl __user *arg)
 {
 	struct xrp_import_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
-
-	// struct xvp *xvp = xvp_file->xvp;
 	struct xvp_buf *buf = NULL;
 
-	// int ret;
-
-	if (unlikely
-	    (copy_from_user(&ctrl, arg, sizeof(struct xrp_import_ctrl)))) {
+	if (unlikely(copy_from_user(&ctrl, arg, sizeof(struct xrp_import_ctrl)))) {
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("import:size %ld, fd %llX, heap_id %d ", ctrl.size,
-		 ctrl.buf_hnd, ctrl.heap_id);
-	pr_debug("attr %d, name %s\n", ctrl.attributes, ctrl.name);
-
-	buf = xvpfile_buf_import(xvp_file, ctrl.name, (size_t) ctrl.size,
-				 ctrl.heap_id, ctrl.attributes, ctrl.buf_hnd);
+	pr_debug("import:size %ld, fd %llX, cpu_ptr %llX, heap_id %d attr %d, name %s\n ",
+		ctrl.size, ctrl.buf_fd, ctrl.cpu_ptr, ctrl.heap_id, ctrl.attributes, ctrl.name);
+	buf = xvpfile_buf_import(xvp_file, ctrl.name, (size_t)ctrl.size, ctrl.heap_id, ctrl.attributes,
+		ctrl.buf_fd, ctrl.cpu_ptr);
 	if (!buf) {
 		pr_err("Error: xrp_ioctl_mem_import failed\n");
 		return -1;
 	}
 	ctrl.buf_id = buf->buf_id;
-	pr_debug("%s:buf_id=%d\n", __func__, buf->buf_id);
+	pr_debug("import buf_id=%d\n", buf->buf_id);
 	if (unlikely(copy_to_user(arg, &ctrl, sizeof(struct xrp_import_ctrl)))) {
 		pr_err("[ERROR]copy to user failed\n");
 		return -EFAULT;
@@ -1540,24 +1314,18 @@ static int xrp_ioctl_mem_import(struct file *filp,
 	return 0;
 }
 
-static long xrp_ioctl_mem_export(struct file *filp,
-				 struct xrp_export_ctrl __user * arg)
+static long xrp_ioctl_mem_export(struct file *filp, struct xrp_export_ctrl __user *arg)
 {
 	struct xrp_export_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
-
-	// struct xvp *xvp = xvp_file->xvp;
 	struct xvp_buf *buf = NULL;
 	int ret;
 
-	if (unlikely
-	    (copy_from_user(&ctrl, arg, sizeof(struct xrp_export_ctrl)))) {
+	if (unlikely(copy_from_user(&ctrl, arg, sizeof(struct xrp_export_ctrl)))) {
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("export:buf_id %d, size %d, attr %d\n", ctrl.buf_id, ctrl.size,
-		 ctrl.attributes);
-	pr_debug("%s:buf_id=%d\n", __func__, ctrl.buf_id);
+	pr_debug("export:buf_id %d, size %d, attr %d\n", ctrl.buf_id, ctrl.size, ctrl.attributes);
 	buf = xvpfile_buf_get(xvp_file, ctrl.buf_id);
 	if (!buf) {
 		return -1;
@@ -1574,30 +1342,25 @@ static long xrp_ioctl_mem_export(struct file *filp,
 	return 0;
 }
 
-static long xrp_ioctl_mem_alloc(struct file *filp,
-				struct xrp_alloc_ctrl __user * arg)
+static long xrp_ioctl_mem_alloc(struct file *filp, struct xrp_alloc_ctrl __user * arg)
 {
 	struct xrp_alloc_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
-
-	// struct xvp *xvp = xvp_file->xvp;
 	struct xvp_buf *buf = NULL;
 
 	if (unlikely(copy_from_user(&ctrl, arg, sizeof(struct xrp_alloc_ctrl)))) {
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("alloc:size %ld, heap_id %d ", ctrl.size, ctrl.heap_id);
-	pr_debug("attr %d, name %s\n", ctrl.attributes, ctrl.name);
+	pr_debug("alloc:size %ld, heap_id %d, attr %d, name %s\n", ctrl.attributes, ctrl.name,ctrl.size, ctrl.heap_id);
 
-	buf = xvpfile_buf_alloc(xvp_file, ctrl.name, (size_t) ctrl.size,
-				ctrl.heap_id, ctrl.attributes);
+	buf = xvpfile_buf_alloc(xvp_file, ctrl.name, (size_t)ctrl.size, ctrl.heap_id, ctrl.attributes);
 	if (!buf) {
 		pr_err("Error: xvpfile_buf_alloc\n");
 		return -1;
 	}
 	ctrl.buf_id = buf->buf_id;
-	pr_debug("%s:buf_id=%d\n", __func__, buf->buf_id);
+	pr_debug("calloc buf_id=%d\n", buf->buf_id);
 
 	if (unlikely(copy_to_user(arg, &ctrl, sizeof(struct xrp_alloc_ctrl)))) {
 		pr_err("[ERROR]copy to user failed\n");
@@ -1607,8 +1370,7 @@ static long xrp_ioctl_mem_alloc(struct file *filp,
 	return 0;
 }
 
-static long xrp_ioctl_mem_free(struct file *filp,
-			       struct xrp_free_ctrl __user * arg)
+static long xrp_ioctl_mem_free(struct file *filp, struct xrp_free_ctrl __user *arg)
 {
 	struct xrp_free_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
@@ -1617,15 +1379,14 @@ static long xrp_ioctl_mem_free(struct file *filp,
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("%s:buf_id=%d\n", __func__, ctrl.buf_id);
-	pr_debug("free:buf_id %d ", ctrl.buf_id);
+
+	pr_debug("free:buf_id %d \n", ctrl.buf_id);
 	xvpfile_buf_free(xvp_file, xvpfile_buf_get(xvp_file, ctrl.buf_id));
 
 	return 0;
 }
 
-static int xrp_ioctl_mem_iommu_map(struct file *filp,
-				   struct xrp_map_ctrl __user * arg)
+static int xrp_ioctl_mem_iommu_map(struct file *filp, struct xrp_map_ctrl __user *arg)
 {
 	struct xrp_map_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
@@ -1638,47 +1399,33 @@ static int xrp_ioctl_mem_iommu_map(struct file *filp,
 	}
 	//pr_debug("map:virt_addr %llX, buf_id %d, flags %d\n", ctrl.virt_addr, ctrl.buf_id, ctrl.flags);
 
-	//ret = mutex_lock_interruptible(&xvp->xvp_lock);
-	//if (ret)
-	//  return ret;
-	// pr_debug("%s:buf_id=%d\n",__func__,ctrl.buf_id);
-	// ret = sprd_vdsp_mem_map_iova(xvp_file->xvp->drv_mem_ctx, ctrl.buf_id);
-	// if (ret)
-	//  pr_err("map failed, ret %d\n", ret);
-
 	buf = xvpfile_buf_get(xvp_file, ctrl.buf_id);
 	if (!buf) {
 		pr_err("Error: xvpfile_buf_get failed\n");
+		//whether return or not
 	}
-	// ret = xvpfile_buf_iommu_map(xvp_file,xvpfile_buf_get(xvp_file,ctrl.buf_id));
 	ret = xvpfile_buf_iommu_map(xvp_file, buf);
 	if (ret) {
 		pr_err("Error: xvpfile_buf_iommu_map, ret %d\n", ret);
 		return -1;
 	}
-	//mutex_unlock(&xvp->xvp_lock);
 
 	return ret;
 }
 
-static long xrp_ioctl_mem_iommu_unmap(struct file *filp,
-				      struct xrp_unmap_ctrl __user * arg)
+static long xrp_ioctl_mem_iommu_unmap(struct file *filp, struct xrp_unmap_ctrl __user *arg)
 {
 	struct xrp_unmap_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
 
-	// struct xvp *xvp = xvp_file->xvp;
 	int ret;
 
 	if (unlikely(copy_from_user(&ctrl, arg, sizeof(struct xrp_unmap_ctrl)))) {
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	//pr_debug("unmap: buf_id %d\n", ctrl.buf_id);
-	pr_debug("%s:buf_id=%d\n", __func__, ctrl.buf_id);
-	ret =
-	    xvpfile_buf_iommu_unmap(xvp_file,
-				    xvpfile_buf_get(xvp_file, ctrl.buf_id));
+	pr_debug("iommu unmap buf_id=%d\n", ctrl.buf_id);
+	ret = xvpfile_buf_iommu_unmap(xvp_file, xvpfile_buf_get(xvp_file, ctrl.buf_id));
 	if (ret) {
 		pr_err("Error: xvpfile_buf_iommu_unmap, ret %d\n", ret);
 	}
@@ -1686,21 +1433,18 @@ static long xrp_ioctl_mem_iommu_unmap(struct file *filp,
 }
 
 static long xrp_ioctl_mem_cpu_to_device(struct file *filp,
-					struct xrp_sync_cpu_to_device_ctrl
-					__user * arg)
+	struct xrp_sync_cpu_to_device_ctrl __user *arg)
 {
 	struct xrp_sync_cpu_to_device_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
 	int ret;
 
-	if (unlikely
-	    (copy_from_user
-	     (&ctrl, arg, sizeof(struct xrp_sync_cpu_to_device_ctrl)))) {
+	if (unlikely(copy_from_user(&ctrl, arg, sizeof(struct xrp_sync_cpu_to_device_ctrl)))) {
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("%s:buf_id=%d\n", __func__, ctrl.buf_id);
+	pr_debug("buf_id=%d\n", ctrl.buf_id);
 	ret = sprd_vdsp_mem_sync_cpu_to_device(xvp->drv_mem_ctx, ctrl.buf_id);
 	if (ret) {
 		pr_err("Error: xrp_ioctl_mem_cpu_to_device, ret %d\n", ret);
@@ -1709,21 +1453,18 @@ static long xrp_ioctl_mem_cpu_to_device(struct file *filp,
 }
 
 static long xrp_ioctl_mem_device_to_cpu(struct file *filp,
-					struct xrp_sync_device_to_cpu_ctrl
-					__user * arg)
+	struct xrp_sync_device_to_cpu_ctrl __user *arg)
 {
 	struct xrp_sync_device_to_cpu_ctrl ctrl;
 	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = xvp_file->xvp;
 	int ret;
 
-	if (unlikely
-	    (copy_from_user
-	     (&ctrl, arg, sizeof(struct xrp_sync_device_to_cpu_ctrl)))) {
+	if (unlikely(copy_from_user(&ctrl, arg, sizeof(struct xrp_sync_device_to_cpu_ctrl)))) {
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("%s:buf_id=%d\n", __func__, ctrl.buf_id);
+	pr_debug("buf_id=%d\n", ctrl.buf_id);
 	ret = sprd_vdsp_mem_sync_device_to_cpu(xvp->drv_mem_ctx, ctrl.buf_id);
 	if (ret) {
 		pr_err("Error: xrp_ioctl_mem_device_to_cpu, ret %d\n", ret);
@@ -1737,7 +1478,7 @@ static long xvp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct xvp_file *xvp_file = NULL;
 
 	pr_debug("cmd:%x, filp[%lx]:cmd_name:%s\n,",
-		 cmd, (unsigned long)filp, debug_get_ioctl_cmd_name(cmd));
+		cmd, (unsigned long)filp, debug_get_ioctl_cmd_name(cmd));
 	mutex_lock(&xvp_global_lock);
 	if (unlikely(filp->private_data == NULL)) {
 		mutex_unlock(&xvp_global_lock);
@@ -1749,87 +1490,70 @@ static long xvp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	xvp_file->working = 1;
 	mutex_unlock(&xvp_file->lock);
 	mutex_unlock(&xvp_global_lock);
+
 	switch (cmd) {
-	case XRP_IOCTL_ALLOC:
-	case XRP_IOCTL_FREE:
-		break;
-	case XRP_IOCTL_QUEUE:
-	case XRP_IOCTL_QUEUE_NS:
-		preprocess_work_piece(((struct xvp_file *)(filp->
-							   private_data))->xvp);
-		retval =
-		    xrp_ioctl_submit_sync(filp,
-					  (struct xrp_ioctl_queue __user *)arg,
-					  NULL);
-		postprocess_work_piece(((struct xvp_file *)(filp->
-							    private_data))->
-				       xvp);
-		break;
-	case XRP_IOCTL_SET_DVFS:
-		retval =
-		    xrp_ioctl_set_dvfs(filp,
-				       (struct xrp_dvfs_ctrl __user *)arg);
-		break;
-	case XRP_IOCTL_SET_POWERHINT:
-		retval = xrp_ioctl_set_powerhint(filp,
-						 (struct xrp_powerhint_ctrl
-						  __user *)arg);
-		break;
-	case XRP_IOCTL_FACEID_CMD:
-		retval = xrp_ioctl_faceid_cmd(filp,
-					      (struct xrp_faceid_ctrl __user *)
-					      arg);
-		break;
-	case XRP_IOCTL_MEM_QUERY:
-		retval =
-		    xrp_ioctl_mem_query(filp,
-					(struct xrp_heaps_ctrl __user *)arg);
-		break;
-	case XRP_IOCTL_MEM_IMPORT:
-		retval = xrp_ioctl_mem_import(filp,
-					      (struct xrp_import_ctrl __user *)
-					      arg);
-		break;
-	case XRP_IOCTL_MEM_EXPORT:
-		retval = xrp_ioctl_mem_export(filp,
-					      (struct xrp_export_ctrl __user *)
-					      arg);
-		break;
-	case XRP_IOCTL_MEM_ALLOC:
-		retval =
-		    xrp_ioctl_mem_alloc(filp,
-					(struct xrp_alloc_ctrl __user *)arg);
-		break;
-	case XRP_IOCTL_MEM_FREE:
-		retval =
-		    xrp_ioctl_mem_free(filp,
-				       (struct xrp_free_ctrl __user *)arg);
-		break;
-	case XRP_IOCTL_MEM_IOMMU_MAP:
-		retval = xrp_ioctl_mem_iommu_map(filp,
-						 (struct xrp_map_ctrl __user *)
-						 arg);
-		break;
-	case XRP_IOCTL_MEM_IOMMU_UNMAP:
-		retval = xrp_ioctl_mem_iommu_unmap(filp,
-						   (struct xrp_unmap_ctrl __user
-						    *)arg);
-		break;
-	case XRP_IOCTL_MEM_CPU_TO_DEVICE:
-		retval = xrp_ioctl_mem_cpu_to_device(filp,
-						     (struct
-						      xrp_sync_cpu_to_device_ctrl
-						      __user *)arg);
-		break;
-	case XRP_IOCTL_MEM_DEVICE_TO_CPU:
-		retval = xrp_ioctl_mem_device_to_cpu(filp,
-						     (struct
-						      xrp_sync_device_to_cpu_ctrl
-						      __user *)arg);
-		break;
-	default:
-		retval = -EINVAL;
-		break;
+		case XRP_IOCTL_ALLOC:
+		case XRP_IOCTL_FREE:
+			break;
+
+		case XRP_IOCTL_QUEUE:
+		case XRP_IOCTL_QUEUE_NS:
+			preprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
+			retval = xrp_ioctl_submit_sync(filp, (struct xrp_ioctl_queue __user *) arg, NULL);
+			postprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
+			break;
+
+		case XRP_IOCTL_SET_DVFS:
+			retval = xrp_ioctl_set_dvfs(filp, (struct xrp_dvfs_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_SET_POWERHINT:
+			retval = xrp_ioctl_set_powerhint(filp, (struct xrp_powerhint_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_FACEID_CMD:
+			retval = xrp_ioctl_faceid_cmd(filp, (struct xrp_faceid_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_QUERY:
+			retval = xrp_ioctl_mem_query(filp, (struct xrp_heaps_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_IMPORT:
+			retval = xrp_ioctl_mem_import(filp, (struct xrp_import_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_EXPORT:
+			retval = xrp_ioctl_mem_export(filp, (struct xrp_export_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_ALLOC:
+			retval = xrp_ioctl_mem_alloc(filp, (struct xrp_alloc_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_FREE:
+			retval = xrp_ioctl_mem_free(filp, (struct xrp_free_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_IOMMU_MAP:
+			retval = xrp_ioctl_mem_iommu_map(filp, (struct xrp_map_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_IOMMU_UNMAP:
+			retval = xrp_ioctl_mem_iommu_unmap(filp, (struct xrp_unmap_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_CPU_TO_DEVICE:
+			retval = xrp_ioctl_mem_cpu_to_device(filp, (struct xrp_sync_cpu_to_device_ctrl __user *) arg);
+			break;
+
+		case XRP_IOCTL_MEM_DEVICE_TO_CPU:
+			retval = xrp_ioctl_mem_device_to_cpu(filp, (struct xrp_sync_device_to_cpu_ctrl __user *) arg);
+			break;
+
+		default:
+			retval = -EINVAL;
+			break;
 	}
 	mutex_lock(&xvp_file->lock);
 	xvp_file->working = 0;
@@ -1843,21 +1567,19 @@ static int xrp_mmap(struct file *filp, struct vm_area_struct *vma)
 	int buf_id;
 
 	if (unlikely(filp->private_data == NULL)) {
-		pr_warn("filp private is NULL\n");
+		pr_err("filp private is NULL\n");
 		return -EINVAL;
 	}
 	xvp_file = filp->private_data;
 
 	buf_id = vma->vm_pgoff;
-	pr_debug("vma start %#lx end %#lx, buf_id %d\n", vma->vm_start,
-		 vma->vm_end, buf_id);
+	pr_debug("vma start %#lx end %#lx, buf_id %d\n", vma->vm_start, vma->vm_end, buf_id);
 
 	return sprd_vdsp_mem_map_um(xvp_file->xvp->drv_mem_ctx, buf_id, vma);
 }
 
 int sprd_vdsp_misc_bufs_init(struct xvp *xvp)
 {
-
 	char *name = NULL;
 	uint64_t size = 0;
 	uint32_t heap_type = 0;
@@ -1865,52 +1587,47 @@ int sprd_vdsp_misc_bufs_init(struct xvp *xvp)
 	struct xvp_buf *buf = NULL;
 	int ret = 0;
 
-	if (xvp == NULL) {
-		pr_err("xvp is NULL\n");
-		return -1;
-	}
-	// if (xvp->secmode)
-	// {
-	//  ret = sprd_faceid_iommu_map_buffer(xvp);
-	//  if (ret != 0)
-	//  {
-	//      pr_err("Error: sprd_iommu_map_faceid_fwbuffer failed\n");
-	//      return ret;
-	//  }
-	// }
-	// else
-	// {
-	//extra buffer NOTE:6M，so alloc when open
-	name = "xvp fw buffer";
-	size = VDSP_FIRMWIRE_SIZE;
-	heap_type = SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED;
-	attr = SPRD_VDSP_MEM_ATTR_WRITECOMBINE;
-	buf = xvp_buf_alloc(xvp, name, size, heap_type, attr);
-	if (!buf) {
-		pr_err("Error:xvp_buf_alloc faild\n");
-		goto err;
-	}
-	xvp->fw_buf = buf;
-	ret = xvp_buf_kmap(xvp, xvp->fw_buf);
-	if (ret) {
-		pr_err("Error: xvp_buf_kmap failed\n");
-		goto err_xvp_buf_kmap;
-	}
+#ifdef FACEID_VDSP_FULL_TEE
+	if (xvp->secmode) {
+		ret = sprd_faceid_iommu_map_buffer(xvp);
+		if (ret != 0) {
+			pr_err("Error: sprd_iommu_map_faceid_fwbuffer failed\n");
+			return ret;
+		}
+	} else
+#endif
+	{
+		//extra buffer NOTE:6M, so alloc when open
+		name = "xvp fw buffer";
+		size = VDSP_FIRMWIRE_SIZE;
+		heap_type = SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED;
+		attr = SPRD_VDSP_MEM_ATTR_WRITECOMBINE;
+		buf = xvp_buf_alloc(xvp, name, size, heap_type, attr);
+		if (!buf) {
+			pr_err("Error:xvp_buf_alloc faild\n");
+			goto err;
+		}
+		xvp->fw_buf = buf;
+		ret = xvp_buf_kmap(xvp, xvp->fw_buf);
+		if (ret) {
+			pr_err("Error: xvp_buf_kmap failed\n");
+			goto err_xvp_buf_kmap;
+		}
 
-	// fw buffer iommu map
-	xvp->fw_buf->isfixed=1;    // iommu map fixed offset
-	xvp->fw_buf->fixed_data=0;  // finxed offset
-	if (xvp_buf_iommu_map(xvp, xvp->fw_buf)) {	//NOTE:: fw buffer iova must offset 0
-		goto err_extrabuf_iommu_map;
+		// fw buffer iommu map
+		xvp->fw_buf->isfixed = 1;    // iommu map fixed offset
+		xvp->fw_buf->fixed_data = 0;  // finxed offset
+		if (xvp_buf_iommu_map(xvp, xvp->fw_buf)) {	//NOTE:: fw buffer iova must offset 0
+			goto err_extrabuf_iommu_map;
+		}
+		// ipc buffer  iommu map
+		if (xvp_buf_iommu_map(xvp, xvp->ipc_buf)) {
+			goto err_com_iommu_map;
+		}
+		if (vdsp_log_buf_iommu_map(xvp)) {
+			goto err_log_buf_iommu_map;
+		}
 	}
-	// ipc buffer  iommu map
-	if (xvp_buf_iommu_map(xvp, xvp->ipc_buf)) {
-		goto err_com_iommu_map;
-	}
-	if (vdsp_log_buf_iommu_map(xvp)) {
-		goto err_log_buf_iommu_map;
-	}
-	// }
 	return 0;
 err_log_buf_iommu_map:
 	xvp_buf_iommu_unmap(xvp, xvp->ipc_buf);
@@ -1927,33 +1644,31 @@ err:
 
 static int sprd_vdsp_misc_bufs_deinit(struct xvp *xvp)
 {
-	// int ret = 0;
-
-	// if (xvp->secmode)
-	// {
-	//  ret = sprd_faceid_iommu_unmap_buffer(xvp);
-	//  if (ret != 0)
-	//  {
-	//      pr_err("Error: sprd_iommu_unmap_faceid_fwbuffer failed\n");
-	//  }
-	// }
-	// else
-	// {
-	if (vdsp_log_buf_iommu_unmap(xvp)) {
-		goto err;
+#ifdef FACEID_VDSP_FULL_TEE
+	int ret = 0;
+	if (xvp->secmode) {
+		ret = sprd_faceid_iommu_unmap_buffer(xvp);
+		if (ret != 0) {
+			pr_err("Error: sprd_iommu_unmap_faceid_fwbuffer failed\n");
+		}
+	} else
+#endif
+	{
+		if (vdsp_log_buf_iommu_unmap(xvp)) {
+			goto err;
+		}
+		if (xvp_buf_iommu_unmap(xvp, xvp->ipc_buf)) {
+			goto err;
+		}
+		if (xvp_buf_iommu_unmap(xvp, xvp->fw_buf)) {
+			goto err;
+		}
+		xvp_buf_kunmap(xvp, xvp->fw_buf);
+		if (xvp_buf_free(xvp, xvp->fw_buf)) {
+			pr_err("Error:xvp_buf_free faild\n");
+			goto err;
+		}
 	}
-	if (xvp_buf_iommu_unmap(xvp, xvp->ipc_buf)) {
-		goto err;
-	}
-	if (xvp_buf_iommu_unmap(xvp, xvp->fw_buf)) {
-		goto err;
-	}
-	xvp_buf_kunmap(xvp, xvp->fw_buf);
-	if (xvp_buf_free(xvp, xvp->fw_buf)) {
-		pr_err("Error:xvp_buf_free faild\n");
-		goto err;
-	}
-	// }
 	return 0;
 err:
 	return -1;
@@ -1961,8 +1676,7 @@ err:
 
 int xvp_open(struct inode *inode, struct file *filp)
 {
-	struct xvp *xvp = container_of(filp->private_data,
-				       struct xvp, miscdev);
+	struct xvp *xvp = container_of(filp->private_data, struct xvp, miscdev);
 	struct xvp_file *xvp_file;
 	int ret = 0;
 	uint32_t opentype = 0xffffffff;
@@ -1975,14 +1689,12 @@ int xvp_open(struct inode *inode, struct file *filp)
 	tv0 = ktime_to_us(ktime_get());
 
 	pr_debug("xvp is:%p, filp:0x%lx , flags:0x%x, fmode:0x%x\n",
-		 xvp, (unsigned long)filp, filp->f_flags, filp->f_mode);
+		xvp, (unsigned long)filp, filp->f_flags, filp->f_mode);
 	mutex_lock(&xvp_global_lock);
 #ifdef FACEID_VDSP_FULL_TEE
 	if (filp->f_flags & O_APPEND) {
 		/*check cur open type */
-		if (likely
-		    ((xvp->cur_opentype == 0xffffffff)
-		     || (xvp->cur_opentype == 1))) {
+		if (likely((xvp->cur_opentype == 0xffffffff) || (xvp->cur_opentype == 1))) {
 			pr_debug("open faceid mode!!!!!\n");
 			ret = sprd_faceid_secboot_init(xvp);
 			if (unlikely(ret < 0)) {
@@ -1990,20 +1702,15 @@ int xvp_open(struct inode *inode, struct file *filp)
 			}
 			opentype = 1;
 		} else {
-			pr_err
-			    ("open faceid mode but refused by curr opentype:%u\n",
-			     xvp->cur_opentype);
+			pr_err("open faceid mode but refused by curr opentype:%u\n", xvp->cur_opentype);
 			ret = -EINVAL;
 			goto err_unlock;
 		}
 	} else
 #endif
 	{
-		if (unlikely
-		    ((xvp->cur_opentype != 0xffffffff)
-		     && (xvp->cur_opentype != 0))) {
-			pr_err("open failed refused by curr opentype:%u\n",
-			       xvp->cur_opentype);
+		if (unlikely((xvp->cur_opentype != 0xffffffff) && (xvp->cur_opentype != 0))) {
+			pr_err("open failed refused by curr opentype:%u\n", xvp->cur_opentype);
 			ret = -EINVAL;
 			goto err_unlock;
 		}
@@ -2014,12 +1721,10 @@ int xvp_open(struct inode *inode, struct file *filp)
 			goto err_unlock;
 		}
 #endif
-
-		opentype = 0;
 #ifdef MYL5
 		vdsp_ipi_desc->ops->irq_register(0, xrp_hw_irq_handler_ex, xvp);
 #endif
-
+		opentype = 0;
 	}
 	xvp_file = devm_kzalloc(xvp->dev, sizeof(*xvp_file), GFP_KERNEL);
 	if (unlikely(!xvp_file)) {
@@ -2074,7 +1779,7 @@ int xvp_open(struct inode *inode, struct file *filp)
 		}
 #endif
 
-#if MYL5
+#ifdef MYL5
 		xvp_set_qos(xvp);
 #endif
 		ret = sprd_vdsp_boot_firmware(xvp);
@@ -2096,14 +1801,12 @@ int xvp_open(struct inode *inode, struct file *filp)
 	}
 	tv2 = ktime_to_us(ktime_get());
 	xvp_file->xvp = xvp;
-	spin_lock_init(&xvp_file->busy_list_lock);
 	filp->private_data = xvp_file;
 	xrp_add_known_file(filp);
 	tv3 = ktime_to_us(ktime_get());
 	/*total - map */
-	pr_debug
-	    ("[TIME]VDSP Open total(xvp->sync done):%lld(us),map firmware:%lld(us),ret:%d\n",
-	     tv3 - tv0, tv2 - tv1, ret);
+	pr_debug("[TIME]VDSP Open total(xvp->sync done):%lld(us),map firmware:%lld(us),ret:%d\n",
+		tv3 - tv0, tv2 - tv1, ret);
 	xvp->open_count++;
 	xvp->cur_opentype = opentype;
 	mutex_unlock(&xvp_global_lock);
@@ -2135,7 +1838,7 @@ err_unlock:
 		sprd_faceid_secboot_deinit(xvp);
 	}
 #endif
-	mutex_unlock(&xvp_global_lock /*&xvp->xvp_lock */ );
+	mutex_unlock(&xvp_global_lock);
 	return ret;
 }
 
@@ -2160,8 +1863,7 @@ static int xvp_close(struct inode *inode, struct file *filp)
 #endif
 	xvp_file->xvp->open_count--;
 
-	pr_debug("xvp_close open_count is:%d, filp:%lx\n",
-		 xvp_file->xvp->open_count, (unsigned long)filp);
+	pr_debug("xvp_close open_count is:%d, filp:%lx\n", xvp_file->xvp->open_count, (unsigned long)filp);
 	// debug_check_xvp_buf_leak(xvp_file); //for DEBUG
 	if (0 == xvp_file->xvp->open_count) {
 #ifdef MYN6
@@ -2289,7 +1991,7 @@ static int sprd_vdsp_init_buffer(struct platform_device *pdev, struct xvp *xvp)
 static int sprd_vdsp_free_buffer(struct xvp *xvp)
 {
 	xvp_buf_kunmap(xvp, xvp->ipc_buf);
-	if(xvp_buf_free(xvp, xvp->ipc_buf)<0){
+	if (xvp_buf_free(xvp, xvp->ipc_buf) < 0) {
 		pr_err("Error: xvp_buf_free failed\n");
 		return -1;
 	}
@@ -2299,76 +2001,58 @@ static int sprd_vdsp_free_buffer(struct xvp *xvp)
 	return 0;
 }
 
-static int sprd_vdsp_parse_soft_dt(struct xvp *xvp,
-				   struct platform_device *pdev)
+static int sprd_vdsp_parse_soft_dt(struct xvp *xvp, struct platform_device *pdev)
 {
 	int i, ret = 0;
 
-	ret =
-	    device_property_read_u32_array(xvp->dev, "queue-priority", NULL, 0);
+	ret = device_property_read_u32_array(xvp->dev, "queue-priority", NULL, 0);
 	if (ret > 0) {
 		xvp->n_queues = ret;
-		xvp->queue_priority = devm_kmalloc(&pdev->dev,
-						   ret * sizeof(u32),
-						   GFP_KERNEL);
+		xvp->queue_priority = devm_kmalloc(&pdev->dev, ret * sizeof(u32), GFP_KERNEL);
 		if (xvp->queue_priority == NULL) {
 			pr_err("failed to kmalloc queue priority \n");
-			ret = -EFAULT;
-			return ret;
+			return -EFAULT;
 		}
 
-		ret = device_property_read_u32_array(xvp->dev,
-						     "queue-priority",
-						     xvp->queue_priority,
-						     xvp->n_queues);
+		ret = device_property_read_u32_array(xvp->dev, "queue-priority",
+			xvp->queue_priority, xvp->n_queues);
 		if (ret < 0) {
 			pr_err("failed to read queue priority \n");
-			ret = -EFAULT;
-			return ret;
+			return -EFAULT;
 		}
 
-		pr_debug("multiqueue (%d) configuration, queue priorities:\n",
-			 xvp->n_queues);
+		pr_debug("multiqueue (%d) configuration, queue priorities:\n", xvp->n_queues);
 		for (i = 0; i < xvp->n_queues; ++i)
-			pr_debug("  %d\n", xvp->queue_priority[i]);
+			pr_debug("	%d\n", xvp->queue_priority[i]);
 	} else {
 		xvp->n_queues = 1;
 	}
 
-	xvp->queue = devm_kmalloc(&pdev->dev,
-				  xvp->n_queues * sizeof(*xvp->queue),
-				  GFP_KERNEL);
-	xvp->queue_ordered =
-	    devm_kmalloc(&pdev->dev,
-			 xvp->n_queues * sizeof(*xvp->queue_ordered),
-			 GFP_KERNEL);
+	xvp->queue = devm_kmalloc(&pdev->dev, xvp->n_queues * sizeof(*xvp->queue), GFP_KERNEL);
+	xvp->queue_ordered = devm_kmalloc(&pdev->dev, xvp->n_queues * sizeof(*xvp->queue_ordered),
+		GFP_KERNEL);
 	if (xvp->queue == NULL || xvp->queue_ordered == NULL) {
 		pr_err("failed to kmalloc queue ordered \n");
-		ret = -EFAULT;
-		return ret;
+		return -EFAULT;
 	}
 
 	for (i = 0; i < xvp->n_queues; ++i) {
 		mutex_init(&xvp->queue[i].lock);
-		xvp->queue[i].comm =
-		    xvp_buf_get_vaddr(xvp->ipc_buf) + XRP_DSP_CMD_STRIDE * i;
+		xvp->queue[i].comm = xvp_buf_get_vaddr(xvp->ipc_buf) + XRP_DSP_CMD_STRIDE * i;
 		init_completion(&xvp->queue[i].completion);
 		if (xvp->queue_priority)
 			xvp->queue[i].priority = xvp->queue_priority[i];
 		xvp->queue_ordered[i] = xvp->queue + i;
 		pr_debug("queue i:%d, comm:0x%x\n", i, xvp->queue[i].comm);
 	}
-	sort(xvp->queue_ordered, xvp->n_queues,
-	     sizeof(*xvp->queue_ordered), compare_queue_priority, NULL);
-#ifdef MYL5
-	ret =
-	    device_property_read_string(xvp->dev, "firmware-name",
-					&xvp->firmware_name);
+	sort(xvp->queue_ordered, xvp->n_queues, sizeof(*xvp->queue_ordered),
+		compare_queue_priority, NULL);
+
+	ret = device_property_read_string(xvp->dev, "firmware-name", &xvp->firmware_name);
 	if (unlikely(ret == -EINVAL || ret == -ENODATA))
 		pr_err("no firmware-name property, not loading firmware\n");
 	else if (unlikely(ret < 0))
 		pr_err("invalid firmware name (%ld)\n", ret);
-#endif
 	return ret;
 }
 
@@ -2383,15 +2067,14 @@ static int vdsp_dma_set_mask_and_coherent(struct device *dev)
 	} else {
 		pr_debug("vdsp: set dma mask as 64bit\n");
 	}
-	pr_debug("%s: dma_mask:%#llx\n", __func__, *dev->dma_mask);
+	pr_debug("dma_mask:%#llx\n", *dev->dma_mask);
 	return 0;
 }
 
 static long vdsp_init_common(struct platform_device *pdev,
-			     enum vdsp_init_flags init_flags,
-			     const struct xrp_hw_ops *hw_ops, void *hw_arg,
-			     int (*vdsp_init_bufs) (struct platform_device *
-						    pdev, struct xvp * xvp))
+	enum vdsp_init_flags init_flags,
+	const struct xrp_hw_ops *hw_ops, void *hw_arg,
+	int (*vdsp_init_bufs) (struct platform_device *pdev, struct xvp *xvp))
 {
 	long ret;
 	char nodename[sizeof("vdsp") + 3 * sizeof(int)];
@@ -2404,29 +2087,25 @@ static long vdsp_init_common(struct platform_device *pdev,
 		ret = -ENOMEM;
 		goto err;
 	}
+
 	//  dma_mask_set
 	vdsp_dma_set_mask_and_coherent(&pdev->dev);
 	// add iommus init --- start
-	xvp->iommus =
-	    devm_kzalloc(&pdev->dev, sizeof(struct sprd_vdsp_iommus),
-			 GFP_KERNEL);
+	xvp->iommus = devm_kzalloc(&pdev->dev, sizeof(struct sprd_vdsp_iommus), GFP_KERNEL);
 	if (xvp->iommus == NULL) {
 		pr_err("Error: fail to kzalloc\n");
 		ret = -ENOMEM;
 		goto err_iommus_devm_kzalloc;
 	}
 	xvp->iommus->ops = &iommus_ops;
-	ret =
-	    xvp->iommus->ops->init(xvp->iommus, pdev->dev.of_node, &pdev->dev);
+	ret = xvp->iommus->ops->init(xvp->iommus, pdev->dev.of_node, &pdev->dev);
 	if (ret) {
 		pr_err("Error: xvp iommus init failed\n");
 		goto err_iommus_init;
 	}
-	for (index = 0; index < SPRD_VDSP_IOMMU_MAX; index++)	//debug 使用
-	{
-		printk("----------------------------------------\n");
+
+	for (index = 0; index < SPRD_VDSP_IOMMU_MAX; index++) {
 		debug_print_iommu_dev(xvp->iommus->iommu_devs[index]);
-		printk("----------------------------------------\n");
 	}
 	// add iommus init --- end
 	// mem init  --- start
@@ -2438,7 +2117,8 @@ static long vdsp_init_common(struct platform_device *pdev,
 	//mem init ---end
 
 	// iova_reserve_init --- start
-	ret=xvp->iommus->ops->reserve_init(xvp->iommus,iova_reserve_data,ARRAY_SIZE(iova_reserve_data));
+	ret = xvp->iommus->ops->reserve_init(xvp->iommus, iova_reserve_data,
+		ARRAY_SIZE(iova_reserve_data));
 	if (ret) {
 		pr_err("Error: iova_reserve_init failed\n");
 		goto err_iova_reserve_init;
@@ -2448,7 +2128,6 @@ static long vdsp_init_common(struct platform_device *pdev,
 	mutex_init(&(xvp->load_lib.libload_mutex));
 	mutex_init(&(xvp->dvfs_info.dvfs_lock));
 	mutex_init(&xvp_global_lock);
-	mutex_init(&xvp->xvp_lock);
 	init_files_know_info(xvp);
 	xvp->open_count = 0;
 	xvp->dvfs_info.dvfs_init = 0;
@@ -2476,13 +2155,16 @@ static long vdsp_init_common(struct platform_device *pdev,
 		goto err_parse_soft_dt;
 	}
 	/*debug fs */
-	xrp_para.log_mode = 0;
-	xrp_para.log_level = 0;
-	ret = vdsp_debugfs_init(&xrp_para);
-	if (unlikely(ret < 0))
-		pr_err("vdsp log debugfs fail\n");
+	ret = vdsp_debugfs_init();
 	if (unlikely(vdsp_log_init(xvp) != 0))
 		pr_err("vdsp log init fail. \n");
+
+#ifdef MYN6
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+	pm_runtime_set_active(xvp->dev);
+	pm_runtime_enable(xvp->dev);
+#endif
+#endif
 #ifdef MYL5
 	pm_runtime_enable(xvp->dev);
 	if (!pm_runtime_enabled(xvp->dev)) {
@@ -2498,14 +2180,13 @@ static long vdsp_init_common(struct platform_device *pdev,
 	}
 	xvp->nodeid = nodeid;
 	sprintf(nodename, "vdsp%u", nodeid);
-	//sprintf(nodename, "vdsp1");
 
 	xvp->miscdev = (struct miscdevice) {
-	.minor = MISC_DYNAMIC_MINOR,.name =
-		    devm_kstrdup(&pdev->dev, nodename,
-					 GFP_KERNEL),.nodename =
-		    devm_kstrdup(&pdev->dev, nodename,
-					 GFP_KERNEL),.fops = &xvp_fops,};
+		.minor = MISC_DYNAMIC_MINOR,
+		.name = devm_kstrdup(&pdev->dev, nodename, GFP_KERNEL),
+		.nodename = devm_kstrdup(&pdev->dev, nodename, GFP_KERNEL),
+		.fops = &xvp_fops,
+	};
 
 	ret = misc_register(&xvp->miscdev);
 	if (unlikely(ret < 0))
@@ -2520,35 +2201,42 @@ err_misc_register:
 err_ida_simple_get:
 	pr_err("Error: err_ida_simple_get \n");
 	vdsp_debugfs_exit();
-err_pm_disable:
+#ifdef MYL5
+err_pm_disable :
 	pm_runtime_disable(xvp->dev);
+#endif
+
 err_parse_soft_dt:
 	pr_err("Error: err_parse_soft_dt \n");
 	sprd_vdsp_free_buffer(xvp);
+
 err_vdsp_init_bufs:
 	pr_err("Error: err_vdsp_init_bufs \n");
+
 err_iova_reserve_init:
 	sprd_vdsp_mem_xvp_release(xvp->mem_dev);
+
 err_mem_xvp_init:
 	pr_err("Error: err_mem_xvp_init \n");
 	xvp->iommus->ops->release(xvp->iommus);
+
 err_iommus_init:
 	pr_err("Error: err_iommus_init \n");
 	devm_kfree(&pdev->dev, xvp->iommus);
+
 err_iommus_devm_kzalloc:
 	pr_err("Error: err_iommus_devm_kzalloc \n");
 	devm_kfree(&pdev->dev, xvp);
+
 err:
 	pr_err("Error:ret = %ld\n", ret);
 	return ret;
 }
 
-long sprd_vdsp_init(struct platform_device *pdev,
-		    enum vdsp_init_flags flags,
-		    const struct xrp_hw_ops *hw_ops, void *hw_arg)
+long sprd_vdsp_init(struct platform_device *pdev, enum vdsp_init_flags flags,
+	const struct xrp_hw_ops *hw_ops, void *hw_arg)
 {
-	return vdsp_init_common(pdev, flags, hw_ops, hw_arg,
-				sprd_vdsp_init_buffer);
+	return vdsp_init_common(pdev, flags, hw_ops, hw_arg, sprd_vdsp_init_buffer);
 }
 
 EXPORT_SYMBOL(sprd_vdsp_init);
@@ -2556,6 +2244,12 @@ EXPORT_SYMBOL(sprd_vdsp_init);
 int sprd_vdsp_deinit(struct platform_device *pdev)
 {
 	struct xvp *xvp = platform_get_drvdata(pdev);
+
+#ifdef MYN6
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+	pm_runtime_disable(xvp->dev);
+#endif
+#endif
 
 #ifdef MYL5
 	pm_runtime_disable(xvp->dev);

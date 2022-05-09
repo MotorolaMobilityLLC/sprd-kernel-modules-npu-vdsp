@@ -53,17 +53,15 @@ extern "C" {
 
 #endif
 
-	typedef xt_ptr(*memcpy_func) (xt_ptr dest, const void *src,
-				      unsigned int n);
+	typedef xt_ptr(*memcpy_func) (xt_ptr dest, const void *src, unsigned int n);
 	typedef xt_ptr(*memset_func) (xt_ptr s, int c, unsigned int n);
 
 	/*  Memory copy and mem set callbacks with context pointer.
-	 */
+	*/
 
-	typedef xt_ptr(*memcpy_func_ex) (xt_ptr dest, const void *src,
-					 unsigned int n, void *user);
-	typedef xt_ptr(*memset_func_ex) (xt_ptr s, int c, unsigned int n,
-					 void *user);
+	typedef xt_ptr(*memcpy_func_ex) (xt_ptr dest, const void *src, unsigned int n, void *user);
+	typedef xt_ptr(*memset_func_ex) (xt_ptr s, int c, unsigned int n, void *user);
+
 
 	/* Error handling */
 	enum {
@@ -101,11 +99,11 @@ extern "C" {
 
 #ifdef __XTENSA__
 
-	void *xtlib_load_overlay(xtlib_packaged_library * library);
+	void *xtlib_load_overlay (xtlib_packaged_library *library);
 
-	void *xtlib_load_overlay_custom_fn(xtlib_packaged_library * library,
-					   memcpy_func mcpy_fn,
-					   memset_func mset_fn);
+	void *xtlib_load_overlay_custom_fn (xtlib_packaged_library *library,
+		memcpy_func mcpy_fn,
+		memset_func mset_fn);
 
 	/* For use with the newer API only */
 	typedef struct xtlib_ovl_info {
@@ -139,15 +137,15 @@ extern "C" {
 	   should be checked by calling xtlib_error().
 	 */
 
-	void *xtlib_load_overlay_ext(xtlib_packaged_library * library,
-				     xtlib_ovl_info * info);
+	void *xtlib_load_overlay_ext (xtlib_packaged_library *library,
+		xtlib_ovl_info *info);
 
-	void *xtlib_load_overlay_ext_custom_fn(xtlib_packaged_library * library,
-					       xtlib_ovl_info * info,
-					       memcpy_func mcpy_fn,
-					       memset_func mset_fn);
+	void *xtlib_load_overlay_ext_custom_fn (xtlib_packaged_library *library,
+		xtlib_ovl_info *info,
+		memcpy_func mcpy_fn,
+		memset_func mset_fn);
 
-	void xtlib_unload_overlay_ext(xtlib_ovl_info * info);
+	void xtlib_unload_overlay_ext (xtlib_ovl_info *info);
 
 #endif
 
@@ -156,17 +154,17 @@ extern "C" {
 	   failed.
 	 */
 
-	unsigned int xtlib_pi_library_size(xtlib_packaged_library * library);
+	unsigned int xtlib_pi_library_size(xtlib_packaged_library *library);
 
 	/* xtlib_split_pi_library_size gives code and data memory sizes.
 	   It expecting library packaged for loading code and data separately.
 	   Returns XTLIB_XXX status.
 	 */
 
-	unsigned int xtlib_split_pi_library_size(xtlib_packaged_library *
-						 library,
-						 unsigned int *code_size,
-						 unsigned int *data_size);
+	unsigned int xtlib_split_pi_library_size(xtlib_packaged_library *library,
+		unsigned int *code_size,
+		unsigned int *data_size);
+
 
 	/* To actually load the library on Xtensa processor:
 
@@ -197,53 +195,50 @@ extern "C" {
 	 */
 
 	typedef struct xtlib_pil_info {
-		xt_ptr dst_addr;
+		xt_ptr  dst_addr;
 		xt_uint src_offs;
-		xt_ptr dst_data_addr;
+		xt_ptr  dst_data_addr;
 		xt_uint src_data_offs;
-		xt_ptr start_sym;
-		xt_ptr text_addr;
-		xt_ptr init;
-		xt_ptr fini;
-		xt_ptr rel;
-		xt_int rela_count;
-		xt_ptr hash;
-		xt_ptr symtab;
-		xt_ptr strtab;
-		xt_int align;
+		xt_ptr  start_sym;
+		xt_ptr  text_addr;
+		xt_ptr  init;
+		xt_ptr  fini;
+		xt_ptr  rel;
+		xt_int  rela_count;
+		xt_ptr  hash;
+		xt_ptr  symtab;
+		xt_ptr  strtab;
+		xt_int  align;
 	} xtlib_pil_info;
 
 #ifdef __XTENSA__
 
-	void *xtlib_load_pi_library(xtlib_packaged_library * library,
-				    void *destination_address,
-				    xtlib_pil_info * lib_info);
+	void *xtlib_load_pi_library (xtlib_packaged_library *library,
+		void *destination_address,
+		xtlib_pil_info *lib_info);
 
-	void *xtlib_load_pi_library_custom_fn(xtlib_packaged_library * library,
-					      void *destination_address,
-					      xtlib_pil_info * lib_info,
-					      memcpy_func mcpy_fn,
-					      memset_func mset_fn);
+	void *xtlib_load_pi_library_custom_fn (xtlib_packaged_library *library,
+		void *destination_address,
+		xtlib_pil_info *lib_info,
+		memcpy_func mcpy_fn,
+		memset_func mset_fn);
 
-	void *xtlib_load_split_pi_library(xtlib_packaged_library * library,
-					  void *destination_code_address,
-					  void *destination_data_address,
-					  xtlib_pil_info * lib_info);
+	void *xtlib_load_split_pi_library (xtlib_packaged_library *library,
+		void *destination_code_address,
+		void *destination_data_address,
+		xtlib_pil_info *lib_info);
 
-	void *xtlib_load_split_pi_library_custom_fn(xtlib_packaged_library *
-						    library,
-						    void
-						    *destination_code_address,
-						    void
-						    *destination_data_address,
-						    xtlib_pil_info * lib_info,
-						    memcpy_func mcpy_fn,
-						    memset_func mset_fn);
+	void *xtlib_load_split_pi_library_custom_fn (xtlib_packaged_library *library,
+		void *destination_code_address,
+		void *destination_data_address,
+		xtlib_pil_info *lib_info,
+		memcpy_func mcpy_fn,
+		memset_func mset_fn);
 
-	void xtlib_unload_pi_library(xtlib_pil_info * lib_info);
+	void xtlib_unload_pi_library (xtlib_pil_info *lib_info);
 
-	void *xtlib_lookup_pi_library_symbol(xtlib_pil_info * lib_info,
-					     const char *symbolname);
+	void *xtlib_lookup_pi_library_symbol (xtlib_pil_info *lib_info,
+		const char *symbolname);
 
 #endif
 
@@ -295,28 +290,29 @@ extern "C" {
 #ifdef __XTENSA__
 
 	/* xtlib_target_init_pi_library initializing library loaded by host processor */
-	void *xtlib_target_init_pi_library(xtlib_pil_info * lib_info);
+	void *xtlib_target_init_pi_library (xtlib_pil_info *lib_info);
 
 #endif
 
-	xt_ptr xtlib_host_load_overlay(xtlib_packaged_library * library,
-				       memcpy_func_ex mcpy_fn,
-				       memset_func_ex mset_fn, void *user);
+	xt_ptr xtlib_host_load_overlay(xtlib_packaged_library *library,
+		memcpy_func_ex mcpy_fn,
+		memset_func_ex mset_fn,
+		void *user);
 
-	xt_ptr xtlib_host_load_pi_library(xtlib_packaged_library * library,
-					  xt_ptr destination_address,
-					  xtlib_pil_info * lib_info,
-					  memcpy_func_ex mcpy_fn,
-					  memset_func_ex mset_fn, void *user);
+	xt_ptr xtlib_host_load_pi_library(xtlib_packaged_library *library,
+		xt_ptr destination_address,
+		xtlib_pil_info *lib_info,
+		memcpy_func_ex mcpy_fn,
+		memset_func_ex mset_fn,
+		void *user);
 
-	xt_ptr xtlib_host_load_split_pi_library(xtlib_packaged_library *
-						library,
-						xt_ptr destination_code_address,
-						xt_ptr destination_data_address,
-						xtlib_pil_info * lib_info,
-						memcpy_func_ex mcpy_fn,
-						memset_func_ex mset_fn,
-						void *user);
+	xt_ptr xtlib_host_load_split_pi_library(xtlib_packaged_library *library,
+		xt_ptr destination_code_address,
+		xt_ptr destination_data_address,
+		xtlib_pil_info *lib_info,
+		memcpy_func_ex mcpy_fn,
+		memset_func_ex mset_fn,
+		void *user);
 
 #ifdef __cplusplus
 }

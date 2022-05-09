@@ -31,11 +31,11 @@
 #define pr_fmt(fmt) "sprd-vdsp: faceid %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
-static struct vdsp_ca_ctrl vdsp_ca = { TIPC_CHANNEL_DISCONNECTED, 0, };
-static struct bootcp_ca_ctrl bootcp_ca = { TIPC_CHANNEL_DISCONNECTED, 0, };
+static struct vdsp_ca_ctrl vdsp_ca = {TIPC_CHANNEL_DISCONNECTED, 0, };
+static struct bootcp_ca_ctrl bootcp_ca = {TIPC_CHANNEL_DISCONNECTED, 0, };
 
 struct tipc_msg_buf *vdsp_ca_handle_msg(void *data, struct tipc_msg_buf *rxbuf,
-					u16 flags)
+	u16 flags)
 {
 	struct vdsp_ca_ctrl *ca = data;
 	struct tipc_msg_buf *newbuf = rxbuf;
@@ -151,10 +151,8 @@ bool vdsp_ca_connect(void)
 	}
 
 	if (!wait_event_interruptible_timeout(ca->readq,
-					      (ca->chanel_state ==
-					       TIPC_CHANNEL_CONNECTED),
-					      msecs_to_jiffies
-					      (CA_CONN_TIMEOUT))) {
+		(ca->chanel_state == TIPC_CHANNEL_CONNECTED),
+		msecs_to_jiffies(CA_CONN_TIMEOUT))) {
 		pr_err("vdsp wait read response time out!\n");
 		ret = false;
 	}
@@ -200,8 +198,7 @@ bool vdsp_ca_write(void *buf, size_t len)
 
 	avail = mb_avail_space(txbuf);
 	if (len > avail) {
-		pr_err(" no buffer space, len = %d, avail = %d\n",
-		       (int)len, (int)avail);
+		pr_err(" no buffer space, len = %d, avail = %d\n", ( int) len, ( int) avail);
 		ret = -EMSGSIZE;
 		goto err;
 	}
@@ -225,9 +222,8 @@ ssize_t vdsp_ca_read(void *buf, size_t max_len)
 	struct vdsp_ca_ctrl *ca = &vdsp_ca;
 
 	if (!wait_event_interruptible_timeout(ca->readq,
-					      !list_empty(&ca->rx_msg_queue),
-					      msecs_to_jiffies
-					      (CA_READ_TIMEOUT))) {
+		!list_empty(&ca->rx_msg_queue),
+		msecs_to_jiffies(CA_READ_TIMEOUT))) {
 		pr_err("wait read response time out!\n");
 		return -ETIMEDOUT;
 	}
@@ -289,9 +285,7 @@ bool vdsp_ca_wait_ack(uint32_t cmd)
 	}
 
 	if (ack_msg.cmd != (cmd | TA_RESP_BIT)) {
-		pr_err
-		    ("remote ack_msg.cmd failed, ack_msg.cmd=0x%x, cmd=0x%x\n",
-		     ack_msg.cmd, cmd);
+		pr_err("remote ack_msg.cmd failed, ack_msg.cmd=0x%x, cmd=0x%x\n", ack_msg.cmd, cmd);
 		return false;
 	}
 
@@ -327,50 +321,34 @@ bool vdsp_send_msg(uint32_t cmd, void *msg, uint32_t msg_size)
 
 	mutex_unlock(&ca->wlock);
 
-	//pr_debug("vdsp tee ret =%d\n", ret);
+	//pr_debug("cmd %d, vdsp tee ret =%d\n", cmd, ret);
 
 	return ret;
 }
 
-bool vdsp_load_fw(struct vdsp_load_msg * load_msg)
+bool vdsp_load_fw(struct vdsp_load_msg *load_msg)
 {
-	//pr_debug("vdsp_type=%d, work_mode=%d",
-	//          load_msg->vdsp_type, load_msg->msg_cmd);
-
-	return vdsp_send_msg(load_msg->msg_cmd, load_msg,
-			     sizeof(struct vdsp_load_msg));
+	return vdsp_send_msg(load_msg->msg_cmd, load_msg, sizeof(struct vdsp_load_msg));
 }
 
 bool vdsp_sync_sec(struct vdsp_sync_msg *sync_msg)
 {
-	//pr_debug("vdsp_type=%d, work_mode=%d",
-	//          sync_msg->vdsp_type, sync_msg->msg_cmd);
-
-	return vdsp_send_msg(sync_msg->msg_cmd, sync_msg,
-			     sizeof(struct vdsp_sync_msg));
+	return vdsp_send_msg(sync_msg->msg_cmd, sync_msg, sizeof(struct vdsp_sync_msg));
 }
 
 bool vdsp_run_vdsp(struct vdsp_run_msg *run_msg)
 {
-	//pr_debug("vdsp_type=%d, work_mode=%d",
-	//          run_msg->vdsp_type, run_msg->msg_cmd);
-
-	return vdsp_send_msg(run_msg->msg_cmd, run_msg,
-			     sizeof(struct vdsp_run_msg));
+	return vdsp_send_msg(run_msg->msg_cmd, run_msg, sizeof(struct vdsp_run_msg));
 }
 
 bool vdsp_set_sec_mode(struct vdsp_msg *vdsp_msg)
 {
-	//pr_debug("vdsp_type=%d, work_mode=%d",
-	//          vdsp_msg->vdsp_type, vdsp_msg->msg_cmd);
-
-	return vdsp_send_msg(vdsp_msg->msg_cmd, vdsp_msg,
-			     sizeof(struct vdsp_msg));
+	return vdsp_send_msg(vdsp_msg->msg_cmd, vdsp_msg, sizeof(struct vdsp_msg));
 }
 
 /*============================================================================*/
-struct tipc_msg_buf *bootcp_ca_handle_msg(void *data,
-					  struct tipc_msg_buf *rxbuf, u16 flags)
+struct tipc_msg_buf *bootcp_ca_handle_msg(void *data, struct tipc_msg_buf *rxbuf,
+	u16 flags)
 {
 	struct bootcp_ca_ctrl *ca = data;
 	struct tipc_msg_buf *newbuf = rxbuf;
@@ -380,9 +358,7 @@ struct tipc_msg_buf *bootcp_ca_handle_msg(void *data,
 		/* get new buffer */
 		newbuf = tipc_chan_get_rxbuf(ca->chan);
 		if (newbuf) {
-			pr_debug
-			    ("bootcp received new data, rxbuf %p, newbuf %p\n",
-			     rxbuf, newbuf);
+			pr_debug("bootcp received new data, rxbuf %p, newbuf %p\n", rxbuf, newbuf);
 			/* queue an old buffer and return a new one */
 			list_add_tail(&rxbuf->node, &ca->rx_msg_queue);
 			wake_up_interruptible(&ca->readq);
@@ -471,10 +447,8 @@ bool trusty_kernelbootcp_connect(void)
 	}
 
 	if (!wait_event_interruptible_timeout(ca->readq,
-					      (ca->chanel_state ==
-					       TIPC_CHANNEL_CONNECTED),
-					      msecs_to_jiffies
-					      (CA_CONN_TIMEOUT))) {
+		(ca->chanel_state == TIPC_CHANNEL_CONNECTED),
+		msecs_to_jiffies(CA_CONN_TIMEOUT))) {
 		pr_err("bootcp wait read response time out!\n");
 		ret = false;
 	}
@@ -523,8 +497,7 @@ bool bootcp_ca_write(void *buf, size_t len)
 
 	avail = mb_avail_space(txbuf);
 	if (len > avail) {
-		pr_err("bootcp no buffer space, len = %d, avail = %d\n",
-		       (int)len, (int)avail);
+		pr_err("bootcp no buffer space, len = %d, avail = %d\n", ( int) len, ( int) avail);
 		ret = -EMSGSIZE;
 		goto err;
 	}
@@ -548,9 +521,8 @@ ssize_t bootcp_ca_read(void *buf, size_t max_len)
 	struct bootcp_ca_ctrl *ca = &bootcp_ca;
 
 	if (!wait_event_interruptible_timeout(ca->readq,
-					      !list_empty(&ca->rx_msg_queue),
-					      msecs_to_jiffies
-					      (CA_READ_TIMEOUT))) {
+		!list_empty(&ca->rx_msg_queue),
+		msecs_to_jiffies(CA_READ_TIMEOUT))) {
 		pr_err("bootcp wait read response time out!\n");
 		return -ETIMEDOUT;
 	}
@@ -587,16 +559,15 @@ bool bootcp_ca_wait_ack(uint32_t cmd)
 	}
 
 	if (ack_msg.cmd != (cmd | KERNELBOOTCP_BIT)) {
-		pr_err
-		    ("bootcp remote ack_msg.cmd failed, ack_msg.cmd=0x%x, cmd=0x%x\n",
-		     ack_msg.cmd, cmd);
+		pr_err("bootcp remote ack_msg.cmd failed, ack_msg.cmd=0x%x, cmd=0x%x\n",
+			ack_msg.cmd, cmd);
 		return false;
 	}
 
 	return ret;
 }
 
-bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V * table)
+bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V *table)
 {
 	bool ret = true;
 	size_t msg_size = 0;
@@ -610,8 +581,7 @@ bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V * table)
 
 	mutex_lock(&ca->wlock);
 
-	msg_size =
-	    sizeof(KBC_LOAD_TABLE_V) + sizeof(struct kernelbootcp_message);
+	msg_size = sizeof(KBC_LOAD_TABLE_V) + sizeof(struct kernelbootcp_message);
 	msg = kmalloc(msg_size, GFP_KERNEL);
 	msg->cmd = KERNEL_BOOTCP_UNLOCK_DDR_VDSP;
 
@@ -635,7 +605,7 @@ bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V * table)
 	return ret;
 }
 
-bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V * table)
+bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V *table)
 {
 	bool ret = true;
 	size_t msg_size = 0;
@@ -649,8 +619,7 @@ bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V * table)
 
 	mutex_lock(&ca->wlock);
 
-	msg_size =
-	    sizeof(KBC_LOAD_TABLE_V) + sizeof(struct kernelbootcp_message);
+	msg_size = sizeof(KBC_LOAD_TABLE_V) + sizeof(struct kernelbootcp_message);
 	msg = kmalloc(msg_size, GFP_KERNEL);
 	msg->cmd = KERNEL_BOOTCP_VERIFY_VDSP;
 

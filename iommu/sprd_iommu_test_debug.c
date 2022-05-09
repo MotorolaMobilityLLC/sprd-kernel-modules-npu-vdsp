@@ -16,12 +16,13 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "sprd-vdsp: [mem_debug]: %d %s: "\
-                fmt, current->pid, __func__
+#define pr_fmt(fmt) "sprd-vdsp: [mem_debug]: %d %d %s: "\
+                fmt, current->pid, __LINE__, __func__
 
 //print struct iommu_dev
 void debug_print_iommu_dev(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
+	pr_debug("----------------------------------------\n");
 	pr_debug(" id             :%d \n", iommu_dev->id);
 	pr_debug(" name           :%s \n", iommu_dev->name);
 	pr_debug(" iommu_version  :%d \n", iommu_dev->iommu_version);
@@ -30,25 +31,20 @@ void debug_print_iommu_dev(struct sprd_vdsp_iommu_dev *iommu_dev)
 	pr_debug(" pgt_base       :0x%lx \n", iommu_dev->pgt_base);
 	pr_debug(" pgt_size       :0x%x \n", iommu_dev->pgt_size);
 	pr_debug(" ctrl_reg       :0x%lx \n", iommu_dev->ctrl_reg);
-
 	pr_debug(" pagt_base_ddr  :0x%lx \n", iommu_dev->pagt_base_ddr);
 	pr_debug(" pagt_base_virt :0x%lx \n", iommu_dev->pagt_base_virt);
 	pr_debug(" pagt_ddr_size  :0x%lx \n", iommu_dev->pagt_ddr_size);
-
-	pr_debug(" iova_dev       :0x%lx \n",
-		 (unsigned long)iommu_dev->iova_dev);
+	pr_debug(" iova_dev       :0x%lx \n", (unsigned long)iommu_dev->iova_dev);
+	pr_debug("----------------------------------------\n");
 }
 
 int iommu_dump_pagetable(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
-
-	// struct sprd_vdsp_iommu_dev * iommu_dev =NULL;
 	unsigned long *addr = 0;
 	unsigned long index = 0;
 	const int field = sizeof(unsigned long) * 2;
 	unsigned int unused_num = 0;
 
-	// iommu_dev=iommus->iommu_devs[idx];
 	if (unlikely(iommu_dev == NULL)) {
 		pr_err("Error: iommu_dev is NULL!\n");
 		return -EINVAL;
@@ -56,13 +52,11 @@ int iommu_dump_pagetable(struct sprd_vdsp_iommu_dev *iommu_dev)
 	pr_debug("---------------start\n");
 	pr_debug("pagetable addr =0x%lx\n", iommu_dev->pagt_base_virt);
 	pr_debug("pagetable size =0x%lx\n", iommu_dev->pagt_ddr_size);
-	// for ()
 	addr = (unsigned long *)iommu_dev->pagt_base_virt;
 	for (index = 0; index < iommu_dev->pagt_ddr_size;) {
-		// for (index=0;index<sizeof(*addr)*10;){
 		if (~(*addr) != 0) {
-			pr_debug("[index:%d][addr:0x%lx]:0x%0*lx", index,
-				 (unsigned long)addr, field, *(addr));
+			pr_debug("[index:%d][addr:0x%lx]:0x%0*lx\n",
+				index, (unsigned long)addr, field, *(addr));
 			unused_num = 0;
 		} else {
 			unused_num++;
@@ -74,7 +68,6 @@ int iommu_dump_pagetable(struct sprd_vdsp_iommu_dev *iommu_dev)
 		index = index + sizeof(*addr);
 	}
 	pr_debug("---------------end\n");
-	// pr_debug("0x%lx",*(addr));
 	return 0;
 }
 
@@ -100,7 +93,6 @@ void *alloc_sg_list(struct sg_table *sgt, size_t size)
 	if (!pages) {
 		vfree(vaddr);
 		pr_err("failed to allocate memory for pages\n");
-		// return -ENOMEM;
 		return NULL;
 	}
 	for (i = 0, ptr = vaddr; i < n_pages; ++i, ptr += PAGE_SIZE)
@@ -110,7 +102,6 @@ void *alloc_sg_list(struct sg_table *sgt, size_t size)
 		kvfree(pages);
 		vfree(vaddr);
 		pr_err("failed to allocate sgt with num_pages\n");
-		// return -ENOMEM;
 		return NULL;
 	}
 	kvfree(pages);
@@ -143,17 +134,15 @@ void show_iommus_all_record(struct sprd_vdsp_iommus *iommus)
 	}
 	for (index = 0; index < SPRD_VDSP_IOMMU_MAX - 1; index++) {
 		iommu_dev = iommus->iommu_devs[index];
-        if(iommu_dev==NULL){
-            pr_err("Error: iommus->iommu_devs[%d] is NULL\n",index);
-            continue;
-        }
+		if (iommu_dev == NULL) {
+			pr_err("Error: iommus->iommu_devs[%d] is NULL\n", index);
+			continue;
+		}
 		pr_debug("iommus[%d]\n", index);
 		if (iommu_dev->status & (0x1 << 0)) {
-			iommu_dev->record_dev->ops->show_all(iommu_dev->
-							     record_dev);
+			iommu_dev->record_dev->ops->show_all(iommu_dev->record_dev);
 		} else {
-			pr_err("Error: iommu_dev=%#lx iommu_dev->status=%d\n",
-			       iommu_dev->status);
+			pr_err("Error: iommu_dev=%#lx iommu_dev->status=%d\n", iommu_dev->status);
 		}
 	}
 }

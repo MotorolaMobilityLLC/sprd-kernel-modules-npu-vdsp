@@ -27,29 +27,34 @@ union heap_options {
 		int max_order;	/* maximum page allocation order */
 	} unified;
 
+#ifdef CONFIG_ION
 	struct {
 		struct ion_client *client;	/* must be provided by platform */
 	} ion;
-
+#endif
+#ifdef CONFIG_GENERIC_ALLOCATOR
 	struct {
-		void *(*get_kptr) (phys_addr_t addr,
-				   size_t size, enum sprd_vdsp_mem_attr mattr);
+		void *kptr; /* static pointer to kernel mapping of memory */
+		/* Optional hooks to obtain kernel mapping dynamically */
+		void *(*get_kptr) (phys_addr_t addr, size_t size, enum sprd_vdsp_mem_attr mattr);
 		int (*put_kptr) (void *);
-		phys_addr_t phys;	/* physical address start of memory */
-		size_t size;	/* size of memory */
-		unsigned long offs;	/* optional offset of the start
-					   of memory as seen from device,
-					   zero by default */
-		int pool_order;	/* allocation order */
+		phys_addr_t phys;		/* physical address start of memory */
+		size_t size;			/* size of memory */
+		unsigned long offs;	/* optional offset of the start of memory as seen from device, zero by default */
+		int pool_order;		/* allocation order */
 	} carveout;
+#endif
+	struct {
+		bool use_sg_dma;  /* Forces sg_dma physical address instead of CPU physical address*/
+	} dmabuf;
 
 	struct {
-		gfp_t gfp_flags;	/* for buffer allocations */
+		gfp_t gfp_flags;		/* for buffer allocations */
 	} coherent;
 
 	struct {
-		phys_addr_t phys;	/* physical address start of memory */
-		size_t size;	/* size of memory */
+		phys_addr_t phys;		/* physical address start of memory */
+		size_t size;			/* size of memory */
 	} ocm;
 };
 
@@ -61,10 +66,8 @@ struct heap_config {
 	   vice versa. When not implemented,
 	   it is assumed that physical addresses are the
 	   same regardless of viewpoint */
-	 phys_addr_t(*to_dev_addr) (union heap_options * opts,
-				    phys_addr_t addr);
-	 phys_addr_t(*to_host_addr) (union heap_options * opts,
-				     phys_addr_t addr);
+	phys_addr_t(*to_dev_addr) (union heap_options *opts, phys_addr_t addr);
+	phys_addr_t(*to_host_addr) (union heap_options *opts, phys_addr_t addr);
 	/* Cache attribute,
 	 * could be platform specific if provided - overwrites the global cache policy */
 	enum sprd_vdsp_mem_attr cache_attr;
@@ -77,7 +80,7 @@ void sprd_vdsp_mem_core_exit(void);
 
 int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id);
 void sprd_vdsp_mem_del_heap(int heap_id);
-int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t * type, uint32_t * attrs);
+int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t *type, uint32_t *attrs);
 int sprd_vdsp_mem_get_heap_id(enum sprd_vdsp_mem_heap_type type);
 
 /*
@@ -88,26 +91,24 @@ int sprd_vdsp_mem_create_proc_ctx(struct mem_ctx **ctx);
 void sprd_vdsp_mem_destroy_proc_ctx(struct mem_ctx *ctx);
 
 int sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx, int heap_id,
-			size_t size, enum sprd_vdsp_mem_attr attributes,
-			int *buf_id);
+	size_t size, enum sprd_vdsp_mem_attr attributes, int *buf_id);
 int sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
-			 int heap_id, size_t size,
-			 enum sprd_vdsp_mem_attr attributes, uint64_t buf_hnd,
-			 int *buf_id);
+	int heap_id, size_t size, enum sprd_vdsp_mem_attr attr, uint64_t buf_fd,
+	uint64_t cpu_ptr, int *buf_id);
 int sprd_vdsp_mem_export(struct device *device, struct mem_ctx *ctx, int buf_id,
-			 size_t size, enum sprd_vdsp_mem_attr attributes,
-			 uint64_t * buf_hnd);
+	size_t size, enum sprd_vdsp_mem_attr attributes,
+	uint64_t *buf_hnd);
 void sprd_vdsp_mem_free(struct mem_ctx *ctx, int buf_id);
 
 int sprd_vdsp_mem_map_um(struct mem_ctx *ctx, int buf_id,
-			 struct vm_area_struct *vma);
+	struct vm_area_struct *vma);
 int sprd_vdsp_mem_unmap_um(struct mem_ctx *ctx, int buf_id);
 int sprd_vdsp_mem_map_km(struct mem_ctx *ctx, int buf_id);
 int sprd_vdsp_mem_unmap_km(struct mem_ctx *ctx, int buf_id);
 void *sprd_vdsp_mem_get_kptr(struct mem_ctx *ctx, int buf_id);
 uint64_t *sprd_vdsp_mem_get_page_array(struct mem_ctx *mem_ctx, int buf_id);
 uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx *mem_ctx, int buf_id,
-				       unsigned int offset);
+	unsigned int offset);
 phys_addr_t sprd_vdsp_mem_get_dev_addr(struct mem_ctx *mem_ctx, int buf_id);
 size_t sprd_vdsp_mem_get_size(struct mem_ctx *mem_ctx, int buf_id);
 phys_addr_t sprd_vdsp_mem_get_phy_addr(struct mem_ctx *mem_ctx, int buf_id);
@@ -127,6 +128,6 @@ int sprd_vdsp_mem_signal_fence(struct mem_ctx *ctx, int buf_id);
 /*
 * related to stream MMU context (constains IMGMMU functionality in general)
 */
-int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsigned long fixed_data);
+int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id, int isfixed, unsigned long fixed_data);
 int sprd_vdsp_mem_unmap_iova(struct mem_ctx *mem_ctx, int buf_id);
 #endif /* SPRD_VDSP_MEM_MAN_H */

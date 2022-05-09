@@ -1,3 +1,6 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
 
 /*
  * xrp_firmware: firmware manipulation for the XRP
@@ -33,7 +36,8 @@
 #define VDSP_FACEID_FIRMWIRE_SIZE    (1024*1024*10)
 #define VDSP_FACEID_LOG_ADDR_OFFSET  (0x620000)	/*6M + 128K */
 
-#define FACEID_FD_MEM_SIZE (1024*1024*12)
+ // #define FACEID_ALGO_MEM_SIZE (1024*1024*16)
+#define FACEID_MEM_SIZE (1024*1024*12)
 #define FACEID_FIRMWARE "faceid_fw.bin"
 #define FACEID_COEFF_NUM (3)
 

@@ -33,12 +33,12 @@ typedef struct {
 	memset_func mset;
 } user_funcs;
 
-int xtlib_verify_magic(Elf32_Ehdr * header);
+int xtlib_verify_magic(Elf32_Ehdr *header);
 
 void
-xtlib_load_seg(Elf32_Phdr * pheader, void *src_addr,
-	       xt_ptr dst_addr, memcpy_func_ex mcpy,
-	       memset_func_ex mset, void *user);
+xtlib_load_seg(Elf32_Phdr *pheader, void *src_addr,
+	xt_ptr dst_addr, memcpy_func_ex mcpy,
+	memset_func_ex mset, void *user);
 
 Elf32_Half xtlib_host_half(Elf32_Half v);
 
@@ -57,11 +57,10 @@ void xtlib_sync();
    they call appropriate member of this structure.
  */
 
-xt_ptr
-xtlib_user_memcpy(xt_ptr dest, const void *src, unsigned int n, void *user);
+xt_ptr xtlib_user_memcpy(xt_ptr dest, const void *src, unsigned int n, void *user);
 
 xt_ptr xtlib_user_memset(xt_ptr s, int c, unsigned int n, void *user);
 
-int xtlib_relocate_pi_lib(xtlib_pil_info * lib_info);
+int xtlib_relocate_pi_lib(xtlib_pil_info *lib_info);
 
 #endif

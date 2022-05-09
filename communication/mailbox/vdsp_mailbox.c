@@ -26,15 +26,14 @@
 #define pr_fmt(fmt) "sprd-vdsp: mbox %d %d %s : "\
 	fmt, current->pid, __LINE__, __func__
 
-static struct mbox_dts_cfg_tag mbox_dts_cfg;
+static struct mbox_dts_cfg_tag mbox_dts;
 static struct mbox_device_tag *mbox_ops;
 static u8 g_mbox_inited;
 
 static spinlock_t mbox_lock;
 
-static int vdsp_mbox_register_irq_handle(u8 target_id,
-					 MBOX_FUNCALL irq_handler,
-					 void *priv_data)
+static int vdsp_mbox_register_irq_handle(u8 target_id, mbox_handle handler,
+	void *data)
 {
 	unsigned long flags;
 	int ret;
@@ -46,13 +45,10 @@ static int vdsp_mbox_register_irq_handle(u8 target_id,
 	}
 
 	spin_lock_irqsave(&mbox_lock, flags);
-
-	ret = mbox_ops->fops->phy_register_irq_handle(target_id,
-						      irq_handler, priv_data);
-
+	ret = mbox_ops->fops->phy_register_irq_handle(target_id, handler, data);
 	spin_unlock_irqrestore(&mbox_lock, flags);
 	if (ret) {
-		pr_err("[error]ret:%d", ret);
+		pr_err("[error]mbox register irq fail, ret:%d\n", ret);
 		return ret;
 	}
 
@@ -78,7 +74,6 @@ static int vdsp_mbox_unregister_irq_handle(u8 target_id)
 
 static irqreturn_t recv_irq_handler(int irq, void *dev)
 {
-	pr_debug("irq:%d\n", irq);
 	return mbox_ops->fops->recv_irqhandle(irq, dev);
 }
 
@@ -91,7 +86,6 @@ static int vdsp_mbox_send_irq(u8 core_id, uint64_t msg)
 	ret = mbox_ops->fops->phy_send(core_id, msg);
 	spin_unlock_irqrestore(&mbox_lock, flag);
 	return ret;
-
 }
 
 static int mbox_parse_dts(void)
@@ -99,35 +93,22 @@ static int mbox_parse_dts(void)
 	int ret;
 	struct device_node *np;
 
+	/* parse mbox dts: inbox base/outbox base/core cnt/version */
 	np = of_find_compatible_node(NULL, NULL, "sprd,vdsp-mailbox");
 	if (!np) {
-		pr_err("[error] can't find compatible node!\n");
+		pr_err("[error] dts:can't find compatible node!\n");
 		return -EINVAL;
 	}
-
-	mbox_dts_cfg.gpr = syscon_regmap_lookup_by_name(np, "clk");
-
-	/* parse inbox base */
-	of_address_to_resource(np, 0, &mbox_dts_cfg.inboxres);
-	pr_debug("inbox base:0x%x\n", mbox_dts_cfg.inboxres.start);
-	/* parse outbox base */
-	of_address_to_resource(np, 1, &mbox_dts_cfg.outboxres);
-	pr_debug("outbox base:0x%x\n", mbox_dts_cfg.outboxres.start);
-
-	/* parse core cnt */
-	ret = of_property_read_u32(np, "sprd,vdsp-core-cnt",
-				   &mbox_dts_cfg.core_cnt);
+	of_address_to_resource(np, 0, &mbox_dts.inboxres);
+	of_address_to_resource(np, 1, &mbox_dts.outboxres);
+	ret = of_property_read_u32(np, "sprd,vdsp-core-cnt", &mbox_dts.core_cnt);
 	if (ret) {
-		pr_err("[error] fail get core_cnt in dts\n");
+		pr_err("[error]dts: fail get core_cnt\n");
 		return -EINVAL;
 	}
-
-	/* parse mbox version */
-	ret =
-	    of_property_read_u32(np, "sprd,vdsp-version",
-				 &mbox_dts_cfg.version);
+	ret = of_property_read_u32(np, "sprd,vdsp-version", &mbox_dts.version);
 	if (ret) {
-		pr_err("[error] fail get version in dts\n");
+		pr_err("[error]dts: fail get version\n");
 		return -EINVAL;
 	}
 
@@ -138,17 +119,14 @@ static int vdsp_mbox_init(void)
 {
 	int ret;
 
-	pr_debug("init\n");
 	ret = mbox_parse_dts();
 	if (ret != 0) {
-		pr_err("mbox_parse_dts failed:%d", ret);
 		return -EINVAL;
 	}
 	mbox_get_phy_device(&mbox_ops);
 	spin_lock_init(&mbox_lock);
-	ret = mbox_ops->fops->cfg_init(&mbox_dts_cfg, &g_mbox_inited);
+	ret = mbox_ops->fops->cfg_init(&mbox_dts, &g_mbox_inited);
 	if (ret != 0) {
-		pr_err("cfg_init failed:%d", ret);
 		return -EINVAL;
 	}
 	return 0;

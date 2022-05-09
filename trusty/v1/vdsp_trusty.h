@@ -182,7 +182,7 @@ struct bootcp_ca_ctrl {
 
 bool trusty_kernelbootcp_connect(void);
 void trusty_kernelbootcp_disconnect(void);
-bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V * table);
-bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V * table);
+bool kernel_bootcp_unlock_ddr(KBC_LOAD_TABLE_V *table);
+bool kernel_bootcp_verify_vdsp(KBC_LOAD_TABLE_V *table);
 
 #endif

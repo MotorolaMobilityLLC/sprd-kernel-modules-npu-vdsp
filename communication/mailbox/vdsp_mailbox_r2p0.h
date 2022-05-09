@@ -128,13 +128,7 @@ write 1 to outbox+0x10 reset fifo, rd/wr prt and flush fifo */
 #define MBOX_V2_OUTBOX_CORE_SIZE	0x1000
 
 #define MBOX_V2_INBOX_IRQ_MASK	(IN_SEND_BITMASK)
-
-/*		(IN_SEND_BITMASK & 		\
-		IN_OVERFLOW_BITMASK & 	\
-		IN_BLOCK_BITMASK)		\
-*/
-#define MBOX_V2_OUTBOX_IRQ_MASK	\
-		(~((u32)FIFO_NOT_EMPTY_BITMASK))
+#define MBOX_V2_OUTBOX_IRQ_MASK	(~((u32)FIFO_NOT_EMPTY_BITMASK))
 
 #define MBOX_GET_FIFO_RD_PTR(val) ((val & FIFO_RD_PTR_BIT) >> (MBOX_V2_READ_PT_SHIFT))
 #define MBOX_GET_FIFO_WR_PTR(val) ((val & FIFO_WR_PTR_BIT) >> (MBOX_V2_WRITE_PT_SHIFT))
@@ -143,7 +137,6 @@ struct mbox_device_tag {
 	u32 version;
 	u32 max_cnt;
 	const struct mbox_operations_tag *fops;
-	const struct file_operations *debug_fops;
 };
 
 struct mbox_cfg_tag {

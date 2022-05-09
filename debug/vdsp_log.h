@@ -7,11 +7,6 @@
 
 struct xvp;
 
-enum {
-	VDSP_CALL_PREPARE,
-	VDSP_CALL_RETURNED,
-};
-
 /*
  * Ring buffer that supports one secure producer thread and one
  * linux side consumer thread.
@@ -23,9 +18,6 @@ struct log_rb {
 	volatile char data[0];
 } __packed;
 
-#define NONE_MODE 0x01
-#define PING_MODE 0x01
-#define PONG_MODE 0x01
 
 #define LOG_OVERFLOW_MODE	0
 #define LOG_WAIT_MODE		1
@@ -38,15 +30,14 @@ struct vdsp_log_state {
 	 * from the log ring buffer at a time.
 	 */
 	spinlock_t lock;
-	//struct log_rb *log;
 	uint32_t get;
 
 	void *log_vaddr;
-	uint32_t log_ion_vdsp_addr;
+	uint32_t log_ion_vdsp_addr;	// this is no use now
 	struct workqueue_struct *nop_wq;
 	struct vdsp_log_work __percpu *nop_works;
-	struct list_head nop_queue;
-	spinlock_t nop_lock;	/* protects nop_queue */
+	struct list_head nop_queue;					// no use
+	spinlock_t nop_lock;	/* protects nop_queue */ // no use now
 	char line_buffer[VDSP_LINE_BUFFER_SIZE];
 };
 
@@ -58,12 +49,7 @@ struct vdsp_log_work {
 int vdsp_log_init(struct xvp *xvp);
 int vdsp_log_deinit(struct xvp *xvp);
 int vdsp_log_coredump(struct xvp *xvp);
-
-#ifdef IOMMUANDMEM
 int vdsp_log_buf_iommu_map(struct xvp *xvp);
 int vdsp_log_buf_iommu_unmap(struct xvp *xvp);
-#else
-int vdsp_log_mapbuffer(struct xvp *xvp);
-int vdsp_log_unmapbuffer(struct xvp *xvp);
 #endif
-#endif
+

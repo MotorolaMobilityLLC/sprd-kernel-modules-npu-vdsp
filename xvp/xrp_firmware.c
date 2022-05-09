@@ -1,3 +1,6 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
 
 /*
  * xrp_firmware: firmware manipulation for the XRP
@@ -47,119 +50,78 @@
 
 static unsigned int vdsp_symbol_off;
 
-#ifdef IOMMUANDMEM
-static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp, Elf32_Phdr * phdr)
-{
 
+static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp, Elf32_Phdr *phdr)
+{
 	int32_t offset;
 	uint8_t *virstart = NULL;
+	phys_addr_t fw_buf_iova = xvp_buf_get_iova(xvp->fw_buf);
+	void *fw_buf_vaddr = xvp_buf_get_vaddr(xvp->fw_buf);
 	u32 v32 = xvp_buf_get_iova(xvp->ipc_buf);
 
 	pr_debug("phdr->p_paddr:%lx, firmware viraddr:%lx\n",
-		 (unsigned long)phdr->p_paddr, xvp_buf_get_iova(xvp->fw_buf));
+		( unsigned long) phdr->p_paddr, fw_buf_iova);
 
-	if (unlikely(phdr->p_paddr < xvp_buf_get_iova(xvp->fw_buf))) {
-		pr_err("[ERROR]p_paddr:%lx , dsp_firmware_addr:%lx",
-		       phdr->p_paddr, xvp_buf_get_iova(xvp->fw_buf));
+	if (unlikely(phdr->p_paddr < fw_buf_iova)) {
+		pr_err("[ERROR]p_paddr:%lx , dsp_firmware_addr:%lx\n", phdr->p_paddr, fw_buf_iova);
 		return -EFAULT;
 	}
-	offset = phdr->p_paddr - xvp_buf_get_iova(xvp->fw_buf);
-	virstart = (uint8_t *) xvp_buf_get_vaddr(xvp->fw_buf);
+	offset = phdr->p_paddr - fw_buf_iova;
+	virstart = ( uint8_t *) fw_buf_vaddr;
 
 	pr_debug("virstart:%p, offset:%x, poffset:%x, pmemsz:%x, pfilesz:%x\n",
-		 virstart, offset, phdr->p_offset, phdr->p_memsz,
-		 phdr->p_filesz);
-	memcpy((void *)(virstart + offset),
-	       xvp->firmware->data + phdr->p_offset, phdr->p_filesz);
+		virstart, offset, phdr->p_offset, phdr->p_memsz, phdr->p_filesz);
+	memcpy(( void *) (virstart + offset), xvp->firmware->data + phdr->p_offset, phdr->p_filesz);
 	if (phdr->p_memsz > phdr->p_filesz) {
-		memset_io((void *)(virstart + offset + phdr->p_filesz), 0,
-			  (phdr->p_memsz - phdr->p_filesz));
+		memset_io(( void *) (virstart + offset + phdr->p_filesz), 0, (phdr->p_memsz - phdr->p_filesz));
 	}
 
 	/* update data associated with symbol */
 	if (vdsp_symbol_off > phdr->p_offset
-	    && vdsp_symbol_off < (phdr->p_offset + phdr->p_filesz)) {
-		memcpy((void *)(virstart + offset + vdsp_symbol_off -
-				phdr->p_offset), &v32, sizeof(u32));
+		&& vdsp_symbol_off < (phdr->p_offset + phdr->p_filesz)) {
+		memcpy(( void *) (virstart + offset + vdsp_symbol_off - phdr->p_offset), &v32, sizeof(u32));
 	}
 	wmb();
 
 	return 0;
 }
-#else
-static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp, Elf32_Phdr * phdr)
-{
-#ifdef DOWNLOAD_FIRMWARE
-	int32_t offset;
-	uint8_t *virstart = NULL;
-#endif
-
-	pr_debug("phdr->p_paddr:%lx, firmware viraddr:%lx\n",
-		 (unsigned long)phdr->p_paddr,
-		 (unsigned long)xvp->dsp_firmware_addr);
-#ifdef DOWNLOAD_FIRMWARE
-	if (unlikely(phdr->p_paddr < xvp->dsp_firmware_addr)) {
-		pr_err("[ERROR]p_paddr:%lx , dsp_firmware_addr:%lx",
-		       phdr->p_paddr, xvp->dsp_firmware_addr);
-		return -EFAULT;
-	}
-	offset = phdr->p_paddr - xvp->dsp_firmware_addr;
-	virstart = (uint8_t *) xvp->firmware_viraddr;
-
-	pr_debug("virstart:%p, offset:%x, poffset:%x, pmemsz:%x, pfilesz:%x\n",
-		 virstart, offset, phdr->p_offset, phdr->p_memsz,
-		 phdr->p_filesz);
-	memcpy((void *)(virstart + offset),
-	       xvp->firmware->data + phdr->p_offset, phdr->p_filesz);
-	if (phdr->p_memsz > phdr->p_filesz) {
-		memset((void *)(virstart + offset + phdr->p_filesz), 0,
-		       (phdr->p_memsz - phdr->p_filesz));
-	}
-	wmb();
-#endif
-
-	return 0;
-}
-#endif
-static int xrp_load_segment_to_iomem(struct xvp *xvp, Elf32_Phdr * phdr)
+static int xrp_load_segment_to_iomem(struct xvp *xvp, Elf32_Phdr *phdr)
 {
 	phys_addr_t pa = phdr->p_paddr;
 	void __iomem *p = ioremap(pa, phdr->p_memsz);
 
 	if (unlikely(!p)) {
-		pr_err("couldn't ioremap %pap x 0x%08x\n", &pa,
-		       (u32) phdr->p_memsz);
+		pr_err("couldn't ioremap %pap x 0x%08x\n", &pa, ( u32) phdr->p_memsz);
 		return -EINVAL;
 	}
 	if (xvp->hw_ops->memcpy_tohw)
-		xvp->hw_ops->memcpy_tohw(p, (void *)xvp->firmware->data +
-					 phdr->p_offset, phdr->p_filesz);
+		xvp->hw_ops->memcpy_tohw(p, ( void *) xvp->firmware->data + phdr->p_offset,
+			phdr->p_filesz);
 	else
-		memcpy_toio(p, (void *)xvp->firmware->data + phdr->p_offset,
-			    ALIGN(phdr->p_filesz, 4));
+		memcpy_toio(p, ( void *) xvp->firmware->data + phdr->p_offset,
+			ALIGN(phdr->p_filesz, 4));
 
 	if (xvp->hw_ops->memset_hw)
-		xvp->hw_ops->memset_hw(p + phdr->p_filesz, 0,
-				       phdr->p_memsz - phdr->p_filesz);
+		xvp->hw_ops->memset_hw(p + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz);
 	else
 		memset_io(p + ALIGN(phdr->p_filesz, 4), 0,
-			  ALIGN(phdr->p_memsz - ALIGN(phdr->p_filesz, 4), 4));
+			ALIGN(phdr->p_memsz - ALIGN(phdr->p_filesz, 4), 4));
 
 	iounmap(p);
 
 	return 0;
 }
 
-static inline bool xrp_section_bad(struct xvp *xvp, const Elf32_Shdr * shdr)
+static inline bool xrp_section_bad(struct xvp *xvp, const Elf32_Shdr *shdr)
 {
 	return shdr->sh_offset > xvp->firmware->size ||
-	    shdr->sh_size > xvp->firmware->size - shdr->sh_offset;
+		shdr->sh_size > xvp->firmware->size - shdr->sh_offset;
 }
 
 static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
-				    void **paddr, size_t * psize)
+	void **paddr, size_t *psize)
 {
-	const Elf32_Ehdr *ehdr = (Elf32_Ehdr *) xvp->firmware->data;
+	const Elf32_Ehdr *ehdr = ( Elf32_Ehdr *) xvp->firmware->data;
 	const void *shdr_data = xvp->firmware->data + ehdr->e_shoff;
 	const Elf32_Shdr *sh_symtab = NULL;
 	const Elf32_Shdr *sh_strtab = NULL;
@@ -170,13 +132,13 @@ static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
 	unsigned i;
 
 	if (unlikely(ehdr->e_shoff == 0)) {
-		pr_err("[ERROR]no section header in the firmware image");
+		pr_err("[ERROR]no section header in the firmware image\n");
 		return -ENOENT;
 	}
 	if (unlikely((ehdr->e_shoff > xvp->firmware->size) ||
-		     (((size_t) ehdr->e_shnum * (size_t) ehdr->e_shentsize) >
-		      (xvp->firmware->size - ehdr->e_shoff)))) {
-		pr_err("[ERROR]bad firmware SHDR information");
+		((( size_t) ehdr->e_shnum * ( size_t) ehdr->e_shentsize) >
+		(xvp->firmware->size - ehdr->e_shoff)))) {
+		pr_err("[ERROR]bad firmware SHDR information\n");
 		return -EINVAL;
 	}
 
@@ -197,12 +159,12 @@ static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
 	}
 
 	if (unlikely(!sh_symtab || !sh_strtab)) {
-		pr_debug("no symtab or strtab in the firmware image");
+		pr_err("no symtab or strtab in the firmware image\n");
 		return -ENOENT;
 	}
 
 	if (unlikely(xrp_section_bad(xvp, sh_symtab))) {
-		pr_err("[ERROR]bad firmware SYMTAB section information");
+		pr_err("[ERROR]bad firmware SYMTAB section information\n");
 		return -EINVAL;
 	}
 
@@ -219,43 +181,33 @@ static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
 		esym = sym_data + i;
 
 		if (!(ELF_ST_TYPE(esym->st_info) == STT_OBJECT &&
-		      esym->st_name < sh_strtab->sh_size &&
-		      strncmp(str_data + esym->st_name, name,
-			      sh_strtab->sh_size - esym->st_name) == 0))
+			esym->st_name < sh_strtab->sh_size &&
+			strncmp(str_data + esym->st_name, name,
+			sh_strtab->sh_size - esym->st_name) == 0))
 			continue;
 
 		if (esym->st_shndx > 0 && esym->st_shndx < ehdr->e_shnum) {
-			const Elf32_Shdr *shdr = shdr_data +
-			    esym->st_shndx * ehdr->e_shentsize;
-			Elf32_Off in_section_off =
-			    esym->st_value - shdr->sh_addr;
+			const Elf32_Shdr *shdr = shdr_data + esym->st_shndx * ehdr->e_shentsize;
+			Elf32_Off in_section_off = esym->st_value - shdr->sh_addr;
 
 			if (unlikely(xrp_section_bad(xvp, shdr))) {
-				pr_err
-				    ("[ERROR]bad firmware section #%d information",
-				     esym->st_shndx);
+				pr_err("[ERROR]bad firmware section #%d information\n", esym->st_shndx);
 				return -EINVAL;
 			}
 
 			if (unlikely(esym->st_value < shdr->sh_addr ||
-				     in_section_off > shdr->sh_size ||
-				     esym->st_size >
-				     shdr->sh_size - in_section_off)) {
-				pr_err("[ERROR]bad symbol information");
+				in_section_off > shdr->sh_size ||
+				esym->st_size > shdr->sh_size - in_section_off)) {
+				pr_err("[ERROR]bad symbol information\n");
 				return -EINVAL;
 			}
-			addr = (void *)xvp->firmware->data + shdr->sh_offset +
-			    in_section_off;
+			addr = ( void *) xvp->firmware->data + shdr->sh_offset + in_section_off;
 
-			pr_debug("found symbol, st_shndx = %d, "
-				 "sh_offset = 0x%08x, sh_addr = 0x%08x, "
-				 "st_value = 0x%08x, address = %p",
-				 esym->st_shndx, shdr->sh_offset,
-				 shdr->sh_addr, esym->st_value, addr);
+			pr_debug("found symbol, st_shndx = %d, sh_offset = 0x%08x,"
+				"sh_addr = 0x%08x, st_value = 0x%08x, address = %p\n",
+				esym->st_shndx, shdr->sh_offset, shdr->sh_addr, esym->st_value, addr);
 		} else {
-			pr_err
-			    ("unsupported section index in found symbol: 0x%x",
-			     esym->st_shndx);
+			pr_err("unsupported section index in found symbol: 0x%x\n", esym->st_shndx);
 			return -EINVAL;
 		}
 		break;
@@ -274,37 +226,34 @@ static int xrp_firmware_find_symbol(struct xvp *xvp, const char *name,
 
 int xrp_firmware_fixup_symbol(struct xvp *xvp, const char *name, phys_addr_t v)
 {
-	// u32 v32 = XRP_DSP_COMM_BASE_MAGIC;
 	void *addr;
 	size_t sz;
 	int rc;
 
 	rc = xrp_firmware_find_symbol(xvp, name, &addr, &sz);
 	if (unlikely(rc < 0)) {
-		pr_err("[ERROR]symbol \"%s\" is not found", name);
+		pr_err("[ERROR]symbol \"%s\" is not found\n", name);
 		return rc;
 	}
 
 	if (unlikely(sz != sizeof(u32))) {
-		pr_err("[ERROR]symbol \"%s\" has wrong size: %zu", name, sz);
+		pr_err("[ERROR]symbol \"%s\" has wrong size: %zu\n", name, sz);
 		return -EINVAL;
 	}
-	vdsp_symbol_off = addr - (void *)xvp->firmware->data;
-
-	// /* update data associated with symbol */
-	// if (memcmp(addr, &v32, sz) != 0)
-	//  pr_debug("Error: addr=%x,sz=%zu\n",(unsigned long )addr,sz);
-
-	// v32 = v;
-	// memcpy(addr, &v32, sz);
+	vdsp_symbol_off = addr - ( void *) xvp->firmware->data;
 
 	return 0;
 }
 
 static int xrp_load_firmware(struct xvp *xvp)
 {
-	Elf32_Ehdr *ehdr = (Elf32_Ehdr *) xvp->firmware->data;
+	Elf32_Ehdr *ehdr = ( Elf32_Ehdr *) xvp->firmware->data;
 	int i;
+	phys_addr_t ipc_buf_iova;
+	phys_addr_t fw_buf_iova;
+
+	ipc_buf_iova = xvp_buf_get_iova(xvp->ipc_buf);
+	fw_buf_iova = xvp_buf_get_iova(xvp->fw_buf);
 
 	if (unlikely(memcmp(ehdr->e_ident, ELFMAG, SELFMAG))) {
 		pr_err("bad firmware ELF magic\n");
@@ -316,52 +265,40 @@ static int xrp_load_firmware(struct xvp *xvp)
 		return -EINVAL;
 	}
 
-	if (unlikely(ehdr->e_machine != 94 /*EM_XTENSA */ )) {
+	if (unlikely(ehdr->e_machine != 94 /*EM_XTENSA */)) {
 		pr_err("bad firmware ELF machine\n");
 		return -EINVAL;
 	}
 
 	if (unlikely(ehdr->e_phoff >= xvp->firmware->size ||
-		     ehdr->e_phoff +
-		     ehdr->e_phentsize * ehdr->e_phnum > xvp->firmware->size)) {
+		ehdr->e_phoff + ehdr->e_phentsize * ehdr->e_phnum > xvp->firmware->size)) {
 		pr_err("bad firmware ELF PHDR information\n");
 		return -EINVAL;
 	}
-#ifdef IOMMUANDMEM
+	xrp_firmware_fixup_symbol(xvp, "xrp_dsp_comm_base", ipc_buf_iova);
 
-	xrp_firmware_fixup_symbol(xvp, "xrp_dsp_comm_base",
-				  xvp_buf_get_iova(xvp->ipc_buf));
-#else
-	xrp_firmware_fixup_symbol(xvp, "xrp_dsp_comm_base", xvp->dsp_comm_addr);
-#endif
 	for (i = 0; i < ehdr->e_phnum; ++i) {
-		Elf32_Phdr *phdr = (void *)xvp->firmware->data +
-		    ehdr->e_phoff + i * ehdr->e_phentsize;
+		Elf32_Phdr *phdr = ( void *) xvp->firmware->data + ehdr->e_phoff +
+			i * ehdr->e_phentsize;
 		int rc;
 
 		/* Only load non-empty loadable segments, R/W/X */
 		if (!(phdr->p_type == PT_LOAD &&
-		      (phdr->p_flags & (PF_X | PF_R | PF_W))
-		      && phdr->p_memsz > 0))
+			(phdr->p_flags & (PF_X | PF_R | PF_W))
+			&& phdr->p_memsz > 0))
 			continue;
 
 		if (unlikely(phdr->p_offset >= xvp->firmware->size ||
-			     phdr->p_offset + phdr->p_filesz >
-			     xvp->firmware->size)) {
+			phdr->p_offset + phdr->p_filesz > xvp->firmware->size)) {
 			pr_err("bad firmware ELF program header entry %d\n", i);
 			return -EINVAL;
 		}
-#ifdef IOMMUANDMEM
-		if (phdr->p_paddr >= xvp_buf_get_iova(xvp->fw_buf))
+
+		if (phdr->p_paddr >= fw_buf_iova)
 			rc = xrp_load_segment_to_sysmem_ion(xvp, phdr);
 		else
 			rc = xrp_load_segment_to_iomem(xvp, phdr);
-#else
-		if (phdr->p_paddr >= xvp->dsp_firmware_addr)
-			rc = xrp_load_segment_to_sysmem_ion(xvp, phdr);
-		else
-			rc = xrp_load_segment_to_iomem(xvp, phdr);
-#endif
+
 		if (rc < 0)
 			return rc;
 	}
@@ -388,9 +325,8 @@ int xrp_request_firmware(struct xvp *xvp)
 	release_firmware(xvp->firmware);
 	xvp->firmware = NULL;
 	tv3 = ktime_to_us(ktime_get());
-	pr_debug
-	    ("[TIME]request&load firmware,total:%lld(us),request:%lld(us),load:%lld(us),release:%lld(us)\n",
-	     tv3 - tv0, tv1 - tv0, tv2 - tv1, tv3 - tv2);
+	pr_debug("[TIME]request&load firmware,total:%lld(us),request:%lld(us),load:%lld(us),release:%lld(us)\n",
+		tv3 - tv0, tv1 - tv0, tv2 - tv1, tv3 - tv2);
 
 	return ret;
 }

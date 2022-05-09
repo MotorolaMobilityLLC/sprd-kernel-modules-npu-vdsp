@@ -62,8 +62,8 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "sprd-vdsp: [mem_heap]: %d %s: "\
-        fmt, current->pid, __func__
+#define pr_fmt(fmt) "sprd-vdsp: [mem_heap]: %d %d %s: "\
+        fmt, current->pid, __LINE__, __func__
 
 static int trace_physical_pages = 0;
 static int trace_mmap_fault = 0;
@@ -76,18 +76,17 @@ struct buffer_data {
 	/* exporter via dmabuf */
 	struct dma_buf *dma_buf;
 	bool exported;
-	struct device *client;
 };
 static void set_page_cache(struct page *page, enum sprd_vdsp_mem_attr attr)
-    __attribute__ ((no_instrument_function));
+	__attribute__ ((no_instrument_function));
 static void set_page_cache(struct page *page, enum sprd_vdsp_mem_attr attr)
 {
 #ifdef CONFIG_X86
-	if (attr & IMG_MEM_ATTR_UNCACHED)
+	if (attr & SPRD_VDSP_MEM_ATTR_UNCACHED)
 		set_memory_uc((unsigned long)page_address(page), 1);
-	else if (attr & IMG_MEM_ATTR_WRITECOMBINE)
+	else if (attr & SPRD_VDSP_MEM_ATTR_WRITECOMBINE)
 		set_memory_wc((unsigned long)page_address(page), 1);
-	else if (attr & IMG_MEM_ATTR_CACHED)
+	else if (attr & SPRD_VDSP_MEM_ATTR_CACHED)
 		set_memory_wb((unsigned long)page_address(page), 1);
 #endif
 }
@@ -96,111 +95,150 @@ static void set_page_cache(struct page *page, enum sprd_vdsp_mem_attr attr)
  * dmabuf wrapper ops
  */
 static struct sg_table *unified_map_dmabuf(struct dma_buf_attachment *attach,
-					   enum dma_data_direction dir)
+	enum dma_data_direction dir)
 {
-	struct buffer_data *buffer_data = attach->dmabuf->priv;
+	struct buffer *buffer = attach->dmabuf->priv;
+	struct buffer_data *buffer_data;
+	struct sg_table *sgt;
+	struct scatterlist *src, *dst;
+	int ret, i;
 
-	if (!buffer_data)
+	if (!buffer)
 		return NULL;
 
-	if (buffer_data->client) {
-		pr_err("client already attached!\n");
+	pr_debug("%s:%d client:%p buffer %d (0x%p)\n", __func__, __LINE__,
+			attach->dev, buffer->id, buffer);
+	buffer_data = buffer->priv;
+
+	/* Copy sgt so that we make an independent mapping */
+	sgt = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
+	if (sgt == NULL)
 		return NULL;
+
+	ret = sg_alloc_table(sgt, buffer_data->sgt->orig_nents, GFP_KERNEL);
+	if (ret)
+		goto err_free;
+
+	src = buffer_data->sgt->sgl;
+	dst = sgt->sgl;
+	for (i = 0; i < buffer_data->sgt->orig_nents; ++i) {
+		sg_set_page(dst, sg_page(src), src->length, src->offset);
+		dst = sg_next(dst);
+		src = sg_next(src);
+		if ((src == NULL) ||(dst == NULL))
+			break;
 	}
-	buffer_data->client = attach->dev;
-	/* NOTE: We are checking if buffer is mapable during allocation */
 
-	return buffer_data->sgt;
+	ret = dma_map_sg(attach->dev, sgt->sgl, sgt->orig_nents, dir);
+	if (ret <= 0) {
+		pr_err("%s dma_map_sg failed!\n", __func__);
+		goto err_free_sgt;
+	}
+	sgt->nents = ret;
+
+	return sgt;
+
+err_free_sgt:
+	sg_free_table(sgt);
+err_free:
+	kfree(sgt);
+	return NULL;
 }
 
 static void unified_unmap_dmabuf(struct dma_buf_attachment *attach,
-				 struct sg_table *sgt,
-				 enum dma_data_direction dir)
+	struct sg_table *sgt,
+	enum dma_data_direction dir)
 {
-	struct buffer_data *buffer_data = attach->dmabuf->priv;
+	struct buffer *buffer = attach->dmabuf->priv;
 
-	if (!buffer_data)
-		return;
+	pr_debug("%s:%d client:%p buffer %d (0x%p)\n", __func__, __LINE__,
+			attach->dev, buffer ? buffer->id : -1, buffer);
 
-	buffer_data->client = NULL;
+	dma_unmap_sg(attach->dev, sgt->sgl, sgt->orig_nents, dir);
+	sg_free_table(sgt);
+	kfree(sgt);
 }
 
 /* Called when when ref counter reaches zero! */
 static void unified_release_dmabuf(struct dma_buf *buf)
 {
-	struct buffer_data *buffer_data = buf->priv;
+	struct buffer *buffer = buf->priv;
+	struct buffer_data *buffer_data;
 
+	if (!buffer)
+		return;
+
+	buffer_data = buffer->priv;
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+			buffer->id, buffer);
 	if (!buffer_data)
 		return;
 
 	buffer_data->exported = false;
 }
 
+static void unified_dma_map(struct buffer *buffer);
+static void unified_dma_unmap(struct buffer *buffer);
+
 static int unified_begin_cpu_access_dmabuf(struct dma_buf *buf,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-					   size_t start, size_t len,
+	size_t start, size_t len,
 #endif
-					   enum dma_data_direction direction)
+	enum dma_data_direction direction)
 {
-	struct buffer_data *buffer_data = buf->priv;
+	struct buffer *buffer = buf->priv;
+	struct buffer_data *buffer_data;
 	struct sg_table *sgt;
-	int ret;
 
-	if (!buffer_data)
-		return EINVAL;
-
-	if (!buffer_data->client) {
-		pr_err("client is NULL\n");
-		return -EFAULT;
+	if (!buffer) {
+		/* Buffer may have been released, exit silently */
+		return 0;
 	}
 
-	if (buffer_data->dma_dir != DMA_NONE) {
-		pr_err("buffer can't be accessed by client!\n");
-		return -EFAULT;
-	}
+	buffer_data = buffer->priv;
+
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+			buffer->id, buffer);
+
+	buffer_data->dma_dir = direction;
+	unified_dma_map(buffer);
 
 	sgt = buffer_data->sgt;
-	ret =
-	    dma_map_sg(buffer_data->client, sgt->sgl, sgt->orig_nents,
-		       direction);
-	if (ret <= 0) {
-		pr_err("dma_map_sg failed!\n");
-		return -EFAULT;
-	}
-	sgt->nents = ret;
-
-	dma_sync_sg_for_cpu(buffer_data->client, sgt->sgl, sgt->orig_nents,
-			    direction);
+	dma_sync_sg_for_cpu(buffer->device, sgt->sgl, sgt->orig_nents,
+						direction);
 
 	return 0;
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
 static void unified_end_cpu_access_dmabuf(struct dma_buf *buf,
-					  size_t start, size_t len,
-					  enum dma_data_direction direction)
+	size_t start, size_t len,
+	enum dma_data_direction direction)
 #else
 static int unified_end_cpu_access_dmabuf(struct dma_buf *buf,
-					 enum dma_data_direction direction)
+	enum dma_data_direction direction)
 #endif
 {
-	struct buffer_data *buffer_data = buf->priv;
+	struct buffer *buffer = buf->priv;
+	struct buffer_data *buffer_data;
 	struct sg_table *sgt;
 
-	if (!buffer_data)
-		goto exit;
-
-	if (!buffer_data->client) {
-		pr_err("client is NULL\n");
-		goto exit;
+	if (!buffer) {
+		/* Buffer may have been released, exit silently */
+		return 0;
 	}
 
-	sgt = buffer_data->sgt;
-	dma_sync_sg_for_device(buffer_data->client, sgt->sgl, sgt->orig_nents,
-			       direction);
+	buffer_data = buffer->priv;
 
-	dma_unmap_sg(buffer_data->client, sgt->sgl, sgt->orig_nents, direction);
-exit:
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+			buffer->id, buffer);
+
+	sgt = buffer_data->sgt;
+	dma_sync_sg_for_device(buffer->device, sgt->sgl, sgt->orig_nents,
+					direction);
+
+	unified_dma_unmap(buffer);
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 	return 0;
 #endif
@@ -210,12 +248,21 @@ exit:
 /* Called on file descriptor mmap */
 static int unified_mmap_dmabuf(struct dma_buf *buf, struct vm_area_struct *vma)
 {
-	struct buffer_data *buffer_data = buf->priv;
+	struct buffer *buffer = buf->priv;
+	struct buffer_data *buffer_data;
 	struct scatterlist *sgl;
 	unsigned long addr;
 
-	if (!buffer_data)
+	if (!buffer)
 		return -EINVAL;
+
+	buffer_data = buffer->priv;
+
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
+	pr_debug("%s:%d vm_start %#lx vm_end %#lx size %#lx\n",
+		__func__, __LINE__,
+		vma->vm_start, vma->vm_end, vma->vm_end - vma->vm_start);
 
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 
@@ -226,6 +273,18 @@ static int unified_mmap_dmabuf(struct dma_buf *buf, struct vm_area_struct *vma)
 		unsigned long pfn = phys >> PAGE_SHIFT;
 		unsigned int len = sgl->length;
 		int ret;
+
+		if (vma->vm_end < (addr + len)) {
+			unsigned long size = vma->vm_end - addr;
+			pr_debug("%s:%d buffer %d (0x%p) truncating len=%#x to size=%#lx\n",
+				__func__, __LINE__,
+				buffer->id, buffer, len, size);
+			WARN(round_up(size, PAGE_SIZE) != size,
+				"VMA size %#lx not page aligned\n", size);
+			len = size;
+			if (!len) /* VM space is smaller than allocation */
+				break;
+		}
 
 		ret = remap_pfn_range(vma, addr, pfn, len, vma->vm_page_prot);
 		if (ret)
@@ -238,12 +297,90 @@ static int unified_mmap_dmabuf(struct dma_buf *buf, struct vm_area_struct *vma)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,19,0)
 static void *unified_kmap_dmabuf(struct dma_buf *buf, unsigned long page)
 {
-	pr_err("not supported\n");
+	pr_err("%s not supported\n", __func__);
 	return NULL;
 }
+#endif
 
+static int unified_map_km(struct heap *heap, struct buffer *buffer);
+static int unified_unmap_km(struct heap *heap, struct buffer *buffer);
+
+#ifndef K515_ENABLE
+static void *unified_vmap_dmabuf(struct dma_buf *buf)
+{
+	struct buffer *buffer = buf->priv;
+	struct heap *heap;
+
+	if (!buffer)
+		return NULL;
+
+	heap = buffer->heap;
+
+	if (unified_map_km(heap, buffer))
+		return NULL;
+
+	pr_debug("%s:%d buffer %d kptr 0x%p\n", __func__, __LINE__,
+		buffer->id, buffer->kptr);
+
+	return buffer->kptr;
+}
+
+static void unified_vunmap_dmabuf(struct dma_buf *buf, void *kptr)
+{
+	struct buffer *buffer = buf->priv;
+	struct heap *heap;
+
+	if (!buffer)
+		return;
+
+	heap = buffer->heap;
+
+	pr_debug("%s:%d buffer %d kptr 0x%p (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer->kptr, kptr);
+
+	if (buffer->kptr == kptr)
+		unified_unmap_km(heap, buffer);
+}
+#else
+static int unified_vmap_dmabuf(struct dma_buf *buf, struct dma_buf_map *map)
+{
+	struct buffer *buffer = buf->priv;
+	struct heap *heap;
+
+	if (!buffer)
+		return -1;
+
+	heap = buffer->heap;
+
+	if (unified_map_km(heap, buffer))
+		return -1;
+
+	pr_debug("%s:%d buffer %d kptr 0x%p\n", __func__, __LINE__,
+		buffer->id, buffer->kptr);
+	dma_buf_map_set_vaddr(map, buffer->kptr);
+	return 0;
+}
+
+static void unified_vunmap_dmabuf(struct dma_buf *buf, struct dma_buf_map *map)
+{
+	struct buffer *buffer = buf->priv;
+	struct heap *heap;
+	void *kptr = map->vaddr;
+
+	if (!buffer)
+		return;
+
+	heap = buffer->heap;
+	pr_debug("%s:%d buffer %d buffer kptr 0x%p - kptr 0x%p\n", __func__, __LINE__,
+		buffer->id, buffer->kptr, kptr);
+	if (buffer->kptr == kptr)
+		unified_unmap_km(heap, buffer);
+	dma_buf_map_clear(map);
+}
+#endif
 static const struct dma_buf_ops unified_dmabuf_ops = {
 	.map_dma_buf = unified_map_dmabuf,
 	.unmap_dma_buf = unified_unmap_dmabuf,
@@ -253,18 +390,20 @@ static const struct dma_buf_ops unified_dmabuf_ops = {
 	.mmap = unified_mmap_dmabuf,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0)
 	.kmap_atomic = unified_kmap_dmabuf,
-	.kmap = unified_kmap_dmabuf
+	.kmap = unified_kmap_dmabuf,
 #else
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,19,0)
 	.map_atomic = unified_kmap_dmabuf,
-#endif
 	.map = unified_kmap_dmabuf,
 #endif
+#endif
+	.vmap = unified_vmap_dmabuf,
+	.vunmap = unified_vunmap_dmabuf,
 };
 
 static int unified_export(struct device *device, struct heap *heap,
-			  size_t size, enum sprd_vdsp_mem_attr attr,
-			  struct buffer *buffer, uint64_t * buf_hnd)
+	size_t size, enum sprd_vdsp_mem_attr attr,
+	struct buffer *buffer, uint64_t *buf_hnd)
 {
 	struct buffer_data *buffer_data = buffer->priv;
 	struct dma_buf *dma_buf;
@@ -273,31 +412,31 @@ static int unified_export(struct device *device, struct heap *heap,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0)
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 #endif
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
 
 	if (!buffer_data)
 		/* Nothing to export ? */
 		return -ENOMEM;
 
 	if (buffer_data->exported) {
-		pr_err("already exported!\n");
+		pr_err("%s: already exported!\n", __func__);
 		return -EBUSY;
 	}
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,17,0)
-	dma_buf =
-	    dma_buf_export(buffer_data, &unified_dmabuf_ops, size, O_RDWR);
+	dma_buf = dma_buf_export(buffer_data, &unified_dmabuf_ops, size, O_RDWR);
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(4,1,0)
-	dma_buf = dma_buf_export(buffer_data, &unified_dmabuf_ops,
-				 size, O_RDWR, NULL);
+	dma_buf = dma_buf_export(buffer_data, &unified_dmabuf_ops, size, O_RDWR, NULL);
 #else
 	exp_info.ops = &unified_dmabuf_ops;
 	exp_info.size = size;
 	exp_info.flags = O_RDWR;
-	exp_info.priv = buffer_data;
+	exp_info.priv = buffer;
 	exp_info.resv = NULL;
 	dma_buf = dma_buf_export(&exp_info);
 #endif
 	if (IS_ERR(dma_buf)) {
-		pr_err("dma_buf_export failed\n");
+		pr_err("%s:dma_buf_export failed\n", __func__);
 		ret = PTR_ERR(dma_buf);
 		return ret;
 	}
@@ -305,7 +444,7 @@ static int unified_export(struct device *device, struct heap *heap,
 	get_dma_buf(dma_buf);
 	fd = dma_buf_fd(dma_buf, 0);
 	if (fd < 0) {
-		pr_err("dma_buf_fd failed\n");
+		pr_err("%s: dma_buf_fd failed\n", __func__);
 		dma_buf_put(dma_buf);
 		return -EFAULT;
 	}
@@ -317,8 +456,8 @@ static int unified_export(struct device *device, struct heap *heap,
 }
 
 static int unified_alloc(struct device *device, struct heap *heap,
-			 size_t size, enum sprd_vdsp_mem_attr attr,
-			 struct buffer *buffer)
+	size_t size, enum sprd_vdsp_mem_attr attr,
+	struct buffer *buffer)
 {
 	struct buffer_data *buffer_data;
 	struct sg_table *sgt;
@@ -329,7 +468,6 @@ static int unified_alloc(struct device *device, struct heap *heap,
 	int ret;
 	int min_order = heap->options.unified.min_order;
 	int max_order = heap->options.unified.max_order;
-	size_t orin_size = size;
 
 	/* Allocations for MMU pages are still 4k so CPU page size is enough */
 	if (attr & SPRD_VDSP_MEM_ATTR_MMU)
@@ -342,29 +480,26 @@ static int unified_alloc(struct device *device, struct heap *heap,
 
 	INIT_LIST_HEAD(&pages_list);
 
-	while ((long)size > 0) {
-		int order;
+	while((long)size > 0) {
+		int order = 0;
 
 		page = NULL;
-		/* Fit the buffer size starting from the biggest order.
-		   When system already run out of chunks with specific order,
-		   try with lowest available with min_order constraint */
+		/*
+		 * Fit the buffer size starting from the biggest order for given size.
+		 * When system already run out of chunks with specific order,
+		 * try with lower, but not less than min_order constraint.
+		 */
+		max_order = min(max_order, get_order(size));
 		for (order = max_order; order >= min_order; order--) {
 			int page_order;
 
-			/* Try to allocate min_order size */
-			if (size < (PAGE_SIZE << order) && (order > min_order))
-				continue;
-
-			page = alloc_pages(heap->options.unified.gfp_type |
-					   __GFP_COMP | __GFP_NOWARN, order);
+			page = alloc_pages(heap->options.unified.gfp_type | __GFP_COMP | __GFP_NOWARN, order);
 			if (!page)
 				continue;
 
 			page_order = compound_order(page);
 			if (trace_physical_pages)
-				pr_debug
-				    ("phys %#llx size %lu page_address %p order:%d\n",
+				pr_debug("phys %#llx size %lu page_address %p order:%d\n",
 				     (unsigned long long)page_to_phys(page),
 				     PAGE_SIZE << page_order,
 				     page_address(page), page_order);
@@ -381,11 +516,8 @@ static int unified_alloc(struct device *device, struct heap *heap,
 				 * build with debug, set trace_physical_pages=1
 				 * and check if page_address printed above is NULL
 				 */
-				dma_addr_t dma_addr = dma_map_page(device,
-								   page, 0,
-								   PAGE_SIZE <<
-								   page_order,
-								   DMA_BIDIRECTIONAL);
+				dma_addr_t dma_addr = dma_map_page(device, page, 0, PAGE_SIZE << page_order,
+					DMA_BIDIRECTIONAL);
 
 				if (dma_mapping_error(device, dma_addr)) {
 					__free_page(page);
@@ -393,12 +525,11 @@ static int unified_alloc(struct device *device, struct heap *heap,
 					ret = -EIO;
 					goto alloc_pages_failed;
 				}
-				dma_unmap_page(device, dma_addr, PAGE_SIZE,
-					       DMA_BIDIRECTIONAL);
+				dma_unmap_page(device, dma_addr, PAGE_SIZE, DMA_BIDIRECTIONAL);
 			}
 			/* Record the max order taking the info
 			 * from the page we have just found */
-			max_order = page_order;
+			order = page_order;
 			break;
 		}
 
@@ -407,14 +538,14 @@ static int unified_alloc(struct device *device, struct heap *heap,
 			ret = -ENOMEM;
 			goto alloc_pages_failed;
 		}
-		size -= PAGE_SIZE << max_order;
+		size -= PAGE_SIZE << order;
 
 		/* Split pages back to order 0 ->
 		 * this is required to properly map into UM */
-		if (max_order) {
-			struct page *end = page + (1 << max_order);
+		if (order) {
+			struct page *end = page + (1 << order);
 
-			split_page(page, max_order);
+			split_page(page, order);
 			while (page < end) {
 				list_add_tail(&page->lru, &pages_list);
 				pages++;
@@ -430,11 +561,12 @@ static int unified_alloc(struct device *device, struct heap *heap,
 		}
 	}
 
-	if (PAGE_SIZE == orin_size) {
-		buffer->paddr = page_to_phys(page);
-	}
+//add vdsp??????
+	//if (PAGE_SIZE == orin_size) {
+	//	buffer->paddr = page_to_phys(page);
+	//}
 
-	sgt = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
+	sgt = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
 	if (!sgt) {
 		ret = -ENOMEM;
 		goto alloc_pages_failed;
@@ -450,7 +582,12 @@ static int unified_alloc(struct device *device, struct heap *heap,
 		set_page_cache(page, attr);
 		sgl = sg_next(sgl);
 		list_del(&page->lru);
+		if (sgl == NULL)
+			break;
 	}
+
+	pr_debug("%s:%d buffer %d orig_nents %d\n", __func__, __LINE__,
+		buffer->id, sgt->orig_nents);
 
 	buffer_data = kzalloc(sizeof(struct buffer_data), GFP_KERNEL);
 	if (!buffer_data) {
@@ -478,7 +615,7 @@ alloc_pages_failed:
 	return ret;
 }
 
-static void _dma_map(struct buffer *buffer)
+static void unified_dma_map(struct buffer *buffer)
 {
 	struct buffer_data *buffer_data = buffer->priv;
 	struct sg_table *sgt = buffer_data->sgt;
@@ -487,18 +624,18 @@ static void _dma_map(struct buffer *buffer)
 	if (buffer_data->dma_dir == DMA_NONE)
 		buffer_data->dma_dir = DMA_BIDIRECTIONAL;
 
-	ret = dma_map_sg(buffer->device, sgt->sgl, sgt->orig_nents,
-			 buffer_data->dma_dir);
+	ret = dma_map_sg(buffer->device, sgt->sgl, sgt->orig_nents, buffer_data->dma_dir);
 	if (ret <= 0) {
-		pr_err("dma_map_sg failed!\n");
+		pr_err("%s dma_map_sg failed!\n", __func__);
 		buffer_data->dma_dir = DMA_NONE;
 		return;
 	}
-
+	pr_debug("%s:%d buffer %d orig_nents %d nents %d\n", __func__, __LINE__,
+				buffer->id, sgt->orig_nents, ret);
 	sgt->nents = ret;
 }
 
-static void _dma_unmap(struct buffer *buffer)
+static void unified_dma_unmap(struct buffer *buffer)
 {
 	struct buffer_data *buffer_data = buffer->priv;
 	struct sg_table *sgt = buffer_data->sgt;
@@ -510,6 +647,8 @@ static void _dma_unmap(struct buffer *buffer)
 		     sgt->orig_nents, buffer_data->dma_dir);
 	buffer_data->dma_dir = DMA_NONE;
 
+	pr_debug("%s:%d buffer %d orig_nents %d\n", __func__, __LINE__,
+				buffer->id, sgt->orig_nents);
 }
 
 static void unified_free(struct heap *heap, struct buffer *buffer)
@@ -518,8 +657,11 @@ static void unified_free(struct heap *heap, struct buffer *buffer)
 	struct sg_table *sgt = buffer_data->sgt;
 	struct scatterlist *sgl;
 
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
+
 	/* If user forgot to unmap, free dma mapping anyway */
-	_dma_unmap(buffer);
+	unified_dma_unmap(buffer);
 
 	if (buffer_data->dma_buf) {
 		dma_buf_put(buffer_data->dma_buf);
@@ -527,6 +669,7 @@ static void unified_free(struct heap *heap, struct buffer *buffer)
 	}
 
 	if (buffer->kptr) {
+		pr_debug("%s vunmap 0x%p\n", __func__, buffer->kptr);
 		vunmap(buffer->kptr);
 	}
 
@@ -548,7 +691,7 @@ static void unified_free(struct heap *heap, struct buffer *buffer)
 	kfree(buffer_data);
 }
 
-static void _mmap_open(struct vm_area_struct *vma)
+static void unified_mmap_open(struct vm_area_struct *vma)
 {
 	struct buffer *buffer = vma->vm_private_data;
 	struct buffer_data *buffer_data = buffer->priv;
@@ -556,23 +699,26 @@ static void _mmap_open(struct vm_area_struct *vma)
 
 	buffer_data->mapped_vma = vma;
 
+	pr_debug("%s:%d buffer %d (0x%p) vma:%p\n",
+			__func__, __LINE__, buffer->id, buffer, vma);
 	if (!(buffer_data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED)) {
 		if (vma->vm_flags & VM_WRITE)
 			buffer_data->dma_dir = DMA_TO_DEVICE;
 		else
 			buffer_data->dma_dir = DMA_FROM_DEVICE;
 
-		_dma_map(buffer);
+		unified_dma_map(buffer);
 
 		/* User will read the buffer so invalidate D-cache */
 		if (buffer_data->dma_dir == DMA_FROM_DEVICE)
 			dma_sync_sg_for_cpu(buffer->device,
-					    sgt->sgl, sgt->orig_nents,
-					    DMA_FROM_DEVICE);
+				sgt->sgl,
+				sgt->orig_nents,
+				DMA_FROM_DEVICE);
 	}
 }
 
-static void _mmap_close(struct vm_area_struct *vma)
+static void unified_mmap_close(struct vm_area_struct *vma)
 {
 	struct buffer *buffer = vma->vm_private_data;
 	struct buffer_data *buffer_data;
@@ -584,28 +730,27 @@ static void _mmap_close(struct vm_area_struct *vma)
 	buffer_data = buffer->priv;
 	sgt = buffer_data->sgt;
 
+	pr_debug("%s:%d buffer %d (0x%p) vma:%p\n",
+			__func__, __LINE__, buffer->id, buffer, vma);
 	if (!(buffer_data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED)) {
 		/* User may have written to the buffer so flush D-cache */
 		if (buffer_data->dma_dir == DMA_TO_DEVICE) {
-			dma_sync_sg_for_device(buffer->device,
-					       sgt->sgl, sgt->orig_nents,
-					       DMA_TO_DEVICE);
-			dma_sync_sg_for_cpu(buffer->device, sgt->sgl,
-					    sgt->orig_nents, DMA_FROM_DEVICE);
+			dma_sync_sg_for_device(buffer->device, sgt->sgl, sgt->orig_nents, DMA_TO_DEVICE);
+			dma_sync_sg_for_cpu(buffer->device, sgt->sgl, sgt->orig_nents, DMA_FROM_DEVICE);
 		}
 
-		_dma_unmap(buffer);
+		unified_dma_unmap(buffer);
 	}
 
 	buffer_data->mapped_vma = NULL;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-static vm_fault_t _mmap_fault(struct vm_fault *vmf)
+static vm_fault_t unified_mmap_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 #else
-static int _mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static int unified_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 #endif
 	struct buffer *buffer = vma->vm_private_data;
@@ -613,58 +758,51 @@ static int _mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct sg_table *sgt = buffer_data->sgt;
 	struct scatterlist *sgl;
 	struct page *page = NULL;
-	pgoff_t offset;
 	int err;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
-	unsigned long addr = vmf->address;
-#else
-	unsigned long addr = (unsigned long)vmf->virtual_address;
-#endif
+	unsigned long addr;
 
 	if (trace_mmap_fault) {
-		pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
-		pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
-			 vma->vm_start, vma->vm_end,
-			 vma->vm_end - vma->vm_start);
+		pr_debug("%s:%d buffer %d (0x%p) vma:%p\n",
+				__func__, __LINE__, buffer->id, buffer, vma);
+		pr_debug("%s:%d vm_start %#lx vm_end %#lx total size %ld\n",
+			__func__, __LINE__,
+			vma->vm_start, vma->vm_end,
+			vma->vm_end - vma->vm_start);
 	}
-
-	offset = (addr - vma->vm_start) >> PAGE_SHIFT;
 
 	sgl = sgt->sgl;
-	while (sgl) {
+	addr = vma->vm_start;
+	while (sgl && addr < vma->vm_end) {
 		page = sg_page(sgl);
-		if (offset) {
-			sgl = sg_next(sgl);
-			offset--;
-		} else
-			break;
+		if (!page) {
+			pr_err("%s:%d no page!\n", __func__, __LINE__);
+			return VM_FAULT_SIGBUS;
+		}
+
+		if (trace_mmap_fault)
+			pr_info("%s:%d vmf addr %lx page_address:%p phys:%#llx\n",
+				__func__, __LINE__, addr, page,
+				(unsigned long long)page_to_phys(page));
+
+		err = vm_insert_page(vma, addr, page);
+		switch (err) {
+		case 0:
+		case -EAGAIN:
+		case -ERESTARTSYS:
+		case -EINTR:
+		case -EBUSY:
+			break; // passthrough
+		case -ENOMEM:
+			return VM_FAULT_OOM;
+		default:
+			return VM_FAULT_SIGBUS;
+		}
+
+		addr += sgl->length;
+		sgl = sg_next(sgl);
 	}
 
-	if (!page || offset) {
-		pr_err("page:%p offs:%ld\n", page, offset);
-		return VM_FAULT_SIGBUS;
-	}
-
-	if (trace_mmap_fault)
-		pr_debug
-		    ("vmf pgoff %#lx vmf addr %lx page_address:%p phys:%#llx\n",
-		     vmf->pgoff, addr, page,
-		     (unsigned long long)page_to_phys(page));
-
-	err = vm_insert_page(vma, addr, page);
-	switch (err) {
-	case 0:
-	case -EAGAIN:
-	case -ERESTARTSYS:
-	case -EINTR:
-	case -EBUSY:
-		return VM_FAULT_NOPAGE;
-	case -ENOMEM:
-		return VM_FAULT_OOM;
-	}
-
-	return VM_FAULT_SIGBUS;
+	return VM_FAULT_NOPAGE;
 }
 
 /* vma ops->fault handler is used to track user space mappings
@@ -685,15 +823,21 @@ static int _mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
  *  unmap() -> .close -> flush buffer cache
  */
 static struct vm_operations_struct unified_mmap_vm_ops = {
-	.open = _mmap_open,
-	.close = _mmap_close,
-	.fault = _mmap_fault,
+	.open = unified_mmap_open,
+	.close = unified_mmap_close,
+	.fault = unified_mmap_fault,
 };
 
 static int unified_map_um(struct heap *heap, struct buffer *buffer,
-			  struct vm_area_struct *vma)
+	struct vm_area_struct *vma)
 {
 	struct buffer_data *buffer_data = buffer->priv;
+
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
+	pr_debug("%s:%d vm_start %#lx vm_end %#lx size %ld\n",
+		__func__, __LINE__,
+		vma->vm_start, vma->vm_end, vma->vm_end - vma->vm_start);
 
 	/* Throw a warning when attempting
 	 * to do dma mapping when already exists */
@@ -711,7 +855,7 @@ static int unified_map_um(struct heap *heap, struct buffer *buffer,
 	vma->vm_private_data = buffer;
 	vma->vm_pgoff = 0;
 
-	_mmap_open(vma);
+	unified_mmap_open(vma);
 
 	return 0;
 }
@@ -726,8 +870,12 @@ static int unified_map_km(struct heap *heap, struct buffer *buffer)
 	pgprot_t prot;
 	int i;
 
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
+
 	if (buffer->kptr) {
-		pr_warn("called for already mapped buffer %d\n", buffer->id);
+		pr_warn("%s called for already mapped buffer %d\n",
+			__func__, buffer->id);
 		return 0;
 	}
 
@@ -740,7 +888,7 @@ static int unified_map_km(struct heap *heap, struct buffer *buffer)
 	 * */
 	pages = vmalloc(num_pages * sizeof(struct page *));
 	if (!pages) {
-		pr_err("failed to allocate memory for pages\n");
+		pr_err("%s failed to allocate memory for pages\n", __func__);
 		return -ENOMEM;
 	}
 
@@ -753,7 +901,7 @@ static int unified_map_km(struct heap *heap, struct buffer *buffer)
 
 	/* Make dma mapping before mapping into kernel */
 	if (!(buffer_data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED))
-		_dma_map(buffer);
+		unified_dma_map(buffer);
 
 	i = 0;
 	while (sgl) {
@@ -764,23 +912,30 @@ static int unified_map_km(struct heap *heap, struct buffer *buffer)
 	buffer->kptr = vmap(pages, num_pages, VM_MAP, prot);
 	vfree(pages);
 	if (!buffer->kptr) {
-		pr_err("vmap failed!\n");
+		pr_err("%s vmap failed!\n", __func__);
 		return -EFAULT;
 	}
+
+	pr_debug("%s:%d buffer %d vmap to 0x%p\n", __func__, __LINE__,
+		buffer->id, buffer->kptr);
 
 	return 0;
 }
 
 static int unified_unmap_km(struct heap *heap, struct buffer *buffer)
 {
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
 
 	if (!buffer->kptr) {
-		pr_warn("called for already unmapped buffer %d\n", buffer->id);
+		pr_warn("%s called for already unmapped buffer %d\n",
+			__func__, buffer->id);
 		return -EFAULT;
 	}
 
-	_dma_unmap(buffer);
+	unified_dma_unmap(buffer);
 
+	pr_debug("%s vunmap 0x%p\n", __func__, buffer->kptr);
 	vunmap(buffer->kptr);
 	buffer->kptr = NULL;
 
@@ -788,14 +943,14 @@ static int unified_unmap_km(struct heap *heap, struct buffer *buffer)
 }
 
 static int unified_get_sg_table(struct heap *heap, struct buffer *buffer,
-				struct sg_table **sg_table)
+				struct sg_table **sg_table, bool *use_sg_dma)
 {
 	struct buffer_data *buffer_data = buffer->priv;
-
 	if (!buffer_data)
 		return -EINVAL;
 
 	*sg_table = buffer_data->sgt;
+	*use_sg_dma = false;
 	return 0;
 }
 
@@ -804,13 +959,12 @@ static void unified_sync_cpu_to_dev(struct heap *heap, struct buffer *buffer)
 	struct buffer_data *buffer_data = buffer->priv;
 	struct sg_table *sgt = buffer_data->sgt;
 
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
 	if (!(buffer_data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED) &&
-	    buffer_data->dma_dir != DMA_NONE) {
-		dma_sync_sg_for_device(buffer->device,
-				       sgt->sgl, sgt->orig_nents,
-				       DMA_TO_DEVICE);
-		dma_sync_sg_for_cpu(buffer->device, sgt->sgl, sgt->orig_nents,
-				    DMA_FROM_DEVICE);
+		buffer_data->dma_dir != DMA_NONE) {
+		dma_sync_sg_for_device(buffer->device, sgt->sgl, sgt->orig_nents, DMA_TO_DEVICE);
+		dma_sync_sg_for_cpu(buffer->device, sgt->sgl, sgt->orig_nents, DMA_FROM_DEVICE);
 	}
 }
 
@@ -819,10 +973,12 @@ static void unified_sync_dev_to_cpu(struct heap *heap, struct buffer *buffer)
 	struct buffer_data *buffer_data = buffer->priv;
 	struct sg_table *sgt = buffer_data->sgt;
 
+	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer);
+
 	if (!(buffer_data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED) &&
-	    buffer_data->dma_dir != DMA_NONE)
-		dma_sync_sg_for_cpu(buffer->device,
-				    sgt->sgl, sgt->orig_nents, DMA_FROM_DEVICE);
+		buffer_data->dma_dir != DMA_NONE)
+		dma_sync_sg_for_cpu(buffer->device, sgt->sgl, sgt->orig_nents, DMA_FROM_DEVICE);
 }
 
 static void unified_heap_destroy(struct heap *heap)
@@ -836,19 +992,23 @@ static struct heap_ops unified_heap_ops = {
 	.import = NULL,
 	.free = unified_free,
 	.map_um = unified_map_um,
-	.unmap_um = NULL,	/* we are using vma ops to detect unmap event */
+	.unmap_um = NULL, /* we are using vma ops to detect unmap event */
 	.map_km = unified_map_km,
 	.unmap_km = unified_unmap_km,
 	.get_sg_table = unified_get_sg_table,
 	.get_page_array = NULL,
 	.sync_cpu_to_dev = unified_sync_cpu_to_dev,
 	.sync_dev_to_cpu = unified_sync_dev_to_cpu,
+	.set_offset = NULL,
 	.destroy = unified_heap_destroy,
 };
 
 int sprd_vdsp_mem_unified_init(const struct heap_config *heap_cfg,
-			       struct heap *heap)
+	struct heap *heap)
 {
+	pr_debug("%s:%d\n", __func__, __LINE__);
+
 	heap->ops = &unified_heap_ops;
+
 	return 0;
 }

@@ -3,7 +3,7 @@
  * Copyright (C) 2020 Unisoc Inc.
  * SPDX-License-Identifier: GPL-2.0
  *****************************************************************************/
-
+#include <linux/io.h>
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
@@ -17,11 +17,11 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "sprd-vdsp: [iommu_dev]: %d %s: "\
-        fmt, current->pid, __func__
+#define pr_fmt(fmt) "sprd-vdsp: [iommu_dev]: %d %d %s: "\
+        fmt, current->pid, __LINE__, __func__
 
 static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
-			      struct device_node *iommu_dev_of_node)
+	struct device_node *iommu_dev_of_node)
 {
 
 	uint32_t val32 = 0;
@@ -32,18 +32,14 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 	unsigned long page = 0;	//For compatibility fault_page use
 
 	//compatible
-	ret =
-	    of_property_read_string(iommu_dev_of_node, "compatible",
-				    &iommu_dev->name);
+	ret = of_property_read_string(iommu_dev_of_node, "compatible", &iommu_dev->name);
 	if (ret) {
 		pr_err("Error: Unable to read compatible\n");
 	}
 	pr_debug("compatible:%s\n", iommu_dev->name);
 
 	//iommu-version
-	ret =
-	    of_property_read_u32(iommu_dev_of_node, "sprd,iommu-version",
-				 &val32);
+	ret = of_property_read_u32(iommu_dev_of_node, "sprd,iommu-version", &val32);
 	if (ret < 0)
 		val32 = 12;	// read failed set default version
 	// return ret;
@@ -56,50 +52,39 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 
 	//ctrl reg and pgt_base
 	if (1 == of_n_addr_cells(iommu_dev_of_node)) {
-		ret =
-		    of_property_read_u32_index(iommu_dev_of_node, "reg", 0,
-					       &val32);
+		ret = of_property_read_u32_index(iommu_dev_of_node, "reg", 0, &val32);
 		if (ret < 0)
 			return ret;
 		pr_debug("reg base:0x%x\n", val32);
 
-		ret =
-		    of_property_read_u32_index(iommu_dev_of_node, "reg", 1,
-					       &size32);
+		ret = of_property_read_u32_index(iommu_dev_of_node, "reg", 1, &size32);
 		if (ret < 0)
 			return ret;
 		pr_debug("reg size:0x%x\n", size32);
-		iommu_dev->pgt_base = (unsigned long)ioremap_nocache(val32, size32);	//0xf12f9000
+		iommu_dev->pgt_base = (unsigned long)ioremap(val32, size32);	//0xf12f9000
 		iommu_dev->pgt_size = size32;
-		iommu_dev->ctrl_reg = (unsigned long)ioremap_nocache(val32, size32);	//0xf12fb000 Duplicate mapping
+		iommu_dev->ctrl_reg = (unsigned long)ioremap(val32, size32);	//0xf12fb000 Duplicate mapping
 	} else {
-		ret =
-		    of_property_read_u64_index(iommu_dev_of_node, "reg", 0,
-					       &val64);
+		ret = of_property_read_u64_index(iommu_dev_of_node, "reg", 0, &val64);
 		if (ret < 0)
 			return ret;
 		pr_debug("reg base:0x%llx\n", val64);
 
-		ret =
-		    of_property_read_u64_index(iommu_dev_of_node, "reg", 1,
-					       &size64);
+		ret = of_property_read_u64_index(iommu_dev_of_node, "reg", 1, &size64);
 		if (ret < 0)
 			return ret;
 		pr_debug("reg size:0x%llx\n", size64);
-		iommu_dev->pgt_base =
-		    (unsigned long)ioremap_nocache(val64, size64);
+		iommu_dev->pgt_base = (unsigned long)ioremap(val64, size64);
 		iommu_dev->pgt_size = size64;
-		iommu_dev->ctrl_reg =
-		    (unsigned long)ioremap_nocache(val64, size64);
+		iommu_dev->ctrl_reg = (unsigned long)ioremap(val64, size64);
 	}
 
 	BUG_ON(!iommu_dev->ctrl_reg);
 
 	ret = of_property_read_u32(iommu_dev_of_node, "sprd,iova-base", &val32);
 	if (ret < 0) {
-		ret =
-		    of_property_read_u32(iommu_dev_of_node, "iova-base",
-					 &val32);
+		ret = of_property_read_u32(iommu_dev_of_node, "iova-base",
+			&val32);
 		if (ret < 0)
 			return ret;
 	}
@@ -107,15 +92,12 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 	iommu_dev->iova_base = val32;
 	ret = of_property_read_u32(iommu_dev_of_node, "sprd,iova-size", &val32);
 	if (ret < 0) {
-		ret =
-		    of_property_read_u32(iommu_dev_of_node, "iova-size",
-					 &val32);
+		ret = of_property_read_u32(iommu_dev_of_node, "iova-size", &val32);
 		if (ret < 0)
 			return ret;
 	}
 	iommu_dev->iova_size = val32;
 	pr_debug("iova_size:0x%zx\n", val32);
-// #endif
 
 	page = __get_free_page(GFP_KERNEL);
 	if (page)
@@ -123,7 +105,6 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 	else
 		iommu_dev->fault_page = 0;
 	pr_debug("fault_page: 0x%lx\n", iommu_dev->fault_page);
-	pr_debug("%s---end\n", __func__);
 	return 0;
 }
 
@@ -156,13 +137,10 @@ static int iommu_dev_iova_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 		iova->ops = &version12_iova_ops;
 		break;
 	default:
-		pr_err("Error: iommu_dev->iommu_version:%d\n",
-		       iommu_dev->iommu_version);
+		pr_err("Error: iommu_dev->iommu_version:%d\n", iommu_dev->iommu_version);
 		return -EINVAL;
 	}
-	ret =
-	    iova->ops->iova_init(iova, iommu_dev->iova_base,
-				 iommu_dev->iova_size, 12);
+	ret = iova->ops->iova_init(iova, iommu_dev->iova_base, iommu_dev->iova_size, 12);
 	pr_debug("iommu_dev_iova_init sucess\n");
 #endif
 	return ret;
@@ -195,22 +173,17 @@ static int iommu_dev_pagetable_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 
 	//pagt_base_ddr\pagt_base_virt
 	size = iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4;
-	iommu_dev->pagt_base_virt =
-	    (unsigned long)dma_alloc_coherent(iommu_dev->dev, size,
-					      (dma_addr_t
-					       *) (&(iommu_dev->pagt_base_ddr)),
-					      GFP_DMA | GFP_KERNEL);
+	iommu_dev->pagt_base_virt = (unsigned long)dma_alloc_coherent(iommu_dev->dev, size,
+		(dma_addr_t*) (&(iommu_dev->pagt_base_ddr)), GFP_DMA | GFP_KERNEL);
 	if (!(iommu_dev->pagt_base_virt)) {
 		pr_err("Error: dma_alloc_coherent failed\n");
 		return -ENOMEM;
 	}
 	iommu_dev->pagt_ddr_size = size;
-	pr_debug("iommu %s : pgt virt 0x%lx\n", iommu_dev->name,
-		 iommu_dev->pagt_base_virt);
-	pr_debug("iommu %s : pgt phy  0x%lx\n", iommu_dev->name,
-		 iommu_dev->pagt_base_ddr);
+	pr_debug("iommu %s : pgt virt 0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_virt);
+	pr_debug("iommu %s : pgt phy  0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_ddr);
 	pr_debug("iommu %s : pgt size 0x%x\n", iommu_dev->name,
-		 (iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4));
+		(iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4));
 
 	spin_lock_init(&iommu_dev->pgt_lock);	// pagetable spinlock init
 	return 0;
@@ -218,21 +191,18 @@ static int iommu_dev_pagetable_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 
 static void iommu_dev_pagetable_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
-
 	unsigned long size = 0;
 
 	if (iommu_dev->pagt_base_virt) {
 		size = iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4;
-		dma_free_coherent(iommu_dev->dev, size,
-				  (void *)iommu_dev->pagt_base_virt,
-				  iommu_dev->pagt_base_ddr);
+		dma_free_coherent(iommu_dev->dev, size, (void *)iommu_dev->pagt_base_virt,
+			iommu_dev->pagt_base_ddr);
 	}
 	return;
 }
 
 static int iommu_dev_hw_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
-
 	struct sprd_vdsp_iommu_widget *iommu_widget = NULL;	// iommu hw dev
 	struct sprd_vdsp_iommu_init_param iommu_init_param;	// iommu hw init param
 	int ret = 0;
@@ -260,11 +230,8 @@ static int iommu_dev_hw_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 	iommu_init_param.pagt_base_ddr = iommu_dev->pagt_base_ddr;
 	iommu_init_param.pagt_ddr_size = iommu_dev->pagt_ddr_size;
 
-	iommu_widget =
-	    (struct sprd_vdsp_iommu_widget *)devm_kzalloc(iommu_dev->dev,
-							  sizeof(struct
-								 sprd_vdsp_iommu_widget),
-							  GFP_KERNEL);
+	iommu_widget = (struct sprd_vdsp_iommu_widget *)devm_kzalloc(iommu_dev->dev,
+		sizeof(struct sprd_vdsp_iommu_widget), GFP_KERNEL);
 	if (!iommu_widget) {
 		pr_err("Error: devm_kzalloc failed\n");
 		return -ENOMEM;
@@ -276,8 +243,7 @@ static int iommu_dev_hw_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 		iommu_widget->p_iommu_tbl = (&iommuvau_func_tbl);
 		break;
 	default:
-		pr_err("Error: iommu_dev->iommu_version:%d\n",
-		       iommu_dev->iommu_version);
+		pr_err("Error: iommu_dev->iommu_version:%d\n", iommu_dev->iommu_version);
 		return -EINVAL;
 	}
 
@@ -293,7 +259,6 @@ static int iommu_dev_hw_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 
 static void iommu_dev_hw_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
-
 	struct sprd_vdsp_iommu_widget *iommu_widget = NULL;
 
 	iommu_widget = iommu_dev->iommu_hw_dev;
@@ -313,11 +278,8 @@ static int iommu_dev_map_record_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 		pr_err("Error: iommu_dev is NULL!\n");
 		return -EINVAL;
 	}
-	record =
-	    (struct sprd_vdsp_iommu_map_record *)devm_kzalloc(iommu_dev->dev,
-							      sizeof(struct
-								     sprd_vdsp_iommu_map_record),
-							      GFP_KERNEL);
+	record = (struct sprd_vdsp_iommu_map_record *)devm_kzalloc(iommu_dev->dev,
+		sizeof(struct sprd_vdsp_iommu_map_record), GFP_KERNEL);
 	if (!record) {
 		pr_err("Error: devm_kzalloc failed\n");
 		return -ENOMEM;
@@ -344,9 +306,8 @@ static void iommu_dev_map_record_relsase(struct sprd_vdsp_iommu_dev *iommu_dev)
 }
 
 static int iommu_dev_init(struct sprd_vdsp_iommu_dev *iommu_dev,
-			  struct device_node *of_node, struct device *dev)
+	struct device_node *of_node, struct device *dev)
 {
-
 	int ret = 0;
 
 	if (unlikely(!iommu_dev)) {
@@ -402,7 +363,6 @@ error_iommu_dev_parse_dt:
 
 static void iommu_dev_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
-
 	if (unlikely(!iommu_dev)) {
 		pr_err("Error: iommu_dev is NULL!\n");
 		return;
@@ -425,9 +385,8 @@ static void iommu_dev_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 }
 #ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
-			 struct sprd_vdsp_iommu_map_conf *map_conf)
+	struct sprd_vdsp_iommu_map_conf *map_conf)
 {
-
 	struct sprd_vdsp_iommu_iova *iova_dev = NULL;
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
 	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
@@ -467,30 +426,26 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 		return -EINVAL;
 	}
 	mutex_lock(&iommu_dev->mutex);
-	if (record_dev->
-	    ops->map_check(record_dev, map_conf->buf_addr,
-			   (unsigned long *)&iova)) {
+	if (record_dev->ops->map_check(record_dev, map_conf->buf_addr, (unsigned long *)&iova)) {
 		map_conf->iova_addr = iova;
-		pr_warn("Warning: buf 0x%lx has been mapped,iova = 0x%lx\n",
-			map_conf->buf_addr, iova);
+		pr_warn("Warning: buf 0x%lx has been mapped,iova = 0x%lx\n", map_conf->buf_addr, iova);
 		mutex_unlock(&iommu_dev->mutex);
 		return 0;
 	}
 	sg_table = map_conf->table;
 
-	if(map_conf->isfixed==1|| map_conf->isfixed==2){
-		iova=map_conf->fixed_data;
-		if(map_conf->isfixed==1){ // 1:fixed offset 2:fixed addr
-			iova=iova+iova_dev->iova_base;
+	if (map_conf->isfixed == 1 || map_conf->isfixed == 2) {
+		iova = map_conf->fixed_data;
+		if (map_conf->isfixed == 1) { // 1:fixed offset 2:fixed addr
+			iova = iova + iova_dev->iova_base;
 		}
-		ret=iova_dev->ops->iova_alloc_fixed(iova_dev,&iova,map_conf->iova_size);
-		if(ret){
+		ret = iova_dev->ops->iova_alloc_fixed(iova_dev, &iova, map_conf->iova_size);
+		if (ret) {
 			pr_err("Error: iova_alloc_fixed failed\n");
 			mutex_unlock(&iommu_dev->mutex);
 			return ret;
 		}
-	}
-	else{
+	} else {
 		iova = iova_dev->ops->iova_alloc(iova_dev, map_conf->iova_size);
 		if (iova < 0) {
 			pr_err("Error: iova_alloc failed\n");
@@ -509,8 +464,7 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 	spin_unlock_irqrestore(&iommu_dev->pgt_lock, irq_flag);
 
 	if (ret) {
-		pr_err("Error:iommu_hw_dev->p_iommu_tbl->map fialed:ret = %x\n",
-		       ret);
+		pr_err("Error:iommu_hw_dev->p_iommu_tbl->map fialed:ret = %x\n", ret);
 		iova_dev->ops->iova_free(iova_dev, iova, map_conf->iova_size);	//iova_free return void
 		map_conf->iova_addr = 0;
 		mutex_unlock(&iommu_dev->mutex);
@@ -518,18 +472,16 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 	}
 
 	map_conf->iova_addr = iova;
-	record_dev->ops->insert_slot(record_dev, (unsigned long)sg_table,
-				     map_conf->buf_addr, map_conf->iova_addr,
-				     map_conf->iova_size);
+	record_dev->ops->insert_slot(record_dev, ( unsigned long) sg_table,
+		map_conf->buf_addr, map_conf->iova_addr, map_conf->iova_size);
 	mutex_unlock(&iommu_dev->mutex);
 
 	return ret;
 }
 #else
 static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
-			 struct sprd_vdsp_iommu_map_conf *map_conf)
+	struct sprd_vdsp_iommu_map_conf *map_conf)
 {
-
 	struct sprd_vdsp_iommu_iova *iova_dev = NULL;
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
 	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
@@ -569,12 +521,9 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 		return -EINVAL;
 	}
 	mutex_lock(&iommu_dev->mutex);
-	if (record_dev->
-	    ops->map_check(record_dev, map_conf->buf_addr,
-			   (unsigned long *)&iova)) {
+	if (record_dev->ops->map_check(record_dev, map_conf->buf_addr, (unsigned long *)&iova)) {
 		map_conf->iova_addr = iova;
-		pr_warn("Warning: buf 0x%lx has been mapped,iova = 0x%lx\n",
-			map_conf->buf_addr, iova);
+		pr_warn("Warning: buf 0x%lx has been mapped,iova = 0x%lx\n", map_conf->buf_addr, iova);
 		mutex_unlock(&iommu_dev->mutex);
 		return 0;
 	}
@@ -590,7 +539,7 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 	spin_unlock_irqrestore(&iommu_dev->pgt_lock, irq_flag);
 
 	if (ret) {
-		pr_err("Error:iommu_hw_dev->p_iommu_tbl->map fialed:ret = %x\n",ret);
+		pr_err("Error:iommu_hw_dev->p_iommu_tbl->map fialed:ret = %x\n", ret);
 		mutex_unlock(&iommu_dev->mutex);
 		return ret;
 	}
@@ -601,9 +550,8 @@ static int iommu_dev_map(struct sprd_vdsp_iommu_dev *iommu_dev,
 
 #ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
-			   struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
+	struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
 {
-
 	struct sprd_vdsp_iommu_iova *iova_dev = NULL;
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
 	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
@@ -637,8 +585,7 @@ static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
 	}
 	mutex_lock(&iommu_dev->mutex);
 	if (!(record_dev->ops->unmap_check(record_dev, unmap_conf->buf_addr))) {
-		pr_err("Error: buf_addr 0x%lx is not iova mapped \n",
-		       unmap_conf->buf_addr);
+		pr_err("Error: buf_addr 0x%lx is not iova mapped \n", unmap_conf->buf_addr);
 		mutex_unlock(&iommu_dev->mutex);
 		return -EINVAL;
 	}
@@ -656,15 +603,14 @@ static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
 		mutex_unlock(&iommu_dev->mutex);
 		return -1;
 	}
-	iova_dev->ops->iova_free(iova_dev, unmap_conf->iova_addr,
-				 unmap_conf->iova_size);
+	iova_dev->ops->iova_free(iova_dev, unmap_conf->iova_addr, unmap_conf->iova_size);
 	record_dev->ops->remove_slot(record_dev, unmap_conf->iova_addr);
 	mutex_unlock(&iommu_dev->mutex);
 	return 0;
 }
 #else
 static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
-			   struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
+	struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
 {
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
 	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
@@ -692,8 +638,7 @@ static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
 	}
 	mutex_lock(&iommu_dev->mutex);
 	if (!(record_dev->ops->unmap_check(record_dev, unmap_conf->buf_addr))) {
-		pr_err("Error: buf_addr 0x%lx is not iova mapped \n",
-		       unmap_conf->buf_addr);
+		pr_err("Error: buf_addr 0x%lx is not iova mapped \n", unmap_conf->buf_addr);
 		mutex_unlock(&iommu_dev->mutex);
 		return -EINVAL;
 	}
@@ -721,3 +666,4 @@ struct sprd_vdsp_iommu_dev_ops iommu_dev_ops = {
 	.map = iommu_dev_map,
 	.unmap = iommu_dev_unmap,
 };
+

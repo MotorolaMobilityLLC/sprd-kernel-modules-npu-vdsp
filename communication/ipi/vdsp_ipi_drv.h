@@ -15,7 +15,7 @@
 #define _VDSP_IPI_DRV_H
 
 #include <linux/interrupt.h>
-#include <sprd_vdsp_mm.h>
+#include <linux/io.h>
 
 #define XRP_IRQ_REG_OFFSET    0x00800000
 
@@ -45,9 +45,9 @@ struct vdsp_ipi_ctx_desc {
 };
 
 struct vdsp_ipi_ops {
-	int (*ctx_init) (struct vdsp_ipi_ctx_desc * ctx);
-	int (*ctx_deinit) (struct vdsp_ipi_ctx_desc * ctx);
-	 irqreturn_t(*irq_handler) (int irq, void *arg);
+	int (*ctx_init) (struct vdsp_ipi_ctx_desc *ctx);
+	int (*ctx_deinit) (struct vdsp_ipi_ctx_desc *ctx);
+	irqreturn_t(*irq_handler) (int irq, void *arg);
 	int (*irq_register) (int idx, irq_handler_t handler, void *arg);
 	int (*irq_unregister) (int idx);
 	int (*irq_send) (int idx);
@@ -55,6 +55,10 @@ struct vdsp_ipi_ops {
 };
 
 struct vdsp_ipi_ctx_desc *get_vdsp_ipi_ctx_desc(void);
+
+#define IO_PTR volatile void __iomem *
+#define REG_RD(a) readl_relaxed((IO_PTR)(a))
+#define REG_WR(a,v) writel_relaxed((v),(IO_PTR)(a))
 
 #define IPI_HREG_WR(reg, val) \
 		(REG_WR((reg), (val)))

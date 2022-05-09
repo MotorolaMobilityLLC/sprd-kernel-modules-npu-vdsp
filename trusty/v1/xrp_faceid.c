@@ -53,13 +53,13 @@
         fmt, current->pid, __LINE__, __func__
 
 static int sprd_alloc_faceid_weights_buffer(struct xvp *xvp,
-					    struct ion_buf *ion_buf,
-					    size_t size)
+	struct ion_buf *ion_buf,
+	size_t size)
 {
 	int ret;
 
-	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc, ion_buf, ION_HEAP_ID_MASK_VDSP,	/*todo vdsp head id */
-						 size);
+	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc, ion_buf,
+		ION_HEAP_ID_MASK_VDSP,	/*todo vdsp head id */ size);
 	if (unlikely(0 != ret)) {
 		pr_err("alloc weights failed\n");
 		return -ENOMEM;
@@ -71,19 +71,18 @@ static int sprd_alloc_faceid_weights_buffer(struct xvp *xvp,
 	}
 	ion_buf->dev = xvp->dev;
 	pr_debug("faceid alloc addr_p %lx  vaddr:%lx,size %ld\n",
-		 ion_buf->addr_p, ion_buf->addr_k, ion_buf->size);
+		ion_buf->addr_p, ion_buf->addr_k, ion_buf->size);
 	return 0;
 
 }
 
 static int sprd_free_faceid_weights_buffer(struct xvp *xvp,
-					   struct ion_buf *ion_buf)
+	struct ion_buf *ion_buf)
 {
 	unsigned long dst_viraddr = ion_buf->addr_k;
 
 	if (dst_viraddr) {
-		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-						    ion_buf);
+		xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, ion_buf);
 		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, ion_buf);
 	}
 	return 0;
@@ -91,10 +90,8 @@ static int sprd_free_faceid_weights_buffer(struct xvp *xvp,
 
 int sprd_faceid_request_algo_mem(struct xvp *xvp)
 {
-	int ret = sprd_alloc_faceid_weights_buffer(xvp,
-						   &xvp->
-						   faceid_pool.ion_fd_mem_pool,
-						   FACEID_FD_MEM_SIZE);
+	int ret = sprd_alloc_faceid_weights_buffer(xvp, &xvp->faceid_pool.ion_fd_mem_pool,
+		FACEID_FD_MEM_SIZE);
 
 	if (unlikely(ret < 0)) {
 		pr_err("request fd mem fail\n");
@@ -113,16 +110,14 @@ int sprd_faceid_release_algo_mem(struct xvp *xvp)
 int sprd_request_weights(struct xvp *xvp, char *name, struct ion_buf *coeff_ion)
 {
 	unsigned long dst = 0;
-	int ret = request_firmware(&xvp->faceid_fw,
-				   name, xvp->dev);
+	int ret = request_firmware(&xvp->faceid_fw, name, xvp->dev);
 
 	if (unlikely(ret < 0)) {
 		pr_info("request %s weights fail\n", name);
 		return ret;
 	}
 
-	ret = sprd_alloc_faceid_weights_buffer(xvp,
-					       coeff_ion, xvp->faceid_fw->size);
+	ret = sprd_alloc_faceid_weights_buffer(xvp, coeff_ion, xvp->faceid_fw->size);
 
 	if (unlikely(ret < 0)) {
 		pr_err("alloc %s weights fail\n", name);
@@ -130,7 +125,7 @@ int sprd_request_weights(struct xvp *xvp, char *name, struct ion_buf *coeff_ion)
 	}
 
 	dst = coeff_ion->addr_k;
-	memcpy((void *)dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
+	memcpy(( void *) dst, xvp->faceid_fw->data, xvp->faceid_fw->size);
 
 	release_firmware(xvp->faceid_fw);
 
@@ -141,7 +136,8 @@ int sprd_faceid_request_weights(struct xvp *xvp)
 {
 	int i = 0, ret;
 
-	char *coeff_name[FACEID_COEFF_NUM] = { "network_coeff_fd_p.bin",
+	char *coeff_name[FACEID_COEFF_NUM] = {
+		"network_coeff_fd_p.bin",
 		"network_coeff_fd_r.bin",
 		"network_coeff_fd_o.bin",
 		"network_coeff_fp.bin",
@@ -192,9 +188,7 @@ int sprd_alloc_faceid_combuffer(struct xvp *xvp)
 	int ret;
 
 	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
-						 &xvp->ion_faceid_comm,
-						 ION_HEAP_ID_MASK_VDSP,
-						 PAGE_SIZE);
+		&xvp->ion_faceid_comm, ION_HEAP_ID_MASK_VDSP, PAGE_SIZE);
 	if (0 != ret) {
 		pr_err("alloc faceid com buffer failed,ret %d\n", ret);
 		return -ENOMEM;
@@ -209,8 +203,7 @@ int sprd_alloc_faceid_combuffer(struct xvp *xvp)
 int sprd_free_faceid_combuffer(struct xvp *xvp)
 {
 
-	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-					  &xvp->ion_faceid_comm);
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, &xvp->ion_faceid_comm);
 
 	return 0;
 }
@@ -219,32 +212,25 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 {
 	int ret;
 
-	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
-						 &xvp->ion_faceid_fw_sign,
-						 ION_HEAP_ID_MASK_VDSP,
-						 VDSP_FACEID_FIRMWIRE_SIZE);
+	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw_sign,
+		ION_HEAP_ID_MASK_VDSP, VDSP_FACEID_FIRMWIRE_SIZE);
 	if (unlikely(0 != ret)) {
 		pr_err("alloc sign fw buffer failed,ret %d\n", ret);
 		return -ENOMEM;
 	}
-	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc,
-						&xvp->ion_faceid_fw_sign);
+	ret = xvp->vdsp_mem_desc->ops->mem_kmap(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw_sign);
 	if (unlikely(0 != ret)) {
-		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-						  &xvp->ion_faceid_fw_sign);
+		xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw_sign);
 		pr_err("kmap fw buffer failed,ret %d\n", ret);
 		return -EFAULT;
 	}
 	xvp->ion_faceid_fw_sign.dev = xvp->dev;
 	pr_debug("ion_faceid_fw_sign phyaddr %llX\n",
-		 xvp->ion_faceid_fw_sign.addr_k,
-		 xvp->ion_faceid_fw_sign.addr_p);
+		xvp->ion_faceid_fw_sign.addr_k, xvp->ion_faceid_fw_sign.addr_p);
 
 	xvp->ion_faceid_fw.addr_p = 0;
-	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc,
-						 &xvp->ion_faceid_fw,
-						 ION_HEAP_ID_MASK_VDSP,
-						 VDSP_FACEID_FIRMWIRE_SIZE);
+	ret = xvp->vdsp_mem_desc->ops->mem_alloc(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw,
+		ION_HEAP_ID_MASK_VDSP, VDSP_FACEID_FIRMWIRE_SIZE);
 	if (unlikely(0 != ret)) {
 		pr_err("alloc fw buffer failed,ret %d\n", ret);
 		return -ENOMEM;
@@ -257,13 +243,10 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 
 static int sprd_free_faceid_fwbuffer(struct xvp *xvp)
 {
-	xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc,
-					    &xvp->ion_faceid_fw_sign);
-	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-					  &xvp->ion_faceid_fw_sign);
+	xvp->vdsp_mem_desc->ops->mem_kunmap(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw_sign);
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw_sign);
 
-	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc,
-					  &xvp->ion_faceid_fw);
+	xvp->vdsp_mem_desc->ops->mem_free(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw);
 
 	xvp->ion_faceid_fw.addr_p = 0;
 	return 0;
@@ -276,8 +259,7 @@ void sprd_release_faceid_firmware(struct xvp *xvp)
 
 int sprd_request_faceid_firmware(struct xvp *xvp)
 {
-	int ret =
-	    request_firmware(&xvp->firmware2_sign, FACEID_FIRMWARE, xvp->dev);
+	int ret = request_firmware(&xvp->firmware2_sign, FACEID_FIRMWARE, xvp->dev);
 
 	if (unlikely(ret < 0)) {
 		pr_err("request firmware failed ret:%d\n", ret);
@@ -296,9 +278,8 @@ int sprd_iommu_map_faceid_fwbuffer(struct xvp *xvp)
 		return ret;
 	}
 
-	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc,
-						     &xvp->ion_faceid_fw,
-						     IOMMU_ALL);
+	ret = xvp->vdsp_mem_desc->ops->mem_iommu_map(xvp->vdsp_mem_desc, &xvp->ion_faceid_fw,
+		IOMMU_ALL);
 	if (unlikely(ret)) {
 		pr_err("map faceid fw buffer failed\n");
 		return ret;
@@ -306,8 +287,7 @@ int sprd_iommu_map_faceid_fwbuffer(struct xvp *xvp)
 	xvp->dsp_firmware_addr = xvp->ion_faceid_fw.iova;
 
 	pr_debug("iomap:%p --> %lx\n",
-		 xvp->ion_faceid_fw.addr_p,
-		 (unsigned long)xvp->dsp_firmware_addr);
+		xvp->ion_faceid_fw.addr_p, ( unsigned long) xvp->dsp_firmware_addr);
 	return ret;
 }
 
@@ -321,8 +301,7 @@ int sprd_iommu_unmap_faceid_fwbuffer(struct xvp *xvp)
 	}
 
 	ret = xvp->vdsp_mem_desc->ops->mem_iommu_unmap(xvp->vdsp_mem_desc,
-						       &xvp->ion_faceid_fw,
-						       IOMMU_ALL);
+		&xvp->ion_faceid_fw, IOMMU_ALL);
 	if (unlikely(ret)) {
 		pr_err("unmap faceid fw fialed, ret %d\n", ret);
 		return -EFAULT;
@@ -335,7 +314,7 @@ int sprd_iommu_unmap_faceid_fwbuffer(struct xvp *xvp)
 unsigned long sprd_faceid_get_ion_phy(int fd)
 {
 	int ret;
-	struct ion_buf tmp = { 0 };
+	struct ion_buf tmp = {0};
 
 	ret = sprd_ion_get_buffer(fd, tmp.dmabuf_p, &tmp.buf, &tmp.size);
 	if (ret) {
@@ -392,8 +371,8 @@ int sprd_faceid_secboot_entry(struct xvp *xvp)
 	bool ret;
 
 	/*copy fw to continuous physical address */
-	memcpy((void *)xvp->ion_faceid_fw_sign.addr_k,
-	       (void *)xvp->firmware2_sign->data, xvp->firmware2_sign->size);
+	memcpy(( void *) xvp->ion_faceid_fw_sign.addr_k,
+		( void *) xvp->firmware2_sign->data, xvp->firmware2_sign->size);
 
 	if (xvp->tee_con) {
 		struct vdsp_msg msg;
@@ -469,8 +448,7 @@ int sprd_faceid_sync_vdsp(struct xvp *xvp)
 	msg.vdsp_type = TA_CADENCE_VQ6;
 	msg.msg_cmd = TA_FACEID_SYNC_VDSP;
 
-	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz,
-						     xvp->ion_vdsp_log.addr_p);
+	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz, xvp->ion_vdsp_log.addr_p);
 	if (unlikely(!hw_sync_data)) {
 		return -ENOMEM;
 	}
@@ -620,9 +598,7 @@ int sprd_faceid_request_irq(struct xvp *xvp)
 
 	if (xvp->irq_status == IRQ_STATUS_FREED) {
 		if (xvp->hw_ops->vdsp_request_irq) {
-			ret =
-			    xvp->hw_ops->vdsp_request_irq(xvp->dev,
-							  xvp->hw_arg);
+			ret = xvp->hw_ops->vdsp_request_irq(xvp->dev, xvp->hw_arg);
 			if (ret < 0) {
 				pr_err("xvp_request_irq failed %d\n", ret);
 				return ret;
@@ -663,10 +639,10 @@ int sprd_faceid_run_vdsp(struct xvp *xvp, uint32_t in_fd, uint32_t out_fd)
 			return -1;
 
 		pr_debug
-		    ("fd_p %X,fd_r %X,fd_o %X,fp %X,flv %X,fv %X,mem pool %X,in %llX\n",
-		     msg.fd_p_coffe_addr, msg.fd_r_coffe_addr,
-		     msg.fd_o_coffe_addr, msg.fp_coffe_addr, msg.flv_coffe_addr,
-		     msg.fv_coffe_addr, msg.mem_pool_addr, msg.in_addr);
+		("fd_p %X,fd_r %X,fd_o %X,fp %X,flv %X,fv %X,mem pool %X,in %llX\n",
+			msg.fd_p_coffe_addr, msg.fd_r_coffe_addr,
+			msg.fd_o_coffe_addr, msg.fp_coffe_addr, msg.flv_coffe_addr,
+			msg.fv_coffe_addr, msg.mem_pool_addr, msg.in_addr);
 
 		ret = vdsp_run_vdsp(&msg);
 		if (!ret) {

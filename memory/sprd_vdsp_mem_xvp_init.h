@@ -32,7 +32,7 @@ struct xvp_buf {
 	struct list_head list_node;
 	struct list_head xvp_file_list_node;
 	unsigned long owner;
-	uint64_t buf_hnd;
+	uint64_t buf_hnd;			// need modify later
 	int isfixed;                // flag for fixed map, 0: no 1:fixed_offset 2:fixed_addr
 	unsigned long fixed_data;   // fixed map addr or offset
 } __attribute__ ((aligned(8)));
@@ -40,11 +40,11 @@ struct xvp_buf {
 int sprd_vdsp_mem_xvp_init(struct xvp *xvp);
 int sprd_vdsp_mem_xvp_release(struct xvp_mem_dev *xvp_mem_dev);
 int xvp_mem_check_args(struct xvp *xvp, struct xvp_buf *xvp_buf,
-		       struct mem_ctx **mem_ctx);
+	struct mem_ctx **mem_ctx);
 
 // NOTE: for internal use
 struct xvp_buf *__xvp_buf_creat(struct xvp *xvp, char *name, uint64_t size,
-				uint32_t type, uint32_t attr);
+	uint32_t type, uint32_t attr);
 int __xvp_buf_destroy(struct xvp *xvp, struct xvp_buf *xvp_buf);
 int __xvp_buf_alloc(struct xvp *xvp, struct xvp_buf *xvp_buf);
 int __xvp_buf_free(struct xvp *xvp, struct xvp_buf *xvp_buf);
@@ -52,13 +52,13 @@ int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf);
 int xvp_buf_kunmap(struct xvp *xvp, struct xvp_buf *xvp_buf);
 
 struct xvp_buf *xvp_buf_alloc(struct xvp *xvp, char *name, uint64_t size,
-			      uint32_t type, uint32_t attr);
+	uint32_t type, uint32_t attr);
 int xvp_buf_free(struct xvp *xvp, struct xvp_buf *buf);
 int xvp_buf_iommu_map(struct xvp *xvp, struct xvp_buf *xvp_buf);
 int xvp_buf_iommu_unmap(struct xvp *xvp, struct xvp_buf *xvp_buf);
 struct xvp_buf *xvp_buf_alloc_with_iommu(struct xvp *xvp, char *name,
-					 uint64_t size, uint32_t type,
-					 uint32_t attr);
+	uint64_t size, uint32_t type,
+	uint32_t attr);
 int xvp_buf_free_with_iommu(struct xvp *xvp, struct xvp_buf *buf);
 
 void *xvp_buf_get_vaddr(struct xvp_buf *buf);

@@ -1,6 +1,11 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
 
 /*
- * Copyright (c) 2017 Cadence Design Systems Inc.
+ * XRP: Linux device driver for Xtensa Remote Processing
+ *
+ * Copyright (c) 2015 - 2017 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -24,13 +29,46 @@
  * Alternatively you can use and distribute this file under the terms of
  * the GNU General Public License version 2 or later.
  */
+#ifndef __XVP_MAIN_H__
+#define __XVP_MAIN_H__
 
-#ifndef XRP_PRIVATE_ALLOC_H
-#define XRP_PRIVATE_ALLOC_H
+#include <linux/types.h>
+#include "xrp_kernel_defs.h"
+#include "xrp_kernel_dsp_interface.h"
+#include "vdsp_dvfs.h"
 
-#include "xrp_alloc.h"
+struct xvp_file {
+	struct xvp *xvp;
+	struct list_head load_lib_list;
+	struct vdsp_dvfs_filpowerhint powerhint_info;
+	struct mutex lock;
+	uint32_t working;
+	struct list_head buf_list;
+	struct mutex xvpfile_buf_list_lock;
+};
 
-long xrp_init_private_pool(struct xrp_allocation_pool **pool,
-			   phys_addr_t start, u32 size);
+struct xrp_known_file {
+	void *filp;
+	struct hlist_node node;
+};
+
+struct xrp_request {
+	struct xrp_ioctl_queue ioctl_queue;
+	size_t n_buffers;
+	struct xvp_buf *in_buf;	// in buf
+	struct xvp_buf *out_buf;	// out buf
+	struct xvp_buf *dsp_buf;	// buf list
+	int *id_dsp_pool;
+	union {
+		u8 in_data[XRP_DSP_CMD_INLINE_DATA_SIZE];
+	};
+	union {
+		u8 out_data[XRP_DSP_CMD_INLINE_DATA_SIZE];
+	};
+	union {
+		struct xrp_dsp_buffer buffer_data[XRP_DSP_CMD_INLINE_BUFFER_COUNT];
+	};
+	u8 nsid[XRP_DSP_CMD_NAMESPACE_ID_SIZE];
+};
 
 #endif

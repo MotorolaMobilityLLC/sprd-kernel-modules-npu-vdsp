@@ -28,11 +28,7 @@ enum library_state {
 
 struct xrp_unload_cmdinfo {
 	struct xrp_request *rq;
-#ifdef IOMMUANDMEM
 	int input_mem_fd;
-#else
-	void *input_ion_handle;
-#endif
 	void *input_kaddr;
 };
 
@@ -41,13 +37,8 @@ struct loadlib_info {
 	uint32_t lib_processing_count;
 	char libname[32];	/*libname , load_flag ==1 is valid, load_flag ==0 is invalid */
 	uint32_t length;	/*library length bytes */
-#ifdef IOMMUANDMEM
 	int handle;		/*mem fd */
 	int pil_handle;
-#else
-	void *ionhandle;	/*ion handle */
-	void *pil_ionhandle;
-#endif
 	phys_addr_t ion_phy;
 	void *ion_kaddr;
 	uint32_t pil_info;
@@ -63,25 +54,17 @@ struct xrp_load_lib_info {
 
 struct xrp_request;
 struct xvp;
-struct xrp_comm;
 
-enum load_unload_flag xrp_check_load_unload(struct xvp *xvp,
-					    struct xrp_request *rq,
-					    uint32_t krqflag);
-int32_t xrp_pre_process_request(struct file *filp,
-				struct xrp_request *rq,
-				enum load_unload_flag loadflag,
-				char *libname, uint32_t krqflag);
-int post_process_request(struct file *filp,
-			 struct xrp_request *rq,
-			 const char *libname,
-			 enum load_unload_flag load_flag, int32_t resultflag);
+enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request *rq, uint32_t krqflag);
+int32_t xrp_pre_process_request(struct file *filp, struct xrp_request *rq,
+	enum load_unload_flag loadflag, char *libname, uint32_t krqflag);
+int post_process_request(struct file *filp, struct xrp_request *rq,
+	const char *libname, enum load_unload_flag load_flag, int32_t resultflag);
 int32_t xrp_library_release_all(struct xvp *xvp);
-int32_t xrp_library_decrelease(struct file *filp, const char *libname);
-int32_t xrp_library_setall_missstate(struct xvp *xvp);
-int32_t xrp_create_unload_cmd(struct file *filp,
-			      struct loadlib_info *libinfo,
-			      struct xrp_unload_cmdinfo *info);
+int32_t xrp_library_decrease(struct file *filp, const char *libname);
+//int32_t xrp_library_setall_missstate(struct xvp *xvp); no use
+int32_t xrp_create_unload_cmd(struct file *filp, struct loadlib_info *libinfo,
+	struct xrp_unload_cmdinfo *info);
 int32_t xrp_free_unload_cmd(struct file *filp, struct xrp_unload_cmdinfo *info);
 
 #endif

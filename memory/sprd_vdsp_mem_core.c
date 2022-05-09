@@ -58,31 +58,26 @@
 #include <linux/kprobes.h>
 #include <asm/traps.h>
 #include "sprd_iommu_test_debug.h"
-
-/* Maximum number of processes */
-#define MAX_PROC_CTX 1000
+#include "vdsp_debugfs.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "sprd-vdsp: [mem_core]: %d %s: "\
-        fmt, current->pid, __func__
+#define pr_fmt(fmt) "sprd-vdsp: [mem_core]: %d %d %s: "\
+        fmt, current->pid, __LINE__, __func__
 
-static unsigned int trace_mem_alloc_free = 0;
-static unsigned int trace_mem_import_free = 0;
-static unsigned int trace_mem_export = 0;
-static unsigned int trace_mem_fence = 0;
-static unsigned int trace_mem_umap = 0;
-static unsigned int trace_mem_kmap = 0;
-static unsigned int trace_mem_iommu_map = 0;
-static unsigned int trace_mem_sync = 0;
+/* Maximum number of processes */
+#define MAX_PROC_CTX 1000
+
+/* Minimum page size (4KB) bits. */
+#define MIN_PAGE_SIZE_BITS 12
 
 struct mem_man {
 	struct idr heaps;
 	struct idr mem_ctxs;
 	struct mutex mutex;
 
-	bool cache_initialized;
+	unsigned cache_ref;
 };
 
 /* define like this, so it is easier to convert to a function argument later */
@@ -112,12 +107,12 @@ static bool trace_physical_pages;
 
 module_param(trace_physical_pages, bool, 0444);
 MODULE_PARM_DESC(trace_physical_pages,
-		 "Enables tracing of physical pages being mapped into MMU");
+	"Enables tracing of physical pages being mapped into MMU");
 static bool cache_sync = true;
 
 module_param(cache_sync, bool, 0444);
 MODULE_PARM_DESC(cache_sync,
-		 "cache sync mode: 0-no sync; 1-force sync (even if hw provides coherency);");
+	"cache sync mode: 0-no sync; 1-force sync (even if hw provides coherency);");
 
 /*
  * memory heaps
@@ -146,9 +141,10 @@ int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
-	int (*init_fn) (const struct heap_config * heap_cfg,
-			struct heap * heap);
+	int (*init_fn) (const struct heap_config *heap_cfg, struct heap *heap);
 	int ret;
+
+	pr_debug("%s:%d\n", __func__, __LINE__);
 
 	switch (heap_cfg->type) {
 	case SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED:
@@ -161,9 +157,11 @@ int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id)
 	case SPRD_VDSP_MEM_HEAP_TYPE_ANONYMOUS:
 		init_fn = sprd_vdsp_mem_anonymous_init;
 		break;
+#ifdef CONFIG_GENERIC_ALLOCATOR
 	case SPRD_VDSP_MEM_HEAP_TYPE_CARVEOUT:
 		init_fn = sprd_vdsp_mem_carveout_init;
 		break;
+#endif
 	default:
 		pr_err("heap type %d unknown\n", heap_cfg->type);
 		return -EINVAL;
@@ -178,7 +176,7 @@ int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id)
 		goto lock_failed;
 
 	ret = idr_alloc(&mem_man->heaps, heap, SPRD_VDSP_MEM_MAN_MIN_HEAP,
-			SPRD_VDSP_MEM_MAN_MAX_HEAP, GFP_KERNEL);
+		SPRD_VDSP_MEM_MAN_MAX_HEAP, GFP_KERNEL);
 	if (ret < 0) {
 		pr_err("idr_alloc failed\n");
 		goto alloc_id_failed;
@@ -203,7 +201,7 @@ int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id)
 	mutex_unlock(&mem_man->mutex);
 
 	pr_debug("created heap %d type %d (%s)\n",
-		 *heap_id, heap_cfg->type, get_heap_name(heap->type));
+		*heap_id, heap_cfg->type, get_heap_name(heap->type));
 	return 0;
 
 heap_init_failed:
@@ -221,6 +219,8 @@ static void _sprd_vdsp_mem_del_heap(struct heap *heap)
 {
 	struct mem_man *mem_man = &mem_man_data;
 
+	pr_debug("%s heap %d 0x%p\n", __func__, heap->id, heap);
+
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
 	if (heap->ops->destroy)
@@ -234,11 +234,13 @@ void sprd_vdsp_mem_del_heap(int heap_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 
+	pr_debug("%s:%d heap %d\n", __func__, __LINE__, heap_id);
+
 	mutex_lock(&mem_man->mutex);
 
 	heap = idr_find(&mem_man->heaps, heap_id);
 	if (!heap) {
-		pr_warn("%s heap %d not found!\n", __func__, heap_id);
+		pr_warn("heap %d not found!\n", heap_id);
 		mutex_unlock(&mem_man->mutex);
 		return;
 	}
@@ -252,17 +254,14 @@ void sprd_vdsp_mem_del_heap(int heap_id)
 
 EXPORT_SYMBOL(sprd_vdsp_mem_del_heap);
 
-int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t * type, uint32_t * attrs)
+int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t *type, uint32_t *attrs)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 
-	if (heap_id < SPRD_VDSP_MEM_MAN_MIN_HEAP
-	    || heap_id > SPRD_VDSP_MEM_MAN_MAX_HEAP) {
-		pr_err
-		    ("heap %d does not match internal constraints <%u - %u>!\n",
-		     heap_id, SPRD_VDSP_MEM_MAN_MIN_HEAP,
-		     SPRD_VDSP_MEM_MAN_MAX_HEAP);
+	if (heap_id < SPRD_VDSP_MEM_MAN_MIN_HEAP || heap_id > SPRD_VDSP_MEM_MAN_MAX_HEAP) {
+		pr_err("heap %d does not match internal constraints <%u - %u>!\n",
+			heap_id, SPRD_VDSP_MEM_MAN_MIN_HEAP, SPRD_VDSP_MEM_MAN_MAX_HEAP);
 		return -EINVAL;
 	}
 	mutex_lock(&mem_man->mutex);
@@ -283,8 +282,6 @@ int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t * type, uint32_t * attrs)
 		*attrs |= SPRD_VDSP_MEM_HEAP_ATTR_EXPORT;
 	if (heap->ops->alloc && !heap->ops->import)
 		*attrs |= SPRD_VDSP_MEM_HEAP_ATTR_INTERNAL;
-	//if (heap->type == SPRD_VDSP_MEM_HEAP_TYPE_OCM)
-	//  *attrs = SPRD_VDSP_MEM_HEAP_ATTR_SEALED;
 
 	mutex_unlock(&mem_man->mutex);
 
@@ -301,10 +298,8 @@ int sprd_vdsp_mem_get_heap_id(enum sprd_vdsp_mem_heap_type type)
 
 	if (type < SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED
 	    || type > SPRD_VDSP_MEM_HEAP_TYPE_CARVEOUT) {
-		pr_err
-		    (" Error： heap type %d does not match internal constraints <%u - %u>!\n",
-		     type, SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED,
-		     SPRD_VDSP_MEM_HEAP_TYPE_CARVEOUT);
+		pr_err(" Error heap type %d does not match internal constraints <%u - %u>!\n",
+			type, SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED, SPRD_VDSP_MEM_HEAP_TYPE_CARVEOUT);
 		return -1;
 	}
 	mutex_lock(&mem_man->mutex);
@@ -360,8 +355,6 @@ EXPORT_SYMBOL(sprd_vdsp_mem_create_proc_ctx);
 
 static void _sprd_vdsp_mem_free(struct buffer *buffer);
 
-//static void _sprd_vdsp_mmu_ctx_destroy(struct mmu_ctx *ctx);
-
 static void _sprd_vdsp_mem_destroy_proc_ctx(struct mem_ctx *ctx)
 {
 	struct mem_man *mem_man = &mem_man_data;
@@ -398,9 +391,7 @@ void sprd_vdsp_mem_destroy_proc_ctx(struct mem_ctx *ctx)
 EXPORT_SYMBOL(sprd_vdsp_mem_destroy_proc_ctx);
 
 static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
-				struct heap *heap, size_t size,
-				enum sprd_vdsp_mem_attr attr,
-				struct buffer **buffer_new)
+	struct heap *heap, size_t size, enum sprd_vdsp_mem_attr attr, struct buffer **buffer_new)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -426,10 +417,9 @@ static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
 		return -ENOMEM;
 
 	ret = idr_alloc(&ctx->buffers, buffer,
-			(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) +
-			SPRD_VDSP_MEM_MAN_MIN_BUFFER,
-			(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) +
-			SPRD_VDSP_MEM_MAN_MAX_BUFFER, GFP_KERNEL);
+		(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) + SPRD_VDSP_MEM_MAN_MIN_BUFFER,
+		(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) + SPRD_VDSP_MEM_MAN_MAX_BUFFER,
+		GFP_KERNEL);
 	if (ret < 0) {
 		pr_err("idr_alloc failed\n");
 		goto idr_alloc_failed;
@@ -447,12 +437,11 @@ static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
 
 	/* Check if heap has been registered using an alternative cache attributes */
 	if (heap->alt_cache_attr &&
-	    (heap->alt_cache_attr != (attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK))) {
-		if (trace_mem_alloc_free) {
-			pr_debug
-			    ("heap %d changing cache attributes from %x to %x\n",
-			     heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK,
-			     heap->alt_cache_attr);
+		(heap->alt_cache_attr != (attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK))) {
+		if (vdsp_debugfs_trace_mem()) {
+			pr_debug("heap %d changing cache attributes from %x to %x\n",
+				heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK,
+				heap->alt_cache_attr);
 		}
 		attr &= ~SPRD_VDSP_MEM_ATTR_CACHE_MASK;
 		attr |= heap->alt_cache_attr;
@@ -463,9 +452,9 @@ static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
 		pr_err("heap %d alloc failed\n", heap->id);
 		goto heap_alloc_failed;
 	}
-	if (trace_mem_alloc_free) {
+	if (vdsp_debugfs_trace_mem()) {
 		pr_debug("-- Allocating zeroed buffer id:%d  size:%zu\n",
-			 buffer->id, buffer->actual_size);
+			buffer->id, buffer->actual_size);
 	}
 
 	ctx->mem_usage_curr += buffer->actual_size;
@@ -473,10 +462,9 @@ static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
 		ctx->mem_usage_max = ctx->mem_usage_curr;
 
 	*buffer_new = buffer;
-	if (trace_mem_alloc_free) {
-		pr_debug
-		    ("heap %p ctx %p created buffer %d (%p) actual_size %zu\n",
-		     heap, ctx, buffer->id, buffer, buffer->actual_size);
+	if (vdsp_debugfs_trace_mem()) {
+		pr_debug("heap %p ctx %p created buffer %d (%p) actual_size %zu\n",
+			heap, ctx, buffer->id, buffer, buffer->actual_size);
 	}
 	return 0;
 
@@ -488,14 +476,14 @@ idr_alloc_failed:
 }
 
 int sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx, int heap_id,
-			size_t size, enum sprd_vdsp_mem_attr attr, int *buf_id)
+	size_t size, enum sprd_vdsp_mem_attr attr, int *buf_id)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 	struct buffer *buffer;
 	int ret;
 
-	if (trace_mem_alloc_free) {
+	if (vdsp_debugfs_trace_mem()) {
 		pr_debug("heap %d ctx %p size %zu\n", heap_id, ctx, size);
 	}
 
@@ -518,20 +506,18 @@ int sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx, int heap_id,
 
 	*buf_id = buffer->id;
 	mutex_unlock(&mem_man->mutex);
-	if (trace_mem_alloc_free) {
+	if (vdsp_debugfs_trace_mem()) {
 		pr_debug("heap %s ctx %p created buffer %d (0x%lx) size %zu\n",
-			 get_heap_name(heap->type), ctx, *buf_id,
-			 (unsigned long)buffer, size);
+			get_heap_name(heap->type), ctx, *buf_id, ( unsigned long) buffer, size);
 	}
 	return ret;
 }
 
 EXPORT_SYMBOL(sprd_vdsp_mem_alloc);
 
-static int _sprd_vdsp_mem_import(struct device *device,
-				 struct mem_ctx *ctx, struct heap *heap,
-				 size_t size, enum sprd_vdsp_mem_attr attr,
-				 uint64_t buf_hnd, struct buffer **buffer_new)
+static int _sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
+	struct heap *heap, size_t size, enum sprd_vdsp_mem_attr attr, uint64_t buf_fd,
+	struct page **pages, struct buffer **buffer_new)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -555,10 +541,9 @@ static int _sprd_vdsp_mem_import(struct device *device,
 		return -ENOMEM;
 
 	ret = idr_alloc(&ctx->buffers, buffer,
-			(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) +
-			SPRD_VDSP_MEM_MAN_MIN_BUFFER,
-			(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) +
-			SPRD_VDSP_MEM_MAN_MAX_BUFFER, GFP_KERNEL);
+		(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) + SPRD_VDSP_MEM_MAN_MIN_BUFFER,
+		(SPRD_VDSP_MEM_MAN_MAX_BUFFER * ctx->id) + SPRD_VDSP_MEM_MAN_MAX_BUFFER,
+		GFP_KERNEL);
 	if (ret < 0) {
 		pr_err("idr_alloc failed\n");
 		goto idr_alloc_failed;
@@ -583,28 +568,31 @@ static int _sprd_vdsp_mem_import(struct device *device,
 	if (buffer->actual_size - buffer->request_size > PAGE_SIZE) {
 		pr_err("original buffer size is not MMU page size aligned!\n");
 		ret = -EINVAL;
-		goto check_buffer_size_failed;
+		goto heap_import_failed;
 	}
 
 	/* Check if heap has been registered using an alternative cache attributes */
 	if (heap->alt_cache_attr &&
-	    (heap->alt_cache_attr != (attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK))) {
-		if (trace_mem_import_free) {
-			pr_debug
-			    ("heap %d changing cache attributes from %x to %x\n",
-			     heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK,
-			     heap->alt_cache_attr);
+		(heap->alt_cache_attr != (attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK))) {
+		if (vdsp_debugfs_trace_mem()) {
+			pr_debug("heap %d changing cache attributes from %x to %x\n",
+				heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK, heap->alt_cache_attr);
 		}
 		attr &= ~SPRD_VDSP_MEM_ATTR_CACHE_MASK;
 		attr |= heap->alt_cache_attr;
 	}
 
 	ret = heap->ops->import(device, heap, buffer->actual_size, attr,
-				buf_hnd, buffer);
+				buf_fd, pages, buffer);
 	if (ret) {
 		pr_err("heap %d import failed\n", heap->id);
 		goto heap_import_failed;
 	}
+
+	pr_debug("-- Allocating zeroed buffer id:%d size:%zu for imported data\n",
+			buffer->id, buffer->actual_size);
+	pr_debug("CALLOC :BLOCK_%d %#zx %#zx 0x0\n",
+			buffer->id, buffer->actual_size, align);
 
 	ctx->mem_usage_curr += buffer->actual_size;
 	if (ctx->mem_usage_curr > ctx->mem_usage_max)
@@ -614,62 +602,148 @@ static int _sprd_vdsp_mem_import(struct device *device,
 	return 0;
 
 heap_import_failed:
-check_buffer_size_failed:
 	idr_remove(&ctx->buffers, buffer->id);
 idr_alloc_failed:
 	kfree(buffer);
 	return ret;
 }
 
+static void _sprd_vdsp_mem_put_pages(size_t size, struct page **pages)
+{
+	int num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+	int i;
+
+	for (i = 0; i < num_pages; i++)
+		if (pages[i])
+			put_page(pages[i]);		
+	kfree(pages);
+}
+
+static int _sprd_vdsp_mem_get_user_pages(size_t size, uint64_t cpu_ptr,
+				struct page **pages[])
+{
+	struct page **tmp_pages = NULL;
+	int num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+	int ret;
+
+	/* Check alignment */
+	if (cpu_ptr & (PAGE_SIZE-1)) {
+		pr_err("%s wrong alignment of %#llx address!\n",
+				__func__, cpu_ptr);
+		return -EFAULT;
+	}
+
+	tmp_pages = kmalloc_array(num_pages, sizeof(struct page *),
+			GFP_KERNEL | __GFP_ZERO);
+	if (!tmp_pages) {
+		pr_err("%s failed to allocate memory for pages\n", __func__);
+		return -ENOMEM;
+	}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	down_read(&current->mm->mmap_sem);
+#else
+	mmap_read_lock(current->mm);
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+	ret = get_user_pages(
+			cpu_ptr, num_pages,
+			0,
+			tmp_pages, NULL);
+#else
+	pr_err("%s get_user_pages not supported for this kernel version\n",
+					__func__);
+	ret = -1;
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	up_read(&current->mm->mmap_sem);
+#else
+	mmap_read_unlock(current->mm);
+#endif
+	if (ret != num_pages) {
+		pr_err("%s failed to get_user_pages count:%d for %#llx address\n",
+				__func__, num_pages, cpu_ptr);
+		ret = -ENOMEM;
+		goto out_get_user_pages;
+	}
+
+	*pages = tmp_pages;
+
+	return 0;
+
+out_get_user_pages:
+	_sprd_vdsp_mem_put_pages(size, tmp_pages);
+
+	return ret;	
+}
+
 int sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
-			 int heap_id, size_t size, enum sprd_vdsp_mem_attr attr,
-			 uint64_t buf_hnd, int *buf_id)
+	int heap_id, size_t size, enum sprd_vdsp_mem_attr attr, uint64_t buf_fd,
+	uint64_t cpu_ptr, int *buf_id)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 	struct buffer *buffer;
+	struct page **pages = NULL;
 	int ret;
 
-	if (trace_mem_import_free)
-		pr_debug("heap %d ctx %p hnd %#llx\n", heap_id, ctx, buf_hnd);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("%s heap %d ctx %p hnd %#llx\n", __func__, heap_id, ctx, buf_fd);
+
+	if (cpu_ptr) {
+		ret = _sprd_vdsp_mem_get_user_pages(size, cpu_ptr, &pages);
+		if (ret) {
+			pr_err("%s:%d getting user pages failed\n", __func__, __LINE__);
+			return ret;
+		}
+	}
 
 	ret = mutex_lock_interruptible(&mem_man->mutex);
-	if (ret)
-		return ret;
+	if (ret) {
+		pr_err("%s:%d lock interrupted: mem_man->mutex\n", __func__, __LINE__);
+		goto lock_interrupted;
+	}
 
 	heap = idr_find(&mem_man->heaps, heap_id);
 	if (!heap) {
-		pr_err("heap id %d not found\n", heap_id);
-		mutex_unlock(&mem_man->mutex);
-		return -EINVAL;
+		pr_err("%s: heap id %d not found\n", __func__, heap_id);
+		ret = -EINVAL;
+		goto idr_find_failed;
 	}
 
-	ret =
-	    _sprd_vdsp_mem_import(device, ctx, heap, size, attr, buf_hnd,
-				  &buffer);
-	if (ret) {
-		mutex_unlock(&mem_man->mutex);
-		return ret;
-	}
+	ret = _sprd_vdsp_mem_import(device, ctx, heap, size, attr, buf_fd, pages, &buffer);
+	if (ret)
+		goto sprd_vdsp_import_failed;
 
 	*buf_id = buffer->id;
 	mutex_unlock(&mem_man->mutex);
-	if (trace_mem_import_free) {
-		pr_debug("buf_hnd %#llx heap %d (%s) buffer %d size %zu\n",
-			 buf_hnd, heap_id, get_heap_name(heap->type), *buf_id,
-			 size);
-		pr_debug("heap %d ctx %p created buffer %d (%p) size %zu\n",
-			 heap_id, ctx, *buf_id, buffer, size);
-	}
+
+	if (cpu_ptr)
+		_sprd_vdsp_mem_put_pages(size, pages);
+
+	pr_info("%s buf_fd %#llx heap %d (%s) buffer %d size %zu\n", __func__,
+		buf_fd, heap_id, get_heap_name(heap->type), *buf_id, size);
+	pr_debug("%s heap %d ctx %p created buffer %d (%p) size %zu\n",
+		__func__, heap_id, ctx, *buf_id, buffer, size);
+
+	return 0;
+
+sprd_vdsp_import_failed:
+idr_find_failed:
+	mutex_unlock(&mem_man->mutex);
+lock_interrupted:
+	if (cpu_ptr)
+		_sprd_vdsp_mem_put_pages(size, pages);
+
 	return ret;
 }
 
 EXPORT_SYMBOL(sprd_vdsp_mem_import);
 
 static int _sprd_vdsp_mem_export(struct device *device,
-				 struct mem_ctx *ctx, struct heap *heap,
-				 size_t size, enum sprd_vdsp_mem_attr attr,
-				 struct buffer *buffer, uint64_t * buf_hnd)
+	struct mem_ctx *ctx, struct heap *heap,
+	size_t size, enum sprd_vdsp_mem_attr attr,
+	struct buffer *buffer, uint64_t *buf_hnd)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	int ret;
@@ -678,7 +752,7 @@ static int _sprd_vdsp_mem_export(struct device *device,
 
 	if (size > buffer->actual_size) {
 		pr_err("buffer size (%zu) bigger than actual size (%zu)\n",
-		       size, buffer->actual_size);
+			size, buffer->actual_size);
 		return -EINVAL;
 	}
 
@@ -688,7 +762,7 @@ static int _sprd_vdsp_mem_export(struct device *device,
 	}
 
 	ret = heap->ops->export(device, heap, buffer->actual_size, attr,
-				buffer, buf_hnd);
+		buffer, buf_hnd);
 	if (ret) {
 		pr_err("heap %d export failed\n", heap->id);
 		return -EFAULT;
@@ -698,15 +772,14 @@ static int _sprd_vdsp_mem_export(struct device *device,
 }
 
 int sprd_vdsp_mem_export(struct device *device, struct mem_ctx *ctx, int buf_id,
-			 size_t size, enum sprd_vdsp_mem_attr attr,
-			 uint64_t * buf_hnd)
+	size_t size, enum sprd_vdsp_mem_attr attr, uint64_t *buf_hnd)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 	struct buffer *buffer;
 	int ret;
 
-	if (trace_mem_export) {
+	if (vdsp_debugfs_trace_mem()) {
 		pr_debug("ctx %p buffer id %d\n", ctx, buf_id);
 	}
 
@@ -723,21 +796,18 @@ int sprd_vdsp_mem_export(struct device *device, struct mem_ctx *ctx, int buf_id,
 
 	heap = buffer->heap;
 
-	ret =
-	    _sprd_vdsp_mem_export(device, ctx, heap, size, attr, buffer,
-				  buf_hnd);
+	ret = _sprd_vdsp_mem_export(device, ctx, heap, size, attr, buffer, buf_hnd);
 	if (ret) {
 		mutex_unlock(&mem_man->mutex);
 		return ret;
 	}
 
 	mutex_unlock(&mem_man->mutex);
-	if (trace_mem_export) {
+	if (vdsp_debugfs_trace_mem()) {
 		pr_debug("buf_hnd %#llx heap %d (%s) buffer %d size %zu\n",
-			 *buf_hnd, heap->id, get_heap_name(heap->type), buf_id,
-			 size);
+			*buf_hnd, heap->id, get_heap_name(heap->type), buf_id, size);
 		pr_debug("heap %d ctx %p exported buffer %d (%p) size %zu\n",
-			 heap->id, ctx, buf_id, buffer, size);
+			heap->id, ctx, buf_id, buffer, size);
 	}
 	return ret;
 }
@@ -745,7 +815,7 @@ int sprd_vdsp_mem_export(struct device *device, struct mem_ctx *ctx, int buf_id,
 EXPORT_SYMBOL(sprd_vdsp_mem_export);
 
 static int _sprd_vdsp_mem_unmap_iova(struct sprd_vdsp_iommus *iommus,
-				     struct map_buf *pfinfo);
+	struct map_buf *pfinfo);
 static void _sprd_vdsp_mem_free(struct buffer *buffer)
 {
 	struct mem_man *mem_man = &mem_man_data;
@@ -753,7 +823,7 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 	struct mem_ctx *ctx = buffer->mem_ctx;
 	struct sprd_vdsp_iommus *iommus = ctx->xvp->iommus;
 
-	if (trace_mem_alloc_free || trace_mem_import_free)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer 0x%p\n", buffer);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
@@ -762,14 +832,12 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 		pr_err("no free function in heap %d!\n", heap->id);
 		return;
 	}
-	if (trace_mem_alloc_free || trace_mem_import_free)
-		pr_debug("mapping %d, mmu_idx %d\n", buffer->mapping,
-			 buffer->mmu_idx);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("mapping %d, mmu_idx %d\n", buffer->mapping, buffer->mmu_idx);
 	if ((BUFFER_MAPPING == buffer->mapping)
-	    && (buffer->mmu_idx < SPRD_VDSP_IOMMU_MAX)
-	    && (buffer->mmu_idx >= SPRD_VDSP_IOMMU_EPP)) {
-		pr_warn("found mapping for buffer %d (size %zu)\n", buffer->id,
-			buffer->actual_size);
+		&& (buffer->mmu_idx < SPRD_VDSP_IOMMU_MAX)
+		&& (buffer->mmu_idx >= SPRD_VDSP_IOMMU_EPP)) {
+		pr_warn("found mapping for buffer %d (size %zu)\n", buffer->id, buffer->actual_size);
 		_sprd_vdsp_mem_unmap_iova(iommus, &buffer->map_buf);
 		buffer->mapping = BUFFER_NO_MAPPING;
 	}
@@ -781,9 +849,8 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 		WARN_ON(1);
 
 	idr_remove(&ctx->buffers, buffer->id);
-	if (trace_mem_alloc_free || trace_mem_import_free)
-		pr_debug("-- Freeing buffer id:%d  size:%zu\n",
-			 buffer->id, buffer->actual_size);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("-- Freeing buffer id:%d  size:%zu\n", buffer->id, buffer->actual_size);
 
 	kfree(buffer);
 }
@@ -793,7 +860,7 @@ void sprd_vdsp_mem_free(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (trace_mem_fence)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -850,7 +917,7 @@ struct dma_fence *sprd_vdsp_mem_add_fence(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (trace_mem_fence)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -863,9 +930,7 @@ struct dma_fence *sprd_vdsp_mem_add_fence(struct mem_ctx *ctx, int buf_id)
 	}
 
 	if (buffer->fence) {
-		pr_err
-		    ("fence for buffer id %d already allocated and not freed \n",
-		     buf_id);
+		pr_err("fence for buffer id %d already allocated and not freed \n", buf_id);
 		mutex_unlock(&mem_man->mutex);
 		return NULL;
 	}
@@ -878,9 +943,8 @@ struct dma_fence *sprd_vdsp_mem_add_fence(struct mem_ctx *ctx, int buf_id)
 	}
 
 	spin_lock_init(&buffer->fence->lock);
-	dma_fence_init(&buffer->fence->fence,
-		       &dma_fence_ops,
-		       &buffer->fence->lock, dma_fence_context_alloc(1), 1);
+	dma_fence_init(&buffer->fence->fence, &dma_fence_ops, &buffer->fence->lock,
+		dma_fence_context_alloc(1), 1);
 
 	mutex_unlock(&mem_man->mutex);
 
@@ -895,7 +959,7 @@ void sprd_vdsp_mem_remove_fence(struct mem_ctx *ctx, int buf_id)
 	struct buffer *buffer;
 	struct dma_fence *fence = NULL;
 
-	if (trace_mem_fence)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -927,7 +991,7 @@ int sprd_vdsp_mem_signal_fence(struct mem_ctx *ctx, int buf_id)
 	struct dma_fence *fence = NULL;
 	int ret = -1;
 
-	if (trace_mem_fence)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -955,10 +1019,10 @@ EXPORT_SYMBOL(sprd_vdsp_mem_signal_fence);
 #endif
 
 static void _sprd_vdsp_mem_sync_device_to_cpu(struct buffer *buffer,
-					      bool force);
+	bool force);
 
 int sprd_vdsp_mem_map_um(struct mem_ctx *ctx, int buf_id,
-			 struct vm_area_struct *vma)
+	struct vm_area_struct *vma)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -981,7 +1045,7 @@ int sprd_vdsp_mem_map_um(struct mem_ctx *ctx, int buf_id,
 	}
 
 	ret = heap->ops->map_um(heap, buffer, vma);
-	/* Always invalidate the buffer when it is mapped into UM */
+	/* Always invalidate the buffer when it is mapped into UM */ //why remove VM_WRITE
 	if (!ret && (vma->vm_flags & VM_READ))
 		_sprd_vdsp_mem_sync_device_to_cpu(buffer, false);
 
@@ -999,7 +1063,7 @@ int sprd_vdsp_mem_unmap_um(struct mem_ctx *ctx, int buf_id)
 	struct heap *heap;
 	int ret;
 
-	if (trace_mem_umap)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -1032,7 +1096,7 @@ static int _sprd_vdsp_mem_map_km(struct buffer *buffer)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap = buffer->heap;
 
-	if (trace_mem_kmap)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer 0x%p, heap %d\n", buffer, heap->id);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
@@ -1073,7 +1137,7 @@ static int _sprd_vdsp_mem_unmap_km(struct buffer *buffer)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap = buffer->heap;
 
-	if (trace_mem_kmap)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer 0x%p\n", buffer);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
@@ -1092,7 +1156,7 @@ int sprd_vdsp_mem_unmap_km(struct mem_ctx *ctx, int buf_id)
 	struct buffer *buffer;
 	int ret;
 
-	if (trace_mem_kmap)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -1112,7 +1176,7 @@ int sprd_vdsp_mem_unmap_km(struct mem_ctx *ctx, int buf_id)
 
 EXPORT_SYMBOL(sprd_vdsp_mem_unmap_km);
 
-uint64_t *sprd_vdsp_mem_get_page_array(struct mem_ctx * mem_ctx, int buf_id)
+uint64_t *sprd_vdsp_mem_get_page_array(struct mem_ctx *mem_ctx, int buf_id)
 {
 	struct buffer *buffer;
 	struct heap *heap;
@@ -1132,8 +1196,7 @@ uint64_t *sprd_vdsp_mem_get_page_array(struct mem_ctx * mem_ctx, int buf_id)
 	if (heap && heap->ops && heap->ops->get_page_array) {
 		ret = heap->ops->get_page_array(heap, buffer, &addrs);
 		if (ret || addrs == NULL) {
-			pr_err("no page array for heap %d buffer %d\n",
-			       heap->id, buffer->id);
+			pr_err("no page array for heap %d buffer %d\n", heap->id, buffer->id);
 		}
 	} else
 		pr_err("heap %d does not support page arrays\n", heap->id);
@@ -1144,8 +1207,8 @@ uint64_t *sprd_vdsp_mem_get_page_array(struct mem_ctx * mem_ctx, int buf_id)
 EXPORT_SYMBOL(sprd_vdsp_mem_get_page_array);
 
 /* gets physical address of a single page at given offset */
-uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx * mem_ctx, int buf_id,
-				       unsigned int offset)
+uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx *mem_ctx, int buf_id,
+	unsigned int offset)
 {
 	struct buffer *buffer;
 	struct heap *heap;
@@ -1163,8 +1226,7 @@ uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx * mem_ctx, int buf_id,
 
 	heap = buffer->heap;
 	if (!heap) {
-		pr_err("buffer %d does not point any heap it belongs to!\n",
-		       buf_id);
+		pr_err("buffer %d does not point any heap it belongs to!\n", buf_id);
 		mutex_unlock(&mem_man->mutex);
 		return -1;
 	}
@@ -1173,26 +1235,35 @@ uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx * mem_ctx, int buf_id,
 		struct sg_table *sgt;
 		struct scatterlist *sgl;
 		int offs = offset;
+		bool use_sg_dma = false;
 
-		ret = heap->ops->get_sg_table(heap, buffer, &sgt);
+		ret = heap->ops->get_sg_table(heap, buffer, &sgt, &use_sg_dma);
 		if (ret) {
-			pr_err("heap %d buffer %d no sg_table!\n", heap->id,
-			       buffer->id);
+			pr_err("%s: heap %d buffer %d no sg_table!\n",
+						__func__, heap->id, buffer->id);
 			return -1;
 		}
 		sgl = sgt->sgl;
 		while (sgl) {
-			offs -= sgl->length;
+			if (use_sg_dma)
+				offs -= sg_dma_len(sgl);
+			else
+				offs -= sgl->length;
+
 			if (offs <= 0)
 				break;
 			sgl = sg_next(sgl);
 		}
 		if (!sgl) {
-			pr_err("heap %d buffer %d wrong offset %d!\n",
-			       heap->id, buffer->id, offset);
+			pr_err("%s: heap %d buffer %d wrong offset %d!\n",
+					__func__, heap->id, buffer->id, offset);
 			return -1;
 		}
-		addr = sg_phys(sgl);
+
+		if (use_sg_dma)
+			addr = sg_dma_address(sgl);
+		else
+			addr = sg_phys(sgl);
 
 	} else if (heap->ops && heap->ops->get_page_array) {
 		uint64_t *addrs;
@@ -1200,14 +1271,12 @@ uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx * mem_ctx, int buf_id,
 
 		ret = heap->ops->get_page_array(heap, buffer, &addrs);
 		if (ret) {
-			pr_err("heap %d buffer %d no page array!\n", heap->id,
-			       buffer->id);
+			pr_err("heap %d buffer %d no page array!\n", heap->id, buffer->id);
 			return -1;
 		}
 
 		if (offset > buffer->actual_size) {
-			pr_err("heap %d buffer %d wrong offset %d!\n",
-			       heap->id, buffer->id, offset);
+			pr_err("heap %d buffer %d wrong offset %d!\n", heap->id, buffer->id, offset);
 			return -1;
 		}
 		addr = addrs[page_idx];
@@ -1240,7 +1309,7 @@ void *sprd_vdsp_mem_get_kptr(struct mem_ctx *ctx, int buf_id)
 
 EXPORT_SYMBOL(sprd_vdsp_mem_get_kptr);
 
-phys_addr_t sprd_vdsp_mem_get_dev_addr(struct mem_ctx * mem_ctx, int buf_id)
+phys_addr_t sprd_vdsp_mem_get_dev_addr(struct mem_ctx *mem_ctx, int buf_id)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -1260,7 +1329,7 @@ phys_addr_t sprd_vdsp_mem_get_dev_addr(struct mem_ctx * mem_ctx, int buf_id)
 
 EXPORT_SYMBOL(sprd_vdsp_mem_get_dev_addr);
 
-phys_addr_t sprd_vdsp_mem_get_phy_addr(struct mem_ctx * mem_ctx, int buf_id)
+phys_addr_t sprd_vdsp_mem_get_phy_addr(struct mem_ctx *mem_ctx, int buf_id)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -1280,7 +1349,7 @@ phys_addr_t sprd_vdsp_mem_get_phy_addr(struct mem_ctx * mem_ctx, int buf_id)
 
 EXPORT_SYMBOL(sprd_vdsp_mem_get_phy_addr);
 
-size_t sprd_vdsp_mem_get_size(struct mem_ctx * mem_ctx, int buf_id)
+size_t sprd_vdsp_mem_get_size(struct mem_ctx *mem_ctx, int buf_id)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -1309,15 +1378,14 @@ static void _sprd_vdsp_mem_sync_cpu_to_device(struct buffer *buffer, bool force)
 			buffer->id, buffer->actual_size);
 		return;
 	}
-	if (trace_mem_sync)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d size %zu kptr %p cache(%d:%d)\n",
-			 buffer->id, buffer->actual_size,
-			 buffer->kptr, force, heap->cache_sync);
+			buffer->id, buffer->actual_size, buffer->kptr, force, heap->cache_sync);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
 	if (heap->ops && heap->ops->sync_cpu_to_dev
-	    && (force || heap->cache_sync))
+		&& (force || heap->cache_sync))
 		heap->ops->sync_cpu_to_dev(heap, buffer);
 
 #ifdef CONFIG_ARM
@@ -1333,7 +1401,7 @@ int sprd_vdsp_mem_sync_cpu_to_device(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (trace_mem_sync)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -1362,15 +1430,13 @@ static void _sprd_vdsp_mem_sync_device_to_cpu(struct buffer *buffer, bool force)
 			buffer->id, buffer->actual_size);
 		return;
 	}
-	if (trace_mem_sync)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d size %zu kptr %p cache(%d:%d)\n",
-			 buffer->id, buffer->actual_size,
-			 buffer->kptr, force, heap->cache_sync);
+			buffer->id, buffer->actual_size, buffer->kptr, force, heap->cache_sync);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
-	if (heap->ops && heap->ops->sync_dev_to_cpu
-	    && (force || heap->cache_sync))
+	if (heap->ops && heap->ops->sync_dev_to_cpu && (force || heap->cache_sync))
 		heap->ops->sync_dev_to_cpu(heap, buffer);
 }
 
@@ -1379,7 +1445,7 @@ int sprd_vdsp_mem_sync_device_to_cpu(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (trace_mem_sync)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -1398,39 +1464,27 @@ int sprd_vdsp_mem_sync_device_to_cpu(struct mem_ctx *ctx, int buf_id)
 
 EXPORT_SYMBOL(sprd_vdsp_mem_sync_device_to_cpu);
 
-size_t sprd_vdsp_mem_get_usage_max(const struct mem_ctx * ctx)
+int sprd_vdsp_mem_get_usage(const struct mem_ctx *ctx, size_t *max, size_t *curr)
 {
 	struct mem_man *mem_man = &mem_man_data;
-	size_t mem_usage_max;
 
 	mutex_lock(&mem_man->mutex);
-	mem_usage_max = ctx->mem_usage_max;
+	if (max)
+		*max = ctx->mem_usage_max;
+	if (curr)
+		*curr = ctx->mem_usage_curr;
 	mutex_unlock(&mem_man->mutex);
 
-	return mem_usage_max;
+	return 0;
 }
+EXPORT_SYMBOL(sprd_vdsp_mem_get_usage);
 
-EXPORT_SYMBOL(sprd_vdsp_mem_get_usage_max);
-
-size_t sprd_vdsp_mem_get_usage_current(const struct mem_ctx * ctx)
-{
-	struct mem_man *mem_man = &mem_man_data;
-	size_t mem_usage_curr;
-
-	mutex_lock(&mem_man->mutex);
-	mem_usage_curr = ctx->mem_usage_curr;
-	mutex_unlock(&mem_man->mutex);
-
-	return mem_usage_curr;
-}
-
-EXPORT_SYMBOL(sprd_vdsp_mem_get_usage_current);
 
 int _sprd_vdsp_mem_map_iova(struct sprd_vdsp_iommus *iommus,
-			    struct map_buf *pfinfo)
+	struct map_buf *pfinfo)
 {
 	int ret = 0;
-	struct sprd_vdsp_iommu_map_conf map_conf = { 0 };
+	struct sprd_vdsp_iommu_map_conf map_conf = {0};
 
 	if (!pfinfo || !pfinfo->dev) {
 		pr_err("invalid input ptr\n");
@@ -1438,15 +1492,15 @@ int _sprd_vdsp_mem_map_iova(struct sprd_vdsp_iommus *iommus,
 	}
 
 	if (unlikely(!iommus)) {
-		pr_err("Error ： iommus is NULL\n");
+		pr_err("Error iommus is NULL\n");
 		return -EINVAL;
 	}
 
-	map_conf.buf_addr = (unsigned long)pfinfo->buf;
+	map_conf.buf_addr = ( unsigned long) pfinfo->buf;
 	map_conf.iova_size = pfinfo->size;
 	map_conf.table = pfinfo->table;
-	map_conf.isfixed=pfinfo->isfixed;
-	map_conf.fixed_data=pfinfo->fixed_data;
+	map_conf.isfixed = pfinfo->isfixed;
+	map_conf.fixed_data = pfinfo->fixed_data;
 
 	ret = iommus->ops->map_all(iommus, &map_conf);
 	if (ret) {
@@ -1458,7 +1512,7 @@ int _sprd_vdsp_mem_map_iova(struct sprd_vdsp_iommus *iommus,
 	return ret;
 }
 
-int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsigned long fixed_data)
+int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id, int isfixed, unsigned long fixed_data)
 {
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
@@ -1466,7 +1520,7 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsig
 	struct sprd_vdsp_iommus *iommus = NULL;
 	int ret;
 
-	if (trace_mem_iommu_map)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("map_iova buffer id=%d,\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
@@ -1476,20 +1530,21 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsig
 		ret = -EINVAL;
 		goto error;
 	}
-	if (trace_mem_iommu_map)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("map_iova buffer id =%d addr=0x%lx size=%zu\n",
-			 buf_id, (unsigned long)buffer, buffer->request_size);
+			buf_id, ( unsigned long) buffer, buffer->request_size);
 
 	heap = buffer->heap;
-	if (trace_mem_iommu_map)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("map_iova buffer from heap %d\n", heap->id);
 	if (heap->ops && heap->ops->get_sg_table) {
 		struct sg_table *sgt;
+		bool use_sg_dma = false;
 
-		ret = heap->ops->get_sg_table(heap, buffer, &sgt);
+	//tyc modify
+		ret = heap->ops->get_sg_table(heap, buffer, &sgt, &use_sg_dma);
 		if (ret) {
-			pr_err("heap %d buffer %d no sg_table!\n", heap->id,
-			       buffer->id);
+			pr_err("heap %d buffer %d no sg_table!\n", heap->id, buffer->id);
 			goto error;
 		}
 
@@ -1499,12 +1554,12 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsig
 		buffer->map_buf.size = buffer->request_size;
 		buffer->map_buf.offset = 0;
 		buffer->map_buf.isfixed = isfixed;
-		buffer->map_buf.fixed_data=fixed_data;
-		if (trace_mem_iommu_map)
+		buffer->map_buf.fixed_data = fixed_data;
+		if (vdsp_debugfs_trace_mem())
 			pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = %d\n",
-				 buffer->map_buf.table, buffer->map_buf.buf,
-				 buffer->map_buf.size,buffer->map_buf.isfixed,
-				 buffer->map_buf.fixed_data);
+				buffer->map_buf.table, buffer->map_buf.buf,
+				buffer->map_buf.size, buffer->map_buf.isfixed,
+				buffer->map_buf.fixed_data);
 		iommus = mem_ctx->xvp->iommus;
 
 		ret = _sprd_vdsp_mem_map_iova(iommus, &buffer->map_buf);
@@ -1518,14 +1573,12 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id,int isfixed,unsig
 
 		ret = heap->ops->get_page_array(heap, buffer, &addrs);
 		if (ret) {
-			pr_err("Error: heap %d buffer %d no page array!\n",
-			       heap->id, buffer->id);
+			pr_err("Error: heap %d buffer %d no page array!\n", heap->id, buffer->id);
 			goto error;
 		}
 	} else {
-		pr_err
-		    ("Error: heap %d buffer %d no get_sg or get_page_array!\n",
-		     heap->id, buffer->id);
+		pr_err("Error: heap %d buffer %d no get_sg or get_page_array!\n",
+			heap->id, buffer->id);
 		ret = -EINVAL;
 		goto error;
 	}
@@ -1541,24 +1594,24 @@ error:
 EXPORT_SYMBOL(sprd_vdsp_mem_map_iova);
 
 static int _sprd_vdsp_mem_unmap_iova(struct sprd_vdsp_iommus *iommus,
-				     struct map_buf *pfinfo)
+	struct map_buf *pfinfo)
 {
 
 	int ret;
-	struct sprd_vdsp_iommu_unmap_conf unmap_conf = { 0 };
+	struct sprd_vdsp_iommu_unmap_conf unmap_conf = {0};
 
 	if (!pfinfo || !pfinfo->dev) {
 		pr_err("Error: invalid input ptr\n");
 		return -EINVAL;
 	}
 	if (unlikely(!iommus)) {
-		pr_err("Error ： iommus is NULL\n");
+		pr_err("Error iommus is NULL\n");
 		return -EINVAL;
 	}
 
 	unmap_conf.iova_addr = pfinfo->iova - pfinfo->offset;
 	unmap_conf.iova_size = pfinfo->size;
-	unmap_conf.buf_addr = (unsigned long)pfinfo->buf;
+	unmap_conf.buf_addr = ( unsigned long) pfinfo->buf;
 
 	ret = iommus->ops->unmap_all(iommus, &unmap_conf);
 	if (ret) {
@@ -1577,7 +1630,7 @@ int sprd_vdsp_mem_unmap_iova(struct mem_ctx *mem_ctx, int buf_id)
 	struct sprd_vdsp_iommus *iommus = NULL;
 	int ret = 0;
 
-	if (trace_mem_iommu_map) {
+	if (vdsp_debugfs_trace_mem()) {
 		pr_debug("unmap_iova buffer id=%d,\n", buf_id);
 	}
 
@@ -1589,9 +1642,9 @@ int sprd_vdsp_mem_unmap_iova(struct mem_ctx *mem_ctx, int buf_id)
 		ret = -EINVAL;
 		goto error;
 	}
-	if (trace_mem_iommu_map)
+	if (vdsp_debugfs_trace_mem())
 		pr_debug("unmap_iova buffer id =%d addr=0x%lx size=%zu\n",
-			 buf_id, (unsigned long)buffer, buffer->request_size);
+			buf_id, ( unsigned long) buffer, buffer->request_size);
 
 	iommus = mem_ctx->xvp->iommus;
 	ret = _sprd_vdsp_mem_unmap_iova(iommus, &buffer->map_buf);
@@ -1618,7 +1671,7 @@ int sprd_vdsp_mem_core_init(void)
 	idr_init(&mem_man->heaps);
 	idr_init(&mem_man->mem_ctxs);
 	mutex_init(&mem_man->mutex);
-	mem_man->cache_initialized = false;
+	mem_man->cache_ref = 0;
 
 	return 0;
 }
@@ -1657,6 +1710,5 @@ void sprd_vdsp_mem_core_exit(void)
 	idr_destroy(&mem_man->mem_ctxs);
 
 	mutex_unlock(&mem_man->mutex);
-
 	mutex_destroy(&mem_man->mutex);
 }

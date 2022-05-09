@@ -3,15 +3,14 @@
  * Copyright (C) 2020 Unisoc Inc.
  * SPDX-License-Identifier: GPL-2.0
  *****************************************************************************/
-
+#include <linux/io.h>
+#include <linux/slab.h>
+#include <linux/scatterlist.h>
 #include "sprd_vdsp_iommuvau_cll.h"
 #include "sprd_vdsp_iommuvau_register.h"
-#include <linux/slab.h>
-#include <linux/io.h>
-#include <linux/scatterlist.h>
 
 u32 sprd_vdsp_iommuvau_cll_init(struct sprd_vdsp_iommu_init_param *p_init_param,
-				struct sprd_vdsp_iommu_widget *p_iommu_hdl)
+	struct sprd_vdsp_iommu_widget *p_iommu_hdl)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -32,9 +31,8 @@ u32 sprd_vdsp_iommuvau_cll_init(struct sprd_vdsp_iommu_init_param *p_init_param,
 	p_iommu_data = (struct sprd_vdsp_iommu_widget *)p_iommu_hdl;
 
 	p_iommu_priv =
-	    (struct sprd_vdsp_iommuvau_priv
-	     *)kmalloc(sizeof(struct sprd_vdsp_iommuvau_priv), GFP_KERNEL);
-	memset((void *)p_iommu_priv, 0, sizeof(struct sprd_vdsp_iommuvau_priv));
+		(struct sprd_vdsp_iommuvau_priv *)kmalloc(sizeof(struct sprd_vdsp_iommuvau_priv), GFP_KERNEL);
+	memset(( void *) p_iommu_priv, 0, sizeof(struct sprd_vdsp_iommuvau_priv));
 	p_iommu_priv->master_reg_addr = p_init_param->master_reg_addr;
 	p_iommu_priv->mmu_reg_addr = p_init_param->ctrl_reg_addr;
 	iommu_id = p_init_param->iommu_id;
@@ -56,18 +54,16 @@ u32 sprd_vdsp_iommuvau_cll_init(struct sprd_vdsp_iommu_init_param *p_init_param,
 	if (p_init_param->pagt_base_virt > 0) {
 		p_iommu_priv->pagt_base_ddr = p_init_param->pagt_base_virt;
 	} else {
-		p_iommu_priv->pagt_base_ddr =
-		    (ulong) ioremap_nocache(p_iommu_priv->pagt_base_phy_ddr,
-					    p_iommu_priv->pagt_ddr_size);
+		p_iommu_priv->pagt_base_ddr = ( ulong) ioremap(p_iommu_priv->pagt_base_phy_ddr,
+			p_iommu_priv->pagt_ddr_size);
 	}
 
 	p_iommu_priv->pgt_size = pagt_size;
 	p_iommu_priv->ppn_base_addr = p_iommu_priv->pagt_base_ddr;
 
-	memset((void *)p_iommu_priv->ppn_base_addr, 0xff, pagt_size);
+	memset(( void *) p_iommu_priv->ppn_base_addr, 0xff, pagt_size);
 
 	p_iommu_priv->ram_clk_div = p_init_param->ram_clk_div;
-
 	p_iommu_priv->default_addr = p_init_param->faultpage_addr;
 	p_iommu_priv->map_cnt = 0;
 	p_iommu_priv->mini_ppn1 = p_init_param->mini_ppn1;
@@ -84,11 +80,11 @@ u32 sprd_vdsp_iommuvau_cll_init(struct sprd_vdsp_iommu_init_param *p_init_param,
 	p_iommu_priv->st_interrupt.unsecure_r_en = unsecure_r_en;
 	p_iommu_priv->st_interrupt.unsecure_w_en = unsecure_w_en;
 
-	p_iommu_data->p_priv = (void *)(p_iommu_priv);
+	p_iommu_data->p_priv = ( void *) (p_iommu_priv);
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_uninit(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
+u32 sprd_vdsp_iommuvau_cll_uninit(struct sprd_vdsp_iommu_widget *p_iommu_hdl)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -110,7 +106,7 @@ u32 sprd_vdsp_iommuvau_cll_uninit(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
 	if (p_iommu_priv->pagt_base_phy_ddr > 0)
 		iounmap((void __iomem *)p_iommu_priv->pagt_base_ddr);
 	else
-		kfree((void *)p_iommu_priv->ppn_base_addr);
+		kfree(( void *) p_iommu_priv->ppn_base_addr);
 
 	p_iommu_priv->ppn_base_addr = 0;
 
@@ -122,7 +118,7 @@ u32 sprd_vdsp_iommuvau_cll_uninit(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
 }
 
 u32 sprd_vdsp_iommuvau_reg_authority(struct sprd_vdsp_iommu_widget *
-				     p_iommu_hdl, u8 authority)
+	p_iommu_hdl, u8 authority)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -142,7 +138,7 @@ u32 sprd_vdsp_iommuvau_reg_authority(struct sprd_vdsp_iommu_widget *
 	return ret;
 }
 
-ulong sg_to_phys(struct scatterlist * sg)
+ulong sg_to_phys(struct scatterlist *sg)
 {
 	/*
 	 * Try sg_dma_address first so that we can
@@ -156,8 +152,8 @@ ulong sg_to_phys(struct scatterlist * sg)
 	return pa;
 }
 
-u32 sprd_vdsp_iommuvau_cll_map(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-			       struct sprd_iommu_map_param * p_map_param)
+u32 sprd_vdsp_iommuvau_cll_map(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	struct sprd_iommu_map_param *p_map_param)
 {
 	u32 entry_index = 0;
 	u32 valid_page_entries = 0;
@@ -185,19 +181,14 @@ u32 sprd_vdsp_iommuvau_cll_map(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
 	iommu_id = p_iommu_priv->iommu_id;
 	iommu_type = p_iommu_priv->iommu_type;
 
-	vir_base_entry = (u32) VIR_TO_ENTRY_IDX(p_map_param->start_virt_addr,
-						p_iommu_priv->vpn_base_addr);
+	vir_base_entry = ( u32) VIR_TO_ENTRY_IDX(p_map_param->start_virt_addr,
+		p_iommu_priv->vpn_base_addr);
 	total_page_entries = vir_base_entry;
 
 	if (p_map_param->p_sg_table == NULL) {
-		align_map_size =
-		    MAP_SIZE_PAGE_ALIGN_UP(p_map_param->total_map_size);
-		valid_page_entries = (u32) SIZE_TO_ENTRIES(align_map_size);
-		fault_page =
-		    p_iommu_priv->default_addr >> MMU_MAPING_PAGESIZE_SHIFFT;
-		//memset32((void *)(p_iommu_priv->ppn_base_addr +
-		//vir_base_entry * 4),
-		//fault_page, valid_page_entries);
+		align_map_size = MAP_SIZE_PAGE_ALIGN_UP(p_map_param->total_map_size);
+		valid_page_entries = ( u32) SIZE_TO_ENTRIES(align_map_size);
+		fault_page = p_iommu_priv->default_addr >> MMU_MAPING_PAGESIZE_SHIFFT;
 		total_page_entries += valid_page_entries;
 
 	} else {
@@ -205,22 +196,13 @@ u32 sprd_vdsp_iommuvau_cll_map(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
 			    p_map_param->p_sg_table->nents, sg_index) {
 
 			align_map_size = MAP_SIZE_PAGE_ALIGN_UP(sg->length);
-			valid_page_entries =
-			    (u32) SIZE_TO_ENTRIES(align_map_size);
+			valid_page_entries = (u32)SIZE_TO_ENTRIES(align_map_size);
 
-			for (entry_index = 0; entry_index < valid_page_entries;
-			     entry_index++) {
-				phy_addr = sg_to_phys(sg) +
-				    (entry_index << MMU_MAPING_PAGESIZE_SHIFFT);
-
-				phy_addr =
-				    phy_addr >> MMU_MAPING_PAGESIZE_SHIFFT;
-
-				mmu_vau_write_pate_totable(p_iommu_priv->
-							   ppn_base_addr,
-							   total_page_entries +
-							   entry_index,
-							   phy_addr);
+			for (entry_index = 0; entry_index < valid_page_entries; entry_index++) {
+				phy_addr = sg_to_phys(sg) + (entry_index << MMU_MAPING_PAGESIZE_SHIFFT);
+				phy_addr = phy_addr >> MMU_MAPING_PAGESIZE_SHIFFT;
+				mmu_vau_write_pate_totable(p_iommu_priv->ppn_base_addr,
+					total_page_entries + entry_index, phy_addr);
 			}
 			total_page_entries += entry_index;
 		}
@@ -237,8 +219,8 @@ u32 sprd_vdsp_iommuvau_cll_map(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_unmap(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-				 struct sprd_iommu_unmap_param * p_unmap_param)
+u32 sprd_vdsp_iommuvau_cll_unmap(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	struct sprd_iommu_unmap_param *p_unmap_param)
 {
 	u32 valid_page_entries = 0;
 	ulong vir_base_entry = 0;
@@ -259,15 +241,13 @@ u32 sprd_vdsp_iommuvau_cll_unmap(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
 	iommu_id = p_iommu_priv->iommu_id;
 	iommu_type = p_iommu_priv->iommu_type;
 
-	vir_base_entry =
-	    (ulong) VIR_TO_ENTRY_IDX(p_unmap_param->start_virt_addr,
-				     p_iommu_priv->vpn_base_addr);
+	vir_base_entry = ( ulong) VIR_TO_ENTRY_IDX(p_unmap_param->start_virt_addr,
+		p_iommu_priv->vpn_base_addr);
 
 	align_map_size = MAP_SIZE_PAGE_ALIGN_UP(p_unmap_param->total_map_size);
 	valid_page_entries = (u32) SIZE_TO_ENTRIES(align_map_size);
 
-	memset((void *)(p_iommu_priv->ppn_base_addr +
-			vir_base_entry * 4), 0xFF, valid_page_entries * 4);
+	memset((void*)(p_iommu_priv->ppn_base_addr + vir_base_entry * 4), 0xFF, valid_page_entries * 4);
 	mmu_vau_update(p_iommu_priv->mmu_reg_addr, iommu_id, iommu_type);
 
 	p_iommu_priv->map_cnt--;
@@ -278,10 +258,8 @@ u32 sprd_vdsp_iommuvau_cll_unmap(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_unmap_orphaned(struct sprd_vdsp_iommu_widget *
-					  p_iommu_hdl,
-					  struct sprd_iommu_unmap_param *
-					  p_unmap_param)
+u32 sprd_vdsp_iommuvau_cll_unmap_orphaned(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	struct sprd_iommu_unmap_param *p_unmap_param)
 {
 	u32 valid_page_entries = 0;
 	ulong vir_base_entry = 0;
@@ -302,22 +280,19 @@ u32 sprd_vdsp_iommuvau_cll_unmap_orphaned(struct sprd_vdsp_iommu_widget *
 	iommu_id = p_iommu_priv->iommu_id;
 	iommu_type = p_iommu_priv->iommu_type;
 
-	vir_base_entry =
-	    (ulong) VIR_TO_ENTRY_IDX(p_unmap_param->start_virt_addr,
-				     p_iommu_priv->vpn_base_addr);
+	vir_base_entry = (ulong) VIR_TO_ENTRY_IDX(p_unmap_param->start_virt_addr,
+		p_iommu_priv->vpn_base_addr);
 
 	align_map_size = MAP_SIZE_PAGE_ALIGN_UP(p_unmap_param->total_map_size);
 	valid_page_entries = (u32) SIZE_TO_ENTRIES(align_map_size);
 
-	memset((void *)(p_iommu_priv->ppn_base_addr +
-			vir_base_entry * 4), 0xFF, valid_page_entries * 4);
-
+	memset(( void *) (p_iommu_priv->ppn_base_addr + vir_base_entry * 4), 0xFF, valid_page_entries * 4);
 	p_iommu_priv->map_cnt--;
 
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_enable(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
+u32 sprd_vdsp_iommuvau_cll_enable(struct sprd_vdsp_iommu_widget *p_iommu_hdl)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -342,57 +317,48 @@ u32 sprd_vdsp_iommuvau_cll_enable(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
 	if (p_iommu_priv->pagt_base_phy_ddr > 0)
 		pgt_addr_phy = p_iommu_priv->pagt_base_phy_ddr;
 	else
-		pgt_addr_phy =
-		    virt_to_phys((void *)p_iommu_priv->ppn_base_addr);
+		pgt_addr_phy = virt_to_phys((void *)p_iommu_priv->ppn_base_addr);
 
-	mmu_vau_first_vpn(p_iommu_priv->mmu_reg_addr, iommu_id,
-			  p_iommu_priv->vpn_base_addr);
+	mmu_vau_first_vpn(p_iommu_priv->mmu_reg_addr, iommu_id, p_iommu_priv->vpn_base_addr);
 	mmu_vau_first_ppn(p_iommu_priv->mmu_reg_addr, iommu_id, pgt_addr_phy);
 
 	fault_page = p_iommu_priv->default_addr;
 	mmu_vau_default_ppn(p_iommu_priv->mmu_reg_addr, iommu_id, fault_page);
 
-	{			/*set master range */
+	{	/*set master range */
 		if ((iommu_id == VDSP_IOMMU_VAUL5P_EPP)
-		    || (iommu_id == VDSP_IOMMU_VAUL5P_IDMA))
-			mmu_vau_vpn_range(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  (p_iommu_priv->vpn_range >> 12) - 1);
+			|| (iommu_id == VDSP_IOMMU_VAUL5P_IDMA))
+			mmu_vau_vpn_range(p_iommu_priv->mmu_reg_addr, iommu_id, (p_iommu_priv->vpn_range >> 12) - 1);
 
 		/*vpn_range temporary use default value */
 		if (p_iommu_priv->mini_ppn1 > 0)
 			mmu_vau_mini_ppn1(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  p_iommu_priv->mini_ppn1);
+				p_iommu_priv->mini_ppn1);
 
 		if (p_iommu_priv->ppn1_range > 0) {
 			addr_range = 0;
-			addr_range = (p_iommu_priv->ppn1_range +
-				      (1 << 20) - 1) & (~((1 << 20) - 1));
-			mmu_vau_mini_ppn1(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  p_iommu_priv->ppn1_range);
+			addr_range = (p_iommu_priv->ppn1_range + (1 << 20) - 1) & (~((1 << 20) - 1));
+			mmu_vau_mini_ppn1(p_iommu_priv->mmu_reg_addr, iommu_id, p_iommu_priv->ppn1_range);
 		}
 
 		if (p_iommu_priv->mini_ppn2 > 0)
-			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  p_iommu_priv->mini_ppn2);
+			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id, p_iommu_priv->mini_ppn2);
 
 		if (p_iommu_priv->ppn2_range > 0) {
 			addr_range = 0;
-			addr_range = (p_iommu_priv->ppn2_range +
-				      (1 << 20) - 1) & (~((1 << 20) - 1));
-			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  p_iommu_priv->ppn2_range);
+			addr_range = (p_iommu_priv->ppn2_range + (1 << 20) - 1) & (~((1 << 20) - 1));
+			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id, p_iommu_priv->ppn2_range);
 		}
 		/*config update arqos,access ddr priority,default 7 */
 		mmu_vau_pt_update_arqos(p_iommu_priv->mmu_reg_addr, 7);
 	}
 
-	mmu_vau_vaorbypass_clkgate_enable_combined(p_iommu_priv->mmu_reg_addr,
-						   iommu_id);
+	mmu_vau_vaorbypass_clkgate_enable_combined(p_iommu_priv->mmu_reg_addr, iommu_id);
 
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_disable(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
+u32 sprd_vdsp_iommuvau_cll_disable(struct sprd_vdsp_iommu_widget *p_iommu_hdl)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -416,20 +382,16 @@ u32 sprd_vdsp_iommuvau_cll_disable(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
 	{
 
 		if (p_iommu_priv->mini_ppn1 > 0)
-			mmu_vau_mini_ppn1(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  0);
+			mmu_vau_mini_ppn1(p_iommu_priv->mmu_reg_addr, iommu_id, 0);
 
 		if (p_iommu_priv->ppn1_range > 0)
-			mmu_vau_mini_ppn1(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  0x1fff);
+			mmu_vau_mini_ppn1(p_iommu_priv->mmu_reg_addr, iommu_id, 0x1fff);
 
 		if (p_iommu_priv->mini_ppn2 > 0)
-			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  0);
+			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id, 0);
 
 		if (p_iommu_priv->ppn2_range > 0)
-			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id,
-					  0x1fff);
+			mmu_vau_mini_ppn2(p_iommu_priv->mmu_reg_addr, iommu_id, 0x1fff);
 	}
 
 	mmu_vau_enable(p_iommu_priv->mmu_reg_addr, iommu_id, 0);
@@ -437,17 +399,17 @@ u32 sprd_vdsp_iommuvau_cll_disable(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_suspend(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
+u32 sprd_vdsp_iommuvau_cll_suspend(struct sprd_vdsp_iommu_widget *p_iommu_hdl)
 {
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_resume(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
+u32 sprd_vdsp_iommuvau_cll_resume(struct sprd_vdsp_iommu_widget *p_iommu_hdl)
 {
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_release(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
+u32 sprd_vdsp_iommuvau_cll_release(struct sprd_vdsp_iommu_widget *p_iommu_hdl)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -464,8 +426,8 @@ u32 sprd_vdsp_iommuvau_cll_release(struct sprd_vdsp_iommu_widget * p_iommu_hdl)
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_reset(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-				 u32 channel_num)
+u32 sprd_vdsp_iommuvau_cll_reset(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	u32 channel_num)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -482,13 +444,13 @@ u32 sprd_vdsp_iommuvau_cll_reset(struct sprd_vdsp_iommu_widget * p_iommu_hdl,
 		sprd_vdsp_iommuvau_cll_enable(p_iommu_hdl);
 
 	mmu_vau_update(p_iommu_priv->mmu_reg_addr,
-		       p_iommu_priv->iommu_id, p_iommu_priv->iommu_type);
+		p_iommu_priv->iommu_id, p_iommu_priv->iommu_type);
 
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_set_bypass(struct sprd_vdsp_iommu_widget *
-				      p_iommu_hdl, bool vaor_bp_en)
+u32 sprd_vdsp_iommuvau_cll_set_bypass(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	bool vaor_bp_en)
 {
 	struct sprd_vdsp_iommu_widget *p_iommu_data = NULL;
 	struct sprd_vdsp_iommuvau_priv *p_iommu_priv = NULL;
@@ -502,15 +464,13 @@ u32 sprd_vdsp_iommuvau_cll_set_bypass(struct sprd_vdsp_iommu_widget *
 
 	p_iommu_priv = (struct sprd_vdsp_iommuvau_priv *)(p_iommu_data->p_priv);
 
-	mmu_vau_vaout_bypass_enable(p_iommu_priv->mmu_reg_addr,
-				    p_iommu_priv->iommu_id,
-				    p_iommu_priv->iommu_type, vaor_bp_en);
+	mmu_vau_vaout_bypass_enable(p_iommu_priv->mmu_reg_addr, p_iommu_priv->iommu_id,
+		p_iommu_priv->iommu_type, vaor_bp_en);
 	return 0;
 }
 
-u32 sprd_vdsp_iommuvau_cll_virt_to_phy(struct sprd_vdsp_iommu_widget *
-				       p_iommu_hdl, u64 virt_addr,
-				       u64 * dest_addr)
+u32 sprd_vdsp_iommuvau_cll_virt_to_phy(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	u64 virt_addr, u64 *dest_addr)
 {
 	u64 entry_index = 0;
 	u64 phy_page_addr = 0;
@@ -530,11 +490,9 @@ u32 sprd_vdsp_iommuvau_cll_virt_to_phy(struct sprd_vdsp_iommu_widget *
 	p_iommu_priv = (struct sprd_vdsp_iommuvau_priv *)(p_iommu_data->p_priv);
 
 	entry_index = VIR_TO_ENTRY_IDX(virt_addr, p_iommu_priv->vpn_base_addr);
-	phy_page_addr = mmu_vau_read_page_entry(p_iommu_priv->ppn_base_addr,
-						entry_index);
+	phy_page_addr = mmu_vau_read_page_entry(p_iommu_priv->ppn_base_addr, entry_index);
 	page_in_offset = virt_addr & MMU_MAPING_PAGE_MASK;
-	real_phy_addr = (phy_page_addr << MMU_MAPING_PAGESIZE_SHIFFT)
-	    + page_in_offset;
+	real_phy_addr = (phy_page_addr << MMU_MAPING_PAGESIZE_SHIFFT) + page_in_offset;
 
 	*dest_addr = real_phy_addr;
 	return 0;

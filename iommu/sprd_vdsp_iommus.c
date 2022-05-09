@@ -17,7 +17,7 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "sprd-vdsp: [iommus]: %d %s: " fmt, current->pid, __func__
+#define pr_fmt(fmt) "sprd-vdsp: [iommus]: %d %d %s: " fmt, current->pid, __LINE__, __func__
 
 static int iommus_iova_init(struct sprd_vdsp_iommus *iommus)
 {
@@ -41,14 +41,12 @@ static int iommus_iova_init(struct sprd_vdsp_iommus *iommus)
 		break;
 	default:
 		pr_err("Error: iommus->iommu_devs[0]->iommu_version:%d\n",
-		       iommus->iommu_devs[0]->iommu_version);
+			iommus->iommu_devs[0]->iommu_version);
 		return -EINVAL;
 	}
-	iommus->iova_base =iommus->iommu_devs[0]->iova_base;
-	iommus->iova_size =iommus->iommu_devs[0]->iova_size;
-	ret =
-	    iova->ops->iova_init(iova, iommus->iova_base,
-				 iommus->iova_size, 12);
+	iommus->iova_base = iommus->iommu_devs[0]->iova_base;
+	iommus->iova_size = iommus->iommu_devs[0]->iova_size;
+	ret = iova->ops->iova_init(iova, iommus->iova_base, iommus->iova_size, 12);
 	pr_debug("iommus_iova_init sucess\n");
 	return ret;
 }
@@ -58,9 +56,9 @@ static void iommus_iova_release(struct sprd_vdsp_iommus *iommus)
 	struct sprd_vdsp_iommu_iova *iova = NULL;
 
 	iova = iommus->iova_dev;
-	if (!iova){
+	if (!iova) {
 		pr_err(" iova is NULL\n");
-	}else{
+	} else {
 		iova->ops->iova_release(iova);
 	}
 	return;
@@ -76,9 +74,8 @@ static int iommus_map_record_init(struct sprd_vdsp_iommus *iommus)
 		pr_err("Error: iommus is NULL!\n");
 		return -EINVAL;
 	}
-	record =
-	    (struct sprd_vdsp_iommu_map_record *)devm_kzalloc(iommus->dev,
-							      sizeof(struct sprd_vdsp_iommu_map_record),GFP_KERNEL);
+	record = (struct sprd_vdsp_iommu_map_record *)devm_kzalloc(iommus->dev,
+		sizeof(struct sprd_vdsp_iommu_map_record),GFP_KERNEL);
 	if (!record) {
 		pr_err("Error: devm_kzalloc failed\n");
 		return -ENOMEM;
@@ -105,7 +102,7 @@ static void iommus_map_record_relsase(struct sprd_vdsp_iommus *iommus)
 
 static void iommus_release(struct sprd_vdsp_iommus *iommus);
 static int iommus_init(struct sprd_vdsp_iommus *iommus,
-		       struct device_node *vxp_dev_of_node, struct device *dev)
+	struct device_node *vxp_dev_of_node, struct device *dev)
 {
 
 	int iommu_cnt = 0;
@@ -114,9 +111,7 @@ static int iommus_init(struct sprd_vdsp_iommus *iommus,
 	struct sprd_vdsp_iommu_dev *iommu_dev = NULL;
 	int ret = 0;
 
-#ifdef KERNEL_VERSION_54
 	const char *iommu_name;
-#endif
 
 	if (unlikely(!iommus)) {
 		pr_err("Error: iommus is NULL!\n");
@@ -126,66 +121,37 @@ static int iommus_init(struct sprd_vdsp_iommus *iommus,
 		pr_err("Error: vxp_dev_of_node is NULL!\n");
 		return -EINVAL;
 	}
-#ifdef KERNEL_VERSION_54
 	iommu_cnt = of_property_count_strings(vxp_dev_of_node, "iommu_names");
 	if (iommu_cnt < 1) {
 		pr_err("Error: iommu_names attribute not found\n");
 		return -ENODEV;
 	}
-#else
-	if (!of_find_property(vxp_dev_of_node, "iommus", NULL)) {
-		pr_err("Error: iommus attribute not found");
-		return -ENODEV;
-	}
-	iommu_cnt = of_count_phandle_with_args(vxp_dev_of_node, "iommus", NULL);
-#endif
 	pr_debug("iommu_cnt = %d\n", iommu_cnt);
 	if (iommu_cnt <= 0) {
-		pr_err("Error reading wsa device from DT. iommu_cnt = %d\n",
-		       iommu_cnt);
+		pr_err("Error reading wsa device from DT. iommu_cnt = %d\n", iommu_cnt);
 		return -ENODEV;
 	}
-	if (iommu_cnt != SPRD_VDSP_IOMMU_MAX) {
-		pr_err
-		    ("Error: iommu_cnt != SPRD_VDSP_IOMMU_MAX. iommu_cnt = %d\n",
-		     iommu_cnt);
-		return -ENODEV;
+	if (iommu_cnt > SPRD_VDSP_IOMMU_MAX) {
+		iommu_cnt = SPRD_VDSP_IOMMU_MAX;
+		pr_warn("Warning: iommu_cnt != SPRD_VDSP_IOMMU_MAX. iommu_cnt = %d\n", iommu_cnt);
 	}
 
 	for (index = 0; index < iommu_cnt; index++) {
-#ifdef KERNEL_VERSION_54
-		ret = of_property_read_string_index(vxp_dev_of_node,
-						    "iommu_names", index,
-						    &iommu_name);
+		ret = of_property_read_string_index(vxp_dev_of_node, "iommu_names", index, &iommu_name);
 		if (ret) {	// return 0 on success
 			pr_err("Error: of_property_read_string_index failed\n");
 			return ret;
 		}
 
-		iommu_dev_of_node =
-		    of_find_compatible_node(NULL, NULL, iommu_name);
+		iommu_dev_of_node = of_find_compatible_node(NULL, NULL, iommu_name);
 		if (unlikely(!iommu_dev_of_node)) {
-			pr_err("Error: iommu node[%d]=%s not found\n", index,
-			       iommu_name);
+			pr_err("Error: iommu node[%d]=%s not found\n", index, iommu_name);
 			return -EINVAL;
 		} else {
-			pr_info("iommu node[%d]=%s  found\n", index,
-				iommu_name);
+			pr_info("iommu node[%d]=%s  found\n", index, iommu_name);
 		}
 
-#else
-		iommu_dev_of_node =
-		    of_parse_phandle(vxp_dev_of_node, "iommus", index);
-		if (unlikely(!iommu_dev_of_node)) {
-			pr_err("Error: iommus phandle index:%d not found\n",
-			       index);
-			return -EINVAL;
-		}
-#endif
-
-		iommu_dev =
-		    devm_kzalloc(dev, sizeof(struct sprd_vdsp_iommu_dev),
-				 GFP_KERNEL);
+		iommu_dev = devm_kzalloc(dev, sizeof(struct sprd_vdsp_iommu_dev), GFP_KERNEL);
 		if (iommu_dev == NULL) {
 			pr_err("Error: devm_kzalloc failed\n");
 			return -ENOMEM;
@@ -194,14 +160,12 @@ static int iommus_init(struct sprd_vdsp_iommus *iommus,
 		ret = iommu_dev->ops->init(iommu_dev, iommu_dev_of_node, dev);
 		if (ret) {
 			iommus_release(iommus);
-			pr_err
-			    ("Error: iommu_dev[%d] init failed, iommus_release\n",
-			     index);
+			pr_err("Error: iommu_dev[%d] init failed, iommus_release\n", index);
 			return ret;
 		}
 
 		iommus->iommu_devs[index] = iommu_dev;
-		iommu_dev->iommus=iommus;
+		iommu_dev->iommus = iommus;
 		of_node_put(iommu_dev_of_node);
 	}
 	iommus->dev = dev;
@@ -220,10 +184,10 @@ static int iommus_init(struct sprd_vdsp_iommus *iommus,
 error_map_record_init:
 	iommus_iova_release(iommus);
 error_iova_init:
-	for (index = 0; index < SPRD_VDSP_IOMMU_MAX; index++) {
+	for (index = 0; index < iommu_cnt; index++) {
 		iommu_dev = iommus->iommu_devs[index];
 		iommu_dev->ops->release(iommu_dev);
-		devm_kfree(dev,iommu_dev);
+		devm_kfree(dev, iommu_dev);
 		iommus->iommu_devs[index] = NULL;
 	}
 	mutex_init(&iommus->mutex);
@@ -262,8 +226,8 @@ static void iommus_release(struct sprd_vdsp_iommus *iommus)
 }
 
 static int iommus_map_idx(struct sprd_vdsp_iommus *iommus,
-			  struct sprd_vdsp_iommu_map_conf *map_conf,
-			  int iommu_dev_id)
+	struct sprd_vdsp_iommu_map_conf *map_conf,
+	int iommu_dev_id)
 {
 
 	struct sprd_vdsp_iommu_dev *iommu_dev = NULL;
@@ -289,7 +253,7 @@ static int iommus_map_idx(struct sprd_vdsp_iommus *iommus,
 }
 
 static int iommus_map_all(struct sprd_vdsp_iommus *iommus,
-			  struct sprd_vdsp_iommu_map_conf *map_conf)
+	struct sprd_vdsp_iommu_map_conf *map_conf)
 {
 
 	unsigned int index = 0;
@@ -307,31 +271,25 @@ static int iommus_map_all(struct sprd_vdsp_iommus *iommus,
 	}
 	mutex_lock(&iommus->mutex);
 
-#ifdef BSP_DTB_SHARKL5PRO
-	max = SPRD_VDSP_IOMMU_MAX - 1;	// sharkl5pro  SPRD_VDSP_IOMMU_VDMA set int dtb，but not use （power is't set）
-#else
 	max = SPRD_VDSP_IOMMU_MAX;
-#endif
-
 #ifdef VDSP_IOMMU_USE_SIGNAL_IOVA
-	iova_dev=iommus->iova_dev;
-	if(!iova_dev){
+	iova_dev = iommus->iova_dev;
+	if (!iova_dev) {
 		pr_err("Error: use signal iova but iommus->iova_dev=NULL\n");
 		return -1;
 	}
-	if(map_conf->isfixed==1|| map_conf->isfixed==2){
-		iova=map_conf->fixed_data;
-		if(map_conf->isfixed==1){ // 1:fixed offset 2:fixed addr
-			iova=iova+iova_dev->iova_base;
+	if (map_conf->isfixed == 1 || map_conf->isfixed == 2) {
+		iova = map_conf->fixed_data;
+		if (map_conf->isfixed == 1) { // 1:fixed offset 2:fixed addr
+			iova = iova + iova_dev->iova_base;
 		}
-		ret=iova_dev->ops->iova_alloc_fixed(iova_dev,&iova,map_conf->iova_size);
-		if(ret){
+		ret = iova_dev->ops->iova_alloc_fixed(iova_dev, &iova, map_conf->iova_size);
+		if (ret) {
 			pr_err("Error: iommus iova_alloc_fixed failed\n");
 			mutex_unlock(&iommus->mutex);
 			return -1;
 		}
-	}
-	else{
+	} else {
 		iova = iova_dev->ops->iova_alloc(iova_dev, map_conf->iova_size);
 		if (iova == 0) {
 			pr_err("Error: iommus iova_alloc failed\n");
@@ -339,7 +297,7 @@ static int iommus_map_all(struct sprd_vdsp_iommus *iommus,
 			return -1;
 		}
 	}
-	map_conf->iova_addr=iova;
+	map_conf->iova_addr = iova;
 #endif
 
 	for (index = 0; index < max; index++) {	//SPRD_VDSP_IOMMU_MAX
@@ -355,18 +313,17 @@ static int iommus_map_all(struct sprd_vdsp_iommus *iommus,
 		}
 	}
 #ifdef VDSP_IOMMU_USE_SIGNAL_IOVA
-	record_dev=iommus->record_dev;
-	record_dev->ops->insert_slot(record_dev, (unsigned long)map_conf->table,
-			     map_conf->buf_addr, map_conf->iova_addr,
-			     map_conf->iova_size);
+	record_dev = iommus->record_dev;
+	record_dev->ops->insert_slot(record_dev, ( unsigned long) map_conf->table,
+		map_conf->buf_addr, map_conf->iova_addr, map_conf->iova_size);
 #endif
 	mutex_unlock(&iommus->mutex);
 	return ret;
 }
 
 static int iommus_unmap_idx(struct sprd_vdsp_iommus *iommus,
-			    struct sprd_vdsp_iommu_unmap_conf *unmap_conf,
-			    int iommu_id)
+	struct sprd_vdsp_iommu_unmap_conf *unmap_conf,
+	int iommu_id)
 {
 
 	struct sprd_vdsp_iommu_dev *iommu_dev = NULL;
@@ -391,7 +348,7 @@ static int iommus_unmap_idx(struct sprd_vdsp_iommus *iommus,
 }
 
 int iommus_unmap_all(struct sprd_vdsp_iommus *iommus,
-		     struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
+	struct sprd_vdsp_iommu_unmap_conf *unmap_conf)
 {
 
 	unsigned int index = 0;
@@ -407,26 +364,20 @@ int iommus_unmap_all(struct sprd_vdsp_iommus *iommus,
 		return -EINVAL;
 	}
 	mutex_lock(&iommus->mutex);
-#ifdef BSP_DTB_SHARKL5PRO
-	max = SPRD_VDSP_IOMMU_MAX - 1;
-#else
+
 	max = SPRD_VDSP_IOMMU_MAX;
-#endif
 	for (index = 0; index < max; index++) {
 		ret = iommus_unmap_idx(iommus, unmap_conf, index);
 		if (ret) {
-			pr_err
-			    ("Error:sprd_vdsp_iommu_unmap_idx failed,ret=%d\n",
-			     ret);
+			pr_err("Error:sprd_vdsp_iommu_unmap_idx failed,ret=%d\n", ret);
 			mutex_unlock(&iommus->mutex);
 			return ret;
 		}
 	}
 #ifdef VDSP_IOMMU_USE_SIGNAL_IOVA
-	iova_dev=iommus->iova_dev;
-	iova_dev->ops->iova_free(iova_dev, unmap_conf->iova_addr,
-				 unmap_conf->iova_size);
-	record_dev=iommus->record_dev;
+	iova_dev = iommus->iova_dev;
+	iova_dev->ops->iova_free(iova_dev, unmap_conf->iova_addr, unmap_conf->iova_size);
+	record_dev = iommus->record_dev;
 	record_dev->ops->remove_slot(record_dev, unmap_conf->iova_addr);
 #endif
 	mutex_unlock(&iommus->mutex);
@@ -434,8 +385,8 @@ int iommus_unmap_all(struct sprd_vdsp_iommus *iommus,
 }
 
 
-static int iommus_reserve_init(struct sprd_vdsp_iommus * iommus,
-			  struct iova_reserve *reserve_data,unsigned int reserve_num)
+static int iommus_reserve_init(struct sprd_vdsp_iommus *iommus,
+	struct iova_reserve *reserve_data, unsigned int reserve_num)
 {
 	unsigned int index = 0;
 	int ret = 0;
@@ -448,16 +399,12 @@ static int iommus_reserve_init(struct sprd_vdsp_iommus * iommus,
 	}
 
 	mutex_lock(&iommus->mutex);
-#ifdef BSP_DTB_SHARKL5PRO
-	max = SPRD_VDSP_IOMMU_MAX - 1;	// sharkl5pro  SPRD_VDSP_IOMMU_VDMA set int dtb，but not use （power is't set）
-#else
-	max = SPRD_VDSP_IOMMU_MAX;
-#endif
 
+	max = SPRD_VDSP_IOMMU_MAX;
 #ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 	for (index = 0; index < max; index++) {	//SPRD_VDSP_IOMMU_MAX
 		iova_dev = iommus->iommu_devs[index]->iova_dev;
-		ret = iova_dev->ops->iova_reserve_init(iova_dev,reserve_data,reserve_num);
+		ret = iova_dev->ops->iova_reserve_init(iova_dev, reserve_data, reserve_num);
 		if (ret) {
 			pr_err("Error:iova_reserve_init failed,index=%d\n", index);
 			mutex_unlock(&iommus->mutex);
@@ -466,7 +413,7 @@ static int iommus_reserve_init(struct sprd_vdsp_iommus * iommus,
 	}
 #else
 	iova_dev = iommus->iova_dev;
-	ret = iova_dev->ops->iova_reserve_init(iova_dev,reserve_data,reserve_num);
+	ret = iova_dev->ops->iova_reserve_init(iova_dev, reserve_data, reserve_num);
 	if (ret) {
 		pr_err("Error:iova_reserve_init failed,index=%d\n", index);
 		mutex_unlock(&iommus->mutex);
@@ -477,7 +424,7 @@ static int iommus_reserve_init(struct sprd_vdsp_iommus * iommus,
 	return ret;
 }
 
-static void iommus_reserve_release(struct sprd_vdsp_iommus * iommus)
+static void iommus_reserve_release(struct sprd_vdsp_iommus *iommus)
 {
 	int max = 0;
 	struct sprd_vdsp_iommu_iova *iova_dev;
@@ -488,15 +435,12 @@ static void iommus_reserve_release(struct sprd_vdsp_iommus * iommus)
 
 	if (unlikely(!iommus)) {
 		pr_err("Error: iommus is NULL!\n");
-		return ;
+		return;
 	}
 
 	mutex_lock(&iommus->mutex);
-#ifdef BSP_DTB_SHARKL5PRO
-	max = SPRD_VDSP_IOMMU_MAX - 1;	// sharkl5pro  SPRD_VDSP_IOMMU_VDMA set int dtb，but not use （power is't set）
-#else
+
 	max = SPRD_VDSP_IOMMU_MAX;
-#endif
 #ifndef VDSP_IOMMU_USE_SIGNAL_IOVA
 	for (index = 0; index < max; index++) {	//SPRD_VDSP_IOMMU_MAX
 		iova_dev = iommus->iommu_devs[index]->iova_dev;
@@ -507,7 +451,7 @@ static void iommus_reserve_release(struct sprd_vdsp_iommus * iommus)
 	iova_dev->ops->iova_reserve_relsase(iova_dev);
 #endif
 	mutex_unlock(&iommus->mutex);
-	return ;
+	return;
 }
 
 struct sprd_vdsp_iommus_ops iommus_ops = {

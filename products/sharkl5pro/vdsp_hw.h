@@ -173,8 +173,7 @@ struct xrp_hw_ops {
 	 * \param sz: return size of sync data here
 	 * \return a buffer allocated with kmalloc that the caller will free
 	 */
-	void *(*get_hw_sync_data) (void *hw_arg, size_t * sz,
-				   uint32_t log_addr);
+	void *(*get_hw_sync_data) (void *hw_arg, size_t *sz, uint32_t log_addr);
 
 	/*!
 	 * Send IRQ to the core.
@@ -191,8 +190,7 @@ struct xrp_hw_ops {
 	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
 	 *                time
 	 */
-	 bool(*cacheable) (void *hw_arg, unsigned long pfn,
-			   unsigned long n_pages);
+	bool(*cacheable) (void *hw_arg, unsigned long pfn, unsigned long n_pages);
 	/*!
 	 * Synchronize region of memory for DSP access.
 	 *
@@ -200,9 +198,8 @@ struct xrp_hw_ops {
 	 *                time
 	 * \param flags: XRP_FLAG_{READ,WRITE,READWRITE}
 	 */
-	void (*dma_sync_for_device) (void *hw_arg,
-				     void *vaddr, phys_addr_t paddr,
-				     unsigned long sz, unsigned flags);
+	void (*dma_sync_for_device) (void *hw_arg, void *vaddr, phys_addr_t paddr,
+		unsigned long sz, unsigned flags);
 	/*!
 	 * Synchronize region of memory for host access.
 	 *
@@ -210,18 +207,17 @@ struct xrp_hw_ops {
 	 *                time
 	 * \param flags: XRP_FLAG_{READ,WRITE,READWRITE}
 	 */
-	void (*dma_sync_for_cpu) (void *hw_arg,
-				  void *vaddr, phys_addr_t paddr,
-				  unsigned long sz, unsigned flags);
+	void (*dma_sync_for_cpu) (void *hw_arg, void *vaddr, phys_addr_t paddr,
+		unsigned long sz, unsigned flags);
 
 	/*!
 	 * memcpy data/code to device-specific memory.
 	 */
-	void (*memcpy_tohw) (void __iomem * dst, const void *src, size_t sz);
+	void (*memcpy_tohw) (void __iomem *dst, const void *src, size_t sz);
 	/*!
 	 * memset device-specific memory.
 	 */
-	void (*memset_hw) (void __iomem * dst, int c, size_t sz);
+	void (*memset_hw) (void __iomem *dst, int c, size_t sz);
 	/*!
 	 * enable dvfs
 	 */
@@ -241,7 +237,7 @@ struct xrp_hw_ops {
 	 *                time
 	 * \return whether the core has crashed and needs to be restarted
 	 */
-	 bool(*panic_check) (void *hw_arg);
+	bool(*panic_check) (void *hw_arg);
 	/*set qos */
 	void (*set_qos) (void *hw_arg);
 	/*request irq */
@@ -249,11 +245,11 @@ struct xrp_hw_ops {
 	/*free irq */
 	void (*vdsp_free_irq) (void *xvp_arg, void *hw_arg);
 	/*get max_freq */
-	void (*get_max_freq) (uint32_t * max_freq);
+	void (*get_max_freq) (uint32_t *max_freq);
 };
 
 long sprd_vdsp_init(struct platform_device *pdev, enum vdsp_init_flags flags,
-		    const struct xrp_hw_ops *hw, void *hw_arg);
+	const struct xrp_hw_ops *hw, void *hw_arg);
 int sprd_vdsp_deinit(struct platform_device *pdev);
 
 /*!
@@ -268,5 +264,8 @@ irqreturn_t vdsp_log_irq_handler(int irq, void *private);
 
 int vdsp_runtime_resume(struct device *dev);
 int vdsp_runtime_suspend(struct device *dev);
+
+int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val);
 
 #endif

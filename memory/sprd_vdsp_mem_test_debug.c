@@ -19,8 +19,8 @@
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
-#define pr_fmt(fmt) "sprd-vdsp: [mem_debug]: %d %s: "\
-        fmt, current->pid, __func__
+#define pr_fmt(fmt) "sprd-vdsp: [mem_debug]: %d %d %s: "\
+        fmt, current->pid, __LINE__, __func__
 
 static unsigned long debug_show_all_counut = 0;
 

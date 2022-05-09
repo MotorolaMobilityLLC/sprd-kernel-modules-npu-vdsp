@@ -65,31 +65,31 @@ struct sprd_vdsp_iommu_widget {
 	struct sprd_vdsp_iommu_func_tbl *p_iommu_tbl;
 };
 struct sprd_vdsp_iommu_func_tbl {
-	u32(*init) (struct sprd_vdsp_iommu_init_param * p_init_param,
-		    struct sprd_vdsp_iommu_widget * p_iommu_hdl);
-	u32(*uninit) (struct sprd_vdsp_iommu_widget * p_iommu_hdl);
+	u32(*init) (struct sprd_vdsp_iommu_init_param *p_init_param,
+		struct sprd_vdsp_iommu_widget *p_iommu_hdl);
+	u32(*uninit) (struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 
-	u32(*map) (struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-		   struct sprd_iommu_map_param * p_map_param);
-	u32(*unmap) (struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-		     struct sprd_iommu_unmap_param * p_unmap_param);
+	u32(*map) (struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+		struct sprd_iommu_map_param *p_map_param);
+	u32(*unmap) (struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+		struct sprd_iommu_unmap_param *p_unmap_param);
 
-	u32(*enable) (struct sprd_vdsp_iommu_widget * p_iommu_hdl);
-	u32(*disable) (struct sprd_vdsp_iommu_widget * p_iommu_hdl);
+	u32(*enable) (struct sprd_vdsp_iommu_widget *p_iommu_hdl);
+	u32(*disable) (struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 
-	u32(*suspend) (struct sprd_vdsp_iommu_widget * p_iommu_hdl);
-	u32(*resume) (struct sprd_vdsp_iommu_widget * p_iommu_hdl);
-	u32(*release) (struct sprd_vdsp_iommu_widget * p_iommu_hdl);
+	u32(*suspend) (struct sprd_vdsp_iommu_widget *p_iommu_hdl);
+	u32(*resume) (struct sprd_vdsp_iommu_widget *p_iommu_hdl);
+	u32(*release) (struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 
-	u32(*reset) (struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-		     u32 channel_num);
-	u32(*set_bypass) (struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-			  bool vaor_bp_en);
-	u32(*virttophy) (struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-			 u64 virt_addr, u64 * dest_addr);
+	u32(*reset) (struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+		u32 channel_num);
+	u32(*set_bypass) (struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+		bool vaor_bp_en);
+	u32(*virttophy) (struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+		u64 virt_addr, u64 *dest_addr);
 
-	u32(*unmap_orphaned) (struct sprd_vdsp_iommu_widget * p_iommu_hdl,
-			      struct sprd_iommu_unmap_param * p_unmap_param);
+	u32(*unmap_orphaned) (struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+		struct sprd_iommu_unmap_param *p_unmap_param);
 };
 
 struct sprd_vdsp_iommuvau_interrupt {
@@ -132,31 +132,28 @@ struct sprd_vdsp_iommuvau_priv {
 };
 
 u32 sprd_vdsp_iommuvau_cll_init(struct sprd_vdsp_iommu_init_param *p_init_param,
-				struct sprd_vdsp_iommu_widget *p_iommu_hdl);
+	struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 u32 sprd_vdsp_iommuvau_cll_uninit(struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 u32 sprd_vdsp_iommuvau_cll_map(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
-			       struct sprd_iommu_map_param *p_map_param);
+	struct sprd_iommu_map_param *p_map_param);
 u32 sprd_vdsp_iommuvau_cll_unmap(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
-				 struct sprd_iommu_unmap_param *p_unmap_param);
-u32 sprd_vdsp_iommuvau_cll_unmap_orphaned(struct sprd_vdsp_iommu_widget
-					  *p_iommu_hdl, struct sprd_iommu_unmap_param
-					  *p_unmap_param);
+	struct sprd_iommu_unmap_param *p_unmap_param);
+u32 sprd_vdsp_iommuvau_cll_unmap_orphaned(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	struct sprd_iommu_unmap_param *p_unmap_param);
 u32 sprd_vdsp_iommuvau_cll_enable(struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 u32 sprd_vdsp_iommuvau_cll_disable(struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 u32 sprd_vdsp_iommuvau_cll_suspend(struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 u32 sprd_vdsp_iommuvau_cll_resume(struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 u32 sprd_vdsp_iommuvau_cll_release(struct sprd_vdsp_iommu_widget *p_iommu_hdl);
 u32 sprd_vdsp_iommuvau_cll_reset(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
-				 u32 channel_num);
-u32 sprd_vdsp_iommuvau_cll_set_bypass(struct sprd_vdsp_iommu_widget
-				      *p_iommu_hdl, bool vaor_bp_en);
-u32 sprd_vdsp_iommuvau_cll_virt_to_phy(struct sprd_vdsp_iommu_widget
-				       *p_iommu_hdl, u64 virt_addr,
-				       u64 * dest_addr);
+	u32 channel_num);
+u32 sprd_vdsp_iommuvau_cll_set_bypass(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	bool vaor_bp_en);
+u32 sprd_vdsp_iommuvau_cll_virt_to_phy(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
+	u64 virt_addr, u64 *dest_addr);
 u32 sprd_vdsp_iommuvau_reg_authority(struct sprd_vdsp_iommu_widget *p_iommu_hdl,
-				     u8 authority);
-void sprd_vdsp_iommuvau_flush_pgt(ulong ppn_base, u32 start_entry,
-				  u32 end_entry);
+	u8 authority);
+void sprd_vdsp_iommuvau_flush_pgt(ulong ppn_base, u32 start_entry, u32 end_entry);
 
 extern struct sprd_vdsp_iommu_func_tbl iommuvau_func_tbl;
 #endif /* _SPRD_IOMMU_CLL_H_ */

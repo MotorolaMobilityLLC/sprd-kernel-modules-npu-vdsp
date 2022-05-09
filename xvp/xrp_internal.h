@@ -1,3 +1,6 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
 
 /*
  * Internal XRP structures definition.
@@ -34,13 +37,9 @@
 #include <linux/miscdevice.h>
 #include <linux/mutex.h>
 #include <linux/types.h>
-#ifdef IOMMUANDMEM
 #include "sprd_vdsp_mem_core.h"
 #include "sprd_vdsp_mem_core_priv.h"
 #include "sprd_vdsp_mem_xvp_init.h"
-#else
-#include "vdsp_smem.h"
-#endif
 #include "xrp_library_loader.h"
 #include "vdsp_dvfs.h"
 #include "vdsp_log.h"
@@ -48,7 +47,6 @@
 struct device;
 struct firmware;
 struct xrp_hw_ops;
-struct xrp_allocation_pool;
 
 struct firmware_origin {
 	size_t size;
@@ -62,7 +60,6 @@ struct xrp_comm {
 	u32 priority;
 };
 
-#ifdef IOMMUANDMEM
 struct faceid_mem_addr {
 #ifdef MYL5
 	struct xvp_buf *ion_fd_weights_p;
@@ -85,8 +82,7 @@ struct xvp {
 	struct device *dev;
 	const char *firmware_name;
 	const struct firmware *firmware;
-	const struct firmware *firmware2_sign;	/*faceid sign fw */
-	const struct firmware *firmware_coeff;
+
 	struct miscdevice miscdev;
 	const struct xrp_hw_ops *hw_ops;
 	void *hw_arg;
@@ -95,33 +91,19 @@ struct xvp {
 	u32 *queue_priority;
 	struct xrp_comm *queue;
 	struct xrp_comm **queue_ordered;
-	phys_addr_t pmem;
-	phys_addr_t comm_phys;
-	phys_addr_t shared_size;
 	atomic_t reboot_cycle;
 	atomic_t reboot_cycle_complete;
 
 	bool host_irq_mode;
-
-	struct xrp_allocation_pool *pool;
 	bool off;
 	int nodeid;
-	bool secmode;		/*used for faceID */
-	bool tee_con;		/*the status of connect TEE */
-	int irq_status;
-	struct faceid_mem_addr faceid_pool;
-	const struct firmware *faceid_fw;
-	struct vdsp_log_state *log_state;
-
-	struct xrp_load_lib_info load_lib;
 	uint32_t open_count;
-	struct mutex xvp_lock;
-	uint32_t cur_opentype;
+
+	struct vdsp_log_state *log_state;
+	struct xrp_load_lib_info load_lib;
 	struct vdsp_dvfs_info dvfs_info;
 	struct hlist_head xrp_known_files[1 << 10];
-//  spinlock_t xrp_known_files_lock;
 	struct mutex xrp_known_files_lock;
-	uint32_t sysdump_num;
 	// iommu
 	struct sprd_vdsp_iommus *iommus;
 	// mem manage
@@ -131,6 +113,16 @@ struct xvp {
 	struct xvp_buf *ipc_buf;
 	struct xvp_buf *log_buf;
 	struct xvp_buf *fw_buf;
+
+	//faceid
+	bool secmode;		/*used for faceID */
+	bool tee_con;		/*the status of connect TEE */
+	int irq_status;
+	uint32_t cur_opentype;
+	struct faceid_mem_addr faceid_pool;
+	const struct firmware *faceid_fw;
+	const struct firmware *firmware2_sign;	/*faceid sign fw */
+	const struct firmware *firmware_coeff;
 	struct xvp_buf *faceid_com_buf;
 	struct xvp_buf *faceid_fw_buf;
 	struct xvp_buf *faceid_fws_buf;
@@ -139,85 +131,4 @@ struct xvp {
 	unsigned long faceid_addr_offset;
 #endif
 };
-#else
-struct faceid_mem_addr {
-#ifdef MYL5
-	struct ion_buf ion_fd_weights_p;
-	struct ion_buf ion_fd_weights_r;
-	struct ion_buf ion_fd_weights_o;
-	struct ion_buf ion_fp_weights;
-	struct ion_buf ion_flv_weights;
-	struct ion_buf ion_fo_weights;
-	struct ion_buf ion_fd_mem_pool;
-#endif
-#ifdef MYN6
-	struct ion_buf ion_fa_weights;
-	struct ion_buf ion_fp_weights;
-	struct ion_buf ion_foc_weights;
-	struct ion_buf ion_fd_mem_pool;
-#endif
-};
-
-struct xvp {
-	struct device *dev;
-	const char *firmware_name;
-	const struct firmware *firmware;
-	const struct firmware *firmware2_sign;	/*faceid sign fw */
-	struct miscdevice miscdev;
-	const struct xrp_hw_ops *hw_ops;
-	void *hw_arg;
-	unsigned n_queues;
-
-	u32 *queue_priority;
-	struct xrp_comm *queue;
-	struct xrp_comm **queue_ordered;
-	void __iomem *comm;
-	phys_addr_t pmem;
-	phys_addr_t comm_phys;
-	phys_addr_t dsp_comm_addr;
-	/*ion buff for firmware, comm, dram backup memory */
-	struct ion_buf ion_firmware;
-	struct ion_buf ion_comm;
-	/*firmware addr infos */
-	void *firmware_viraddr;
-	phys_addr_t firmware_phys;
-	phys_addr_t dsp_firmware_addr;
-
-	phys_addr_t shared_size;
-	atomic_t reboot_cycle;
-	atomic_t reboot_cycle_complete;
-
-	bool host_irq_mode;
-
-	struct xrp_allocation_pool *pool;
-	bool off;
-	int nodeid;
-	bool secmode;		/*used for faceID */
-	bool tee_con;		/*the status of connect TEE */
-	int irq_status;
-	struct ion_buf ion_faceid_fw;	/*faceid fw */
-	struct ion_buf ion_faceid_fw_sign;	/*faceid fw ion which used to sign */
-	struct ion_buf ion_faceid_comm;
-	struct faceid_mem_addr faceid_pool;
-#ifdef MYN6
-	struct ion_buf ion_faceid_image;
-	unsigned long ion_faceid_addr_offset;
-#endif
-	const struct firmware *faceid_fw;
-	struct vdsp_log_state *log_state;
-	struct ion_buf ion_vdsp_log;
-	void *fd_weights_p_viraddr;
-	struct xrp_load_lib_info load_lib;
-	uint32_t open_count;
-	struct mutex xvp_lock;
-	uint32_t cur_opentype;
-	struct vdsp_dvfs_info dvfs_info;
-	struct vdsp_mem_desc *vdsp_mem_desc;
-	struct hlist_head xrp_known_files[1 << 10];
-//  spinlock_t xrp_known_files_lock;
-	struct mutex xrp_known_files_lock;
-	uint32_t sysdump_num;
-};
-
-#endif
 #endif

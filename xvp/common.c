@@ -44,7 +44,7 @@
 
 xtlib_loader_globals xtlib_globals;
 
-int xtlib_verify_magic(Elf32_Ehdr * header)
+int xtlib_verify_magic(Elf32_Ehdr *header)
 {
 	Elf32_Byte magic_no;
 
@@ -98,18 +98,16 @@ int xtlib_verify_magic(Elf32_Ehdr * header)
 	return 0;
 }
 
-void xtlib_load_seg(Elf32_Phdr * pheader, void *src_addr, xt_ptr dst_addr,
-		    memcpy_func_ex mcpy, memset_func_ex mset, void *user)
+void xtlib_load_seg(Elf32_Phdr *pheader, void *src_addr, xt_ptr dst_addr,
+	memcpy_func_ex mcpy, memset_func_ex mset, void *user)
 {
 	Elf32_Word bytes_to_copy = xtlib_host_word(pheader->p_filesz);
-	Elf32_Word bytes_to_zero =
-	    xtlib_host_word(pheader->p_memsz) - bytes_to_copy;
+	Elf32_Word bytes_to_zero = xtlib_host_word(pheader->p_memsz) - bytes_to_copy;
 	char *pindex = (char *)user;
 	xt_ptr zero_addr = 0;
 	void *zero_addr_ap = pindex + bytes_to_copy;
 
-	pr_debug("dst addr:%x , user:%p, bytes to copy:%d\n",
-		 dst_addr, user, bytes_to_copy);
+	//pr_debug("dst addr:%x , user:%p, bytes to copy:%d\n", dst_addr, user, bytes_to_copy);
 	if (bytes_to_copy > 0) {
 		mcpy(dst_addr, src_addr, bytes_to_copy, user);
 
@@ -162,8 +160,7 @@ void xtlib_sync()
 #endif
 }
 
-xt_ptr xtlib_user_memcpy(xt_ptr dest, const void *src,
-			 unsigned int n, void *user)
+xt_ptr xtlib_user_memcpy(xt_ptr dest, const void *src, unsigned int n, void *user)
 {
 	return ((user_funcs *) user)->mcpy(dest, src, n);
 }
