@@ -7,6 +7,7 @@
 #include "sprd_vdsp_mem_xvp_init.h"
 #include "sprd_vdsp_mem_xvpfile.h"
 #include "sprd_vdsp_mem_test_debug.h"
+
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -55,6 +56,7 @@ struct xvp_buf *xvpfile_buf_alloc(struct xvp_file *xvp_file, char *name,
 		goto err;
 	}
 	buf->owner = ( unsigned long) xvp_file;
+	//what is meaning here.
 	mutex_lock(&xvp_file->xvpfile_buf_list_lock);
 	list_add_tail(&buf->xvp_file_list_node, &xvp_file->buf_list);
 	mutex_unlock(&xvp_file->xvpfile_buf_list_lock);
@@ -219,11 +221,9 @@ int xvpfile_buf_export(struct xvp_file *xvp_file, struct xvp_buf *buf)
 		pr_err("Error xvp is NULL\n");
 		return -EINVAL;
 	}
-#if 1
 	if (sprd_vdsp_mem_export(xvp->dev, xvp->drv_mem_ctx, buf->buf_id,
 		( size_t) buf->size, buf->attributes, &buf->buf_hnd)) {
 		return -1;
 	}
-#endif
 	return 0;
 }

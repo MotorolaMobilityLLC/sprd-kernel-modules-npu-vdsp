@@ -51,10 +51,9 @@
 #include <linux/dma-buf.h>
 #include <linux/scatterlist.h>
 #include <linux/version.h>
-#include <linux/sprd_ion.h>
-
 #include "sprd_vdsp_mem_core.h"
 #include "sprd_vdsp_mem_core_priv.h"
+#include "vdsp_debugfs.h"
 
 /* this condition is actually true for kernels < 4.4.100 */
 #ifndef PHYS_PFN
@@ -66,9 +65,6 @@
 #endif
 #define pr_fmt(fmt) "sprd-vdsp: [mem_heap]: %d %d %s: "\
         fmt, current->pid, __LINE__, __func__
-
-static int trace_physical_pages = 0;
-static int trace_mmap_fault = 0;
 
 struct buffer_data {
 	struct dma_buf *dma_buf;
@@ -85,9 +81,9 @@ static int dmabuf_heap_import(struct device *device, struct heap *heap,
 	struct buffer_data *data;
 	int ret;
 	int dmabuf_fd = (int)buf_fd;
+	struct scatterlist *sgl;
 
-	pr_debug("%s:%d buffer %d (0x%p) dmabuf_fd %d\n", __func__, __LINE__,
-		buffer->id, buffer, dmabuf_fd);
+	pr_debug("buffer %d (0x%p) dmabuf_fd %d\n",	buffer->id, buffer, dmabuf_fd);
 
 	data = kmalloc(sizeof(struct buffer_data), GFP_KERNEL);
 	if (!data)
@@ -95,42 +91,49 @@ static int dmabuf_heap_import(struct device *device, struct heap *heap,
 
 	data->dma_buf = dma_buf_get(dmabuf_fd);
 	if (IS_ERR_OR_NULL(data->dma_buf)) {
-		pr_err("%s dma_buf_get fd %d\n", __func__, dmabuf_fd);
+		pr_err("dma_buf_get fd %d fail\n", dmabuf_fd);
 		ret = -EINVAL;
 		goto dma_buf_get_failed;
 	}
-	pr_debug("%s:%d buffer %d dma_buf %p\n", __func__, __LINE__,
-		buffer->id, data->dma_buf);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("buffer %d dma_buf %p\n", buffer->id, data->dma_buf);
 
 	data->attach = dma_buf_attach(data->dma_buf, device);
 	if (IS_ERR(data->attach)) {
-		pr_err("%s dma_buf_attach fd %d\n", __func__, dmabuf_fd);
+		pr_err("dma_buf_attach fd %d\n", dmabuf_fd);
 		ret = -EINVAL;
 		goto dma_buf_attach_failed;
 	}
 
 	data->sgt = dma_buf_map_attachment(data->attach, DMA_BIDIRECTIONAL);
 	if (IS_ERR(data->sgt)) {
-		pr_err("%s dma_buf_map_attachment fd %d\n", __func__, dmabuf_fd);
+		pr_err("dma_buf_map_attachment fd %d\n", dmabuf_fd);
 		ret = -EINVAL;
 		goto dma_buf_map_failed;
 	}
 
-	if (trace_physical_pages) {
-		struct scatterlist *sgl = data->sgt->sgl;
+	//shanhu modify
+	sgl = data->sgt->sgl;
 
+	if (vdsp_debugfs_trace_mem()) {
 		while (sgl) {
-			pr_info("%s:%d phys %#llx length %d (dma_addr:%#llx len:%d)\n",
-				__func__, __LINE__,
+			pr_debug("phys %#llx length %d (dma_addr:%#llx len:%d)\n",
 				(unsigned long long)sg_phys(sgl), sgl->length,
 				sg_dma_address(sgl), sg_dma_len(sgl));
 			sgl = sg_next(sgl);
 		}
 	}
-
+	//shanhu add here for paddr?
+	if (PAGE_SIZE == data->dma_buf->size) {
+		sgl = data->sgt->sgl;
+		buffer->paddr = sg_phys(sgl);
+	}
 	data->mattr = attr;
 	data->mapped_vma = NULL;
 	buffer->priv = data;
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("buffer->paddr[%#llx] end\n", buffer->paddr);
+
 	return 0;
 
 dma_buf_map_failed:
@@ -149,19 +152,12 @@ static void dmabuf_heap_free(struct heap *heap, struct buffer *buffer)
 	struct dma_buf_map map = DMA_BUF_MAP_INIT_VADDR(buffer->kptr);
 #endif
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	if (buffer->kptr) {
 		struct dma_buf *dma_buf = data->dma_buf;
 
-		dma_buf_end_cpu_access(dma_buf,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-						0 /* start */,
-						buffer->actual_size,
-#endif
-						DMA_BIDIRECTIONAL);
-
+		dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
 #ifdef K515_ENABLE
 		dma_buf_vunmap(dma_buf, &map);
 #else
@@ -177,6 +173,9 @@ static void dmabuf_heap_free(struct heap *heap, struct buffer *buffer)
 	dma_buf_detach(data->dma_buf, data->attach);
 	dma_buf_put(data->dma_buf);
 	kfree(data);
+
+	if (vdsp_debugfs_trace_mem())
+		pr_debug(" dmabuf heap free end\n");
 }
 
 static void dmabuf_mmap_open(struct vm_area_struct *vma)
@@ -184,8 +183,8 @@ static void dmabuf_mmap_open(struct vm_area_struct *vma)
 	struct buffer *buffer = vma->vm_private_data;
 	struct buffer_data *data = buffer->priv;
 
-	pr_debug("%s:%d buffer %d (0x%p) vma:%p\n",
-			__func__, __LINE__, buffer->id, buffer, vma);
+	pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
+
 	if (!(data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED)) {
 		enum dma_data_direction dma_dir;
 
@@ -195,14 +194,12 @@ static void dmabuf_mmap_open(struct vm_area_struct *vma)
 			dma_dir = DMA_FROM_DEVICE;
 
 		/* User will read the buffer so invalidate D-cache */
-		dma_buf_begin_cpu_access(data->dma_buf,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-							0 /* start */,
-							buffer->actual_size,
-#endif
-							dma_dir);
+		dma_buf_begin_cpu_access(data->dma_buf, dma_dir);
 	}
 	data->mapped_vma = vma;
+
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("dmabuf mmap open end\n");
 }
 
 static void dmabuf_mmap_close(struct vm_area_struct *vma)
@@ -214,20 +211,18 @@ static void dmabuf_mmap_close(struct vm_area_struct *vma)
 		return;
 
 	data = buffer->priv;
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("dmabuf mmap close start, buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
 
-	pr_debug("%s:%d buffer %d (0x%p) vma:%p\n",
-			__func__, __LINE__, buffer->id, buffer, vma);
 	if (!(data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED)) {
 		/* User may have written to the buffer so flush D-cache */
-		dma_buf_end_cpu_access(data->dma_buf,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-							0 /* start */,
-							buffer->actual_size,
-#endif
-							DMA_TO_DEVICE);
+		dma_buf_end_cpu_access(data->dma_buf, DMA_TO_DEVICE);
 	}
 
 	data->mapped_vma = NULL;
+
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("dmabuf mmap close end\n");
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -245,13 +240,10 @@ static int dmabuf_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	dma_addr_t phys = 0;
 	unsigned long addr;
 
-	if (trace_mmap_fault) {
-		pr_debug("%s:%d buffer %d (0x%p) vma:%p\n",
-				__func__, __LINE__, buffer->id, buffer, vma);
-		pr_debug("%s:%d vm_start %#lx vm_end %#lx total size %ld\n",
-			__func__, __LINE__,
-			vma->vm_start, vma->vm_end,
-			vma->vm_end - vma->vm_start);
+	if (vdsp_debugfs_trace_mem()) {
+		pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
+		pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
+			 vma->vm_start, vma->vm_end, vma->vm_end - vma->vm_start);
 	}
 
 	sgl = sgt->sgl;
@@ -269,9 +261,9 @@ static int dmabuf_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 				.val = PHYS_PFN(phys + (page * PAGE_SIZE))
 			};
 #endif
-			if (trace_mmap_fault)
-				pr_info("%s:%d vmf addr %lx sgl_len:%d phys:%#llx\n",
-					__func__, __LINE__, addr + (page * PAGE_SIZE), sgl->length,
+			if (vdsp_debugfs_trace_mem())
+				pr_debug("vmf addr %lx sgl_len:%d phys:%#llx\n",
+					addr + (page * PAGE_SIZE), sgl->length,
 					(unsigned long long)(phys + (page * PAGE_SIZE)));
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 			{
@@ -333,10 +325,8 @@ static int dmabuf_heap_map_um(struct heap *heap, struct buffer *buffer,
 {
 	struct buffer_data *data = buffer->priv;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		buffer->id, buffer);
-	pr_debug("%s:%d vm_start %#lx vm_end %#lx size %ld\n",
-		__func__, __LINE__,
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
+	pr_debug("vm_start %#lx vm_end %#lx size %ld\n",
 		vma->vm_start, vma->vm_end, vma->vm_end - vma->vm_start);
 
 	/* CACHED by default */
@@ -366,12 +356,10 @@ static int dmabuf_heap_map_km(struct heap *heap, struct buffer *buffer)
 #endif
 	int ret;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	if (buffer->kptr) {
-		pr_warn("%s called for already mapped buffer %d\n",
-			__func__, buffer->id);
+		pr_warn("called for already mapped buffer %d\n", buffer->id);
 		return 0;
 	}
 
@@ -382,7 +370,7 @@ static int dmabuf_heap_map_km(struct heap *heap, struct buffer *buffer)
 #endif
 							DMA_BIDIRECTIONAL);
 	if (ret) {
-		pr_err("%s begin_cpu_access failed for bufid %d\n", __func__, buffer->id);
+		pr_err("begin_cpu_access failed for bufid %d\n", buffer->id);
 		return ret;
 	}
 #ifdef K515_ENABLE
@@ -396,12 +384,11 @@ static int dmabuf_heap_map_km(struct heap *heap, struct buffer *buffer)
 #else
 	buffer->kptr = dma_buf_vmap(dma_buf);
 	if (!buffer->kptr) {
-		pr_err("%s dma buf vmap failed!\n", __func__);
+		pr_err("dma buf vmap failed!\n");
 		return -EFAULT;
 	}
 #endif
-	pr_debug("%s:%d buffer %d vmap to 0x%p\n", __func__, __LINE__,
-		buffer->id, buffer->kptr);
+	pr_debug("buffer %d vmap to 0x%p\n", buffer->id, buffer->kptr);
 	return 0;
 }
 
@@ -413,12 +400,10 @@ static int dmabuf_heap_unmap_km(struct heap *heap, struct buffer *buffer)
 	struct dma_buf_map map = DMA_BUF_MAP_INIT_VADDR(buffer->kptr);
 #endif
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	if (!buffer->kptr) {
-		pr_warn("%s called for unmapped buffer %d\n",
-			__func__, buffer->id);
+		pr_warn("called for unmapped buffer %d\n", buffer->id);
 		return 0;
 	}
 
@@ -433,8 +418,8 @@ static int dmabuf_heap_unmap_km(struct heap *heap, struct buffer *buffer)
 #else
 	dma_buf_vunmap(dma_buf, buffer->kptr);
 #endif
-	pr_debug("%s:%d buffer %d kunmap from 0x%p\n", __func__, __LINE__,
-		buffer->id, buffer->kptr);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("buffer %d kunmap from 0x%p\n", buffer->id, buffer->kptr);
 	buffer->kptr = NULL;
 
 	return 0;
@@ -455,8 +440,7 @@ static void dmabuf_sync_cpu_to_dev(struct heap *heap, struct buffer *buffer)
 	struct buffer_data *data = buffer->priv;
 	struct dma_buf *dma_buf = data->dma_buf;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	if (!(data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED)) {
 		dma_buf_end_cpu_access(dma_buf,
@@ -474,8 +458,7 @@ static void dmabuf_sync_dev_to_cpu(struct heap *heap, struct buffer *buffer)
 	struct buffer_data *data = buffer->priv;
 	struct dma_buf *dma_buf = data->dma_buf;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	if (!(data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED)) {
 		dma_buf_begin_cpu_access(dma_buf,
@@ -489,7 +472,8 @@ static void dmabuf_sync_dev_to_cpu(struct heap *heap, struct buffer *buffer)
 
 static void dmabuf_heap_destroy(struct heap *heap)
 {
-	return;
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("dmabuf heap destroy\n");
 }
 
 static struct heap_ops dmabuf_heap_ops = {
@@ -510,9 +494,11 @@ static struct heap_ops dmabuf_heap_ops = {
 
 int sprd_vdsp_mem_dmabuf_init(const struct heap_config *heap_cfg, struct heap *heap)
 {
-	pr_debug("%s:%d\n", __func__, __LINE__);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("dma buf ops init\n");
 
 	heap->ops = &dmabuf_heap_ops;
 
 	return 0;
 }
+

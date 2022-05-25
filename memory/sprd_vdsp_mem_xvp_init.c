@@ -323,16 +323,20 @@ int __xvp_buf_free(struct xvp *xvp, struct xvp_buf *xvp_buf)
 
 int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
-
 	struct mem_ctx *mem_ctx = NULL;
 	int ret = 0;
 
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("xvp buf kmap start\n");
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
 		pr_err("Error: input args EINVAL\n");
 		return ret;
 	}
+	//why get  twice here.
 	xvp_buf->vaddr = sprd_vdsp_mem_get_kptr(mem_ctx, xvp_buf->buf_id);
+
+	pr_debug("xvp buf kmap vaddr:%lx\n", ( unsigned long) (xvp_buf->vaddr));
 	BUG_ON(xvp_buf->vaddr);
 	ret = sprd_vdsp_mem_map_km(mem_ctx, xvp_buf->buf_id);
 	if (unlikely(0 != ret)) {
@@ -443,6 +447,7 @@ struct xvp_buf *xvp_buf_alloc(struct xvp *xvp, char *name, uint64_t size,
 
 	if (vdsp_debugfs_trace_mem())
 		pr_debug("xvp buf alloc, name[%s] size[%ld] type[%d] attr[%d]\n", name, size, type, attr);
+
 	if (!mem_dev) {
 		pr_err("Error: mem_dev is NULL");
 		return NULL;
@@ -665,3 +670,4 @@ phys_addr_t xvp_buf_get_iova_by_id(struct xvp *xvp, uint32_t buf_id)
 	}
 	return xvp_buf_get_iova(buf);
 }
+

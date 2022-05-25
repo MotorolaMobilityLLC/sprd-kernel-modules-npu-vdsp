@@ -103,13 +103,7 @@ struct mmu_page {
 	bool use_parity;
 };
 
-static bool trace_physical_pages;
-
-module_param(trace_physical_pages, bool, 0444);
-MODULE_PARM_DESC(trace_physical_pages,
-	"Enables tracing of physical pages being mapped into MMU");
 static bool cache_sync = true;
-
 module_param(cache_sync, bool, 0444);
 MODULE_PARM_DESC(cache_sync,
 	"cache sync mode: 0-no sync; 1-force sync (even if hw provides coherency);");
@@ -144,7 +138,8 @@ int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id)
 	int (*init_fn) (const struct heap_config *heap_cfg, struct heap *heap);
 	int ret;
 
-	pr_debug("%s:%d\n", __func__, __LINE__);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("add heap\n");
 
 	switch (heap_cfg->type) {
 	case SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED:
@@ -219,7 +214,7 @@ static void _sprd_vdsp_mem_del_heap(struct heap *heap)
 {
 	struct mem_man *mem_man = &mem_man_data;
 
-	pr_debug("%s heap %d 0x%p\n", __func__, heap->id, heap);
+	pr_debug("heap %d 0x%p\n", heap->id, heap);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -234,7 +229,7 @@ void sprd_vdsp_mem_del_heap(int heap_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 
-	pr_debug("%s:%d heap %d\n", __func__, __LINE__, heap_id);
+	pr_debug("delete heap %d\n", heap_id);
 
 	mutex_lock(&mem_man->mutex);
 
@@ -259,7 +254,10 @@ int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t *type, uint32_t *attrs)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 
-	if (heap_id < SPRD_VDSP_MEM_MAN_MIN_HEAP || heap_id > SPRD_VDSP_MEM_MAN_MAX_HEAP) {
+	pr_debug("get heap %d\n", heap_id);
+
+	if (heap_id < SPRD_VDSP_MEM_MAN_MIN_HEAP
+		|| heap_id > SPRD_VDSP_MEM_MAN_MAX_HEAP) {
 		pr_err("heap %d does not match internal constraints <%u - %u>!\n",
 			heap_id, SPRD_VDSP_MEM_MAN_MIN_HEAP, SPRD_VDSP_MEM_MAN_MAX_HEAP);
 		return -EINVAL;
@@ -268,7 +266,7 @@ int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t *type, uint32_t *attrs)
 
 	heap = idr_find(&mem_man->heaps, heap_id);
 	if (!heap) {
-		//pr_err("heap %d not found!\n", heap_id);
+		pr_err("heap %d not found!\n", heap_id);
 		mutex_unlock(&mem_man->mutex);
 		return -ENOENT;
 	}
@@ -326,6 +324,8 @@ int sprd_vdsp_mem_create_proc_ctx(struct mem_ctx **new_ctx)
 	struct mem_ctx *ctx;
 	int ret = 0;
 
+	pr_debug("create proc ctx\n");
+
 	ctx = kzalloc(sizeof(struct mem_ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
@@ -342,6 +342,7 @@ int sprd_vdsp_mem_create_proc_ctx(struct mem_ctx **new_ctx)
 	/* Assign id to the newly created context. */
 	ctx->id = ret;
 	mutex_unlock(&mem_man->mutex);
+	pr_debug("proc ctx id:%d\n", ctx->id);
 
 	*new_ctx = ctx;
 	return 0;
@@ -360,6 +361,8 @@ static void _sprd_vdsp_mem_destroy_proc_ctx(struct mem_ctx *ctx)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 	int buf_id;
+
+	pr_debug("destroy proc ctx id:%d\n", ctx->id);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -381,6 +384,8 @@ void sprd_vdsp_mem_destroy_proc_ctx(struct mem_ctx *ctx)
 {
 	struct mem_man *mem_man = &mem_man_data;
 
+	pr_debug("%s:%d\n", __func__, __LINE__);
+
 	mutex_lock(&mem_man->mutex);
 	_sprd_vdsp_mem_destroy_proc_ctx(ctx);
 	mutex_unlock(&mem_man->mutex);
@@ -399,6 +404,8 @@ static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
 
 	/* Allocations for MMU pages are still 4k so CPU page size is enough */
 	size_t align = attr & SPRD_VDSP_MEM_ATTR_MMU ? PAGE_SIZE : PAGE_SIZE;
+
+	pr_debug("heap %p '%s' ctx %p size %zu\n", heap, get_heap_name(heap->type), ctx, size);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -628,15 +635,14 @@ static int _sprd_vdsp_mem_get_user_pages(size_t size, uint64_t cpu_ptr,
 
 	/* Check alignment */
 	if (cpu_ptr & (PAGE_SIZE-1)) {
-		pr_err("%s wrong alignment of %#llx address!\n",
-				__func__, cpu_ptr);
+		pr_err("wrong alignment of %#llx address!\n", cpu_ptr);
 		return -EFAULT;
 	}
 
 	tmp_pages = kmalloc_array(num_pages, sizeof(struct page *),
 			GFP_KERNEL | __GFP_ZERO);
 	if (!tmp_pages) {
-		pr_err("%s failed to allocate memory for pages\n", __func__);
+		pr_err("failed to allocate memory for pages\n");
 		return -ENOMEM;
 	}
 
@@ -651,8 +657,7 @@ static int _sprd_vdsp_mem_get_user_pages(size_t size, uint64_t cpu_ptr,
 			0,
 			tmp_pages, NULL);
 #else
-	pr_err("%s get_user_pages not supported for this kernel version\n",
-					__func__);
+	pr_err("get_user_pages not supported for this kernel version\n");
 	ret = -1;
 #endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
@@ -661,8 +666,7 @@ static int _sprd_vdsp_mem_get_user_pages(size_t size, uint64_t cpu_ptr,
 	mmap_read_unlock(current->mm);
 #endif
 	if (ret != num_pages) {
-		pr_err("%s failed to get_user_pages count:%d for %#llx address\n",
-				__func__, num_pages, cpu_ptr);
+		pr_err("failed to get_user_pages count:%d for %#llx address\n", num_pages, cpu_ptr);
 		ret = -ENOMEM;
 		goto out_get_user_pages;
 	}
@@ -688,25 +692,25 @@ int sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
 	int ret;
 
 	if (vdsp_debugfs_trace_mem())
-		pr_debug("%s heap %d ctx %p hnd %#llx\n", __func__, heap_id, ctx, buf_fd);
+		pr_debug("heap %d ctx %p hnd %#llx\n", heap_id, ctx, buf_fd);
 
 	if (cpu_ptr) {
 		ret = _sprd_vdsp_mem_get_user_pages(size, cpu_ptr, &pages);
 		if (ret) {
-			pr_err("%s:%d getting user pages failed\n", __func__, __LINE__);
+			pr_err("getting user pages failed\n");
 			return ret;
 		}
 	}
 
 	ret = mutex_lock_interruptible(&mem_man->mutex);
 	if (ret) {
-		pr_err("%s:%d lock interrupted: mem_man->mutex\n", __func__, __LINE__);
+		pr_err("lock interrupted: mem_man->mutex\n");
 		goto lock_interrupted;
 	}
 
 	heap = idr_find(&mem_man->heaps, heap_id);
 	if (!heap) {
-		pr_err("%s: heap id %d not found\n", __func__, heap_id);
+		pr_err("heap id %d not found\n", heap_id);
 		ret = -EINVAL;
 		goto idr_find_failed;
 	}
@@ -721,10 +725,11 @@ int sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
 	if (cpu_ptr)
 		_sprd_vdsp_mem_put_pages(size, pages);
 
-	pr_info("%s buf_fd %#llx heap %d (%s) buffer %d size %zu\n", __func__,
+	pr_debug("buf_fd %#llx heap %d (%s) buffer %d size %zu\n",
 		buf_fd, heap_id, get_heap_name(heap->type), *buf_id, size);
-	pr_debug("%s heap %d ctx %p created buffer %d (%p) size %zu\n",
-		__func__, heap_id, ctx, *buf_id, buffer, size);
+	pr_debug("heap %d ctx %p created buffer %d (%p) size %zu\n",
+		heap_id, ctx, *buf_id, buffer, size);
+
 
 	return 0;
 
@@ -761,8 +766,7 @@ static int _sprd_vdsp_mem_export(struct device *device,
 		return -EINVAL;
 	}
 
-	ret = heap->ops->export(device, heap, buffer->actual_size, attr,
-		buffer, buf_hnd);
+	ret = heap->ops->export(device, heap, buffer->actual_size, attr, buffer, buf_hnd);
 	if (ret) {
 		pr_err("heap %d export failed\n", heap->id);
 		return -EFAULT;
@@ -1029,6 +1033,8 @@ int sprd_vdsp_mem_map_um(struct mem_ctx *ctx, int buf_id,
 	struct heap *heap;
 	int ret;
 
+	pr_debug("buffer %d\n", buf_id);
+
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&ctx->buffers, buf_id);
 	if (!buffer) {
@@ -1036,6 +1042,7 @@ int sprd_vdsp_mem_map_um(struct mem_ctx *ctx, int buf_id,
 		mutex_unlock(&mem_man->mutex);
 		return -EINVAL;
 	}
+	pr_debug("buffer 0x%p\n", buffer);
 
 	heap = buffer->heap;
 	if (heap->ops == NULL || heap->ops->map_um == NULL) {
@@ -1046,7 +1053,7 @@ int sprd_vdsp_mem_map_um(struct mem_ctx *ctx, int buf_id,
 
 	ret = heap->ops->map_um(heap, buffer, vma);
 	/* Always invalidate the buffer when it is mapped into UM */ //why remove VM_WRITE
-	if (!ret && (vma->vm_flags & VM_READ))
+	if (!ret && (vma->vm_flags & VM_READ)) //&& !(vma->vm_flags & VM_WRITE))
 		_sprd_vdsp_mem_sync_device_to_cpu(buffer, false);
 
 	mutex_unlock(&mem_man->mutex);
@@ -1073,7 +1080,8 @@ int sprd_vdsp_mem_unmap_um(struct mem_ctx *ctx, int buf_id)
 		mutex_unlock(&mem_man->mutex);
 		return -EINVAL;
 	}
-	pr_debug("buffer 0x%p\n", buffer);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("buffer 0x%p\n", buffer);
 
 	heap = buffer->heap;
 	if (heap->ops == NULL || heap->ops->unmap_um == NULL) {
@@ -1114,6 +1122,9 @@ int sprd_vdsp_mem_map_km(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 	int ret;
+
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&ctx->buffers, buf_id);
@@ -1239,8 +1250,7 @@ uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx *mem_ctx, int buf_id,
 
 		ret = heap->ops->get_sg_table(heap, buffer, &sgt, &use_sg_dma);
 		if (ret) {
-			pr_err("%s: heap %d buffer %d no sg_table!\n",
-						__func__, heap->id, buffer->id);
+			pr_err("heap %d buffer %d no sg_table!\n", heap->id, buffer->id);
 			return -1;
 		}
 		sgl = sgt->sgl;
@@ -1255,8 +1265,7 @@ uint64_t sprd_vdsp_mem_get_single_page(struct mem_ctx *mem_ctx, int buf_id,
 			sgl = sg_next(sgl);
 		}
 		if (!sgl) {
-			pr_err("%s: heap %d buffer %d wrong offset %d!\n",
-					__func__, heap->id, buffer->id, offset);
+			pr_err("heap %d buffer %d wrong offset %d!\n", heap->id, buffer->id, offset);
 			return -1;
 		}
 

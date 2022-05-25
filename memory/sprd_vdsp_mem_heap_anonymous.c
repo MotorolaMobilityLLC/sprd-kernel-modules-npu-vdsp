@@ -53,14 +53,13 @@
 
 #include "sprd_vdsp_mem_core.h"
 #include "sprd_vdsp_mem_core_priv.h"
+#include "vdsp_debugfs.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
 #define pr_fmt(fmt) "sprd-vdsp: [mem_heap]: %d %d %s: "\
         fmt, current->pid, __LINE__, __func__
-
-static int trace_physical_pages = 0;
 
 struct buffer_data {
 	struct sg_table *sgt;
@@ -78,17 +77,16 @@ static int anonymous_heap_import(struct device *device, struct heap *heap,
 	int ret;
 	int i;
 
-	pr_debug("%s:%d buffer %d (0x%p) for PID:%d\n",
-			__func__, __LINE__, buffer->id, buffer,
-			task_pid_nr(current));
+	pr_debug("buffer %d (0x%p) for PID:%d\n",
+			buffer->id, buffer, task_pid_nr(current));
 
 	sgt = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
-	if (!sgt) 
+	if (!sgt)
 		return -ENOMEM;
 
 	ret = sg_alloc_table(sgt, num_pages, GFP_KERNEL);
 	if (ret) {
-		pr_err("%s failed to allocate sgt with num_pages\n", __func__);
+		pr_err("failed to allocate sgt with num_pages\n");
 		goto alloc_sgt_pages_failed;
 	}
 
@@ -100,26 +98,24 @@ static int anonymous_heap_import(struct device *device, struct heap *heap,
 
 	for_each_sg(sgt->sgl, sgl, sgt->nents, i) {
 		struct page *page = pages[i];
+
 		sg_set_page(sgl, page, PAGE_SIZE, 0);
 
-		if (trace_physical_pages)
-			pr_info("%s:%d phys %#llx length %d\n",
-				 __func__, __LINE__,
-				 (unsigned long long)sg_phys(sgl), sgl->length);
+		if (vdsp_debugfs_trace_mem())
+			pr_debug("phys %#llx length %d\n", (unsigned long long)sg_phys(sgl), sgl->length);
 
 		/* Sanity check if physical address is
 		 * accessible from the device PoV */
 		if (~dma_get_mask(device) & sg_phys(sgl)) {
-			pr_err("%s physical address is out of dma_mask,"
-					" and probably won't be accessible by the core!\n",
-					__func__);
+			pr_err("%0xllX physical address is out of dma_mask,"
+				" and probably won't be accessible by the core!\n",
+				sg_phys(sgl));
 			ret = -ERANGE;
 			goto dma_mask_check_failed;
 		}
 	}
 
-	pr_debug("%s:%d buffer %d orig_nents %d\n", __func__, __LINE__,
-		 buffer->id, sgt->orig_nents);
+	pr_debug("buffer %d orig_nents %d\n", buffer->id, sgt->orig_nents);
 
 	data->sgt = sgt;
 	data->mattr = attr;
@@ -155,13 +151,12 @@ static void anonymous_heap_free(struct heap *heap, struct buffer *buffer)
 	struct scatterlist *sgl;
 	bool dirty = false;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		 buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	dma_unmap_sg(buffer->device, sgt->sgl, sgt->orig_nents, DMA_BIDIRECTIONAL);
 
 	if (buffer->kptr) {
-		pr_debug("%s vunmap 0x%p\n", __func__, buffer->kptr);
+		pr_debug("vunmap 0x%p\n", buffer->kptr);
 		dirty = true;
 		vunmap(buffer->kptr);
 		buffer->kptr = NULL;
@@ -193,8 +188,7 @@ static int anonymous_heap_map_km(struct heap *heap, struct buffer *buffer)
 	pgprot_t prot;
 	int i;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		 buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	if (buffer->kptr) {
 		pr_warn("called for already mapped buffer %d\n", buffer->id);
@@ -227,8 +221,7 @@ static int anonymous_heap_map_km(struct heap *heap, struct buffer *buffer)
 		return -EFAULT;
 	}
 
-	pr_debug("%s:%d buffer %d vmap to 0x%p\n", __func__, __LINE__,
-		 buffer->id, buffer->kptr);
+	pr_debug("buffer %d vmap to 0x%p\n", buffer->id, buffer->kptr);
 
 	return 0;
 }
@@ -239,17 +232,14 @@ static int anonymous_heap_unmap_km(struct heap *heap, struct buffer *buffer)
 	struct sg_table *sgt = data->sgt;
 	struct scatterlist *sgl;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", __func__, __LINE__,
-		 buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	if (!buffer->kptr) {
-		pr_warn("%s called for unmapped buffer %d\n",
-			__func__, buffer->id);
+		pr_warn("called for unmapped buffer %d\n", buffer->id);
 		return 0;
 	}
 
-	pr_debug("%s:%d buffer %d kunmap from 0x%p\n", __func__, __LINE__,
-		 buffer->id, buffer->kptr);
+	pr_debug("buffer %d kunmap from 0x%p\n", buffer->id, buffer->kptr);
 	vunmap(buffer->kptr);
 	buffer->kptr = NULL;
 
@@ -302,7 +292,7 @@ static void anonymous_sync_dev_to_cpu(struct heap *heap, struct buffer *buffer)
 
 static void anonymous_heap_destroy(struct heap *heap)
 {
-	return;
+	pr_debug("anonymous heap destroy\n");
 }
 
 static struct heap_ops anonymous_heap_ops = {
@@ -324,6 +314,7 @@ static struct heap_ops anonymous_heap_ops = {
 int sprd_vdsp_mem_anonymous_init(const struct heap_config *heap_cfg,
 	struct heap *heap)
 {
+	pr_debug("anonymous init, get ops\n");
 
 	heap->ops = &anonymous_heap_ops;
 

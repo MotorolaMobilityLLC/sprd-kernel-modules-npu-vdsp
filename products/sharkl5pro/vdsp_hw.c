@@ -22,27 +22,20 @@
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-//#include <linux/soc/sprd/hwfeature.h>
+#include <linux/soc/sprd/hwfeature.h>
 #include <asm/cacheflush.h>
 #include "xrp_kernel_defs.h"
 #include "vdsp_hw.h"
 #include "xrp_internal.h"
-//#include "sprd_dvfs_vdsp.h"
-//#include "vdsp_dvfs_sharkl5pro.h"
-#if 0
-#define 	VDSP_CLK256M	SHARKL5PRO_VDSP_CLK256M
-#define 	VDSP_CLK384M	SHARKL5PRO_VDSP_CLK384M
-#define 	VDSP_CLK512M	SHARKL5PRO_VDSP_CLK512M
-#define 	VDSP_CLK614M4	SHARKL5PRO_VDSP_CLK614M4
-#define 	VDSP_CLK768M	SHARKL5PRO_VDSP_CLK768M
-#define 	VDSP_CLK936M	SHARKL5PRO_VDSP_CLK936M
-#else
-#define 	VDSP_CLK256M		256000000
-#define 	VDSP_CLK384M		384000000
-#define 	VDSP_CLK512M		512000000
-#define 	VDSP_CLK614M4		614400000
-#define 	VDSP_CLK768M		768000000
-#define 	VDSP_CLK936M		936000000
+#include "sprd_dvfs_vdsp.h"
+
+#if 1
+#define 	VDSP_CLK256M		256000000	//SHARKL5PRO_VDSP_CLK256M
+#define 	VDSP_CLK384M		384000000	//SHARKL5PRO_VDSP_CLK384M
+#define 	VDSP_CLK512M		512000000	//SHARKL5PRO_VDSP_CLK512M
+#define 	VDSP_CLK614M4		614400000	//SHARKL5PRO_VDSP_CLK614M4
+#define 	VDSP_CLK768M		768000000	//SHARKL5PRO_VDSP_CLK768M
+#define 	VDSP_CLK936M		936000000	//SHARKL5PRO_VDSP_CLK936M
 #endif
 
 #ifdef pr_fmt
@@ -240,7 +233,7 @@ static void release(void *hw_arg)
 
 static void get_max_freq(uint32_t * max_freq)
 {
-#if 0
+#if 1
 	struct device_node *hwf;
 	const char *chip_type;
 
@@ -310,8 +303,8 @@ static void disable(void *hw_arg)
 	/*mask all int */
 	vdsp_regmap_update_bits(hw->ahb_regmap, REG_VDSP_INT_CTL, 0x1ffff, 0x1ffff);
 	/*pmu ap_vdsp_core_int_disable set 1 */
-	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CORE_INT_DISABLE,
-		0x1, 0x1);
+	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CORE_INT_DISABLE, 0x1, 0x1);
+
 	udelay(1);
 	/*wait for vdsp enter pwait mode */
 	while (((rdata & (0x1 << 5)) == 0) && (count < 100)) {
@@ -361,9 +354,7 @@ static void setdvfs(void *hw_arg, uint32_t index)
 	uint32_t freq = translate_dvfsindex_to_freq(index);
 
 	pr_debug("freq:%d, index:%d\n", freq, index);
-#if 0
 	vdsp_dvfs_notifier_call_chain(&freq);
-#endif
 }
 
 static void send_irq(void *hw_arg)
