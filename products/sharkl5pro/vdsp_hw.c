@@ -243,7 +243,7 @@ static void get_max_freq(uint32_t * max_freq)
 		goto efuse_out;
 	}
 	chip_type = of_get_property(hwf, "efuse", NULL);
-	pr_info("efuse was %s\n", chip_type);
+	pr_debug("efuse was %s\n", chip_type);
 
 	if (!strcmp(chip_type, "T618")) {
 		*max_freq = T618_MAX_FREQ;
@@ -510,7 +510,6 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 
 	pr_debug("irq is:%d , ret:%ld , host_irq_mode:%d\n", hw->client_irq, ret, hw->host_irq_mode);
 	if (hw->client_irq >= 0) {
-		pr_debug("host IRQ = %d,", hw->client_irq);
 		hw->vdsp_ipi_desc = get_vdsp_ipi_ctx_desc();
 		if (hw->vdsp_ipi_desc) {
 			hw->vdsp_ipi_desc->base_addr = hw->ahb_regmap;

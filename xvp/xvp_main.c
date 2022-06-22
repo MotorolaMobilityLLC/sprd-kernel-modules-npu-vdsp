@@ -336,8 +336,6 @@ static int xrp_synchronize(struct xvp *xvp)
 	 * BAD METHOD
 	 * Just Using sz temp for transfer share memory address
 	 */
-
-	pr_debug("get smsg share memory address: 0x%lx\n", (unsigned long)sz);
 	hw_sync_data = xvp->hw_ops->get_hw_sync_data(xvp->hw_arg, &sz, xvp_buf_get_iova(xvp->log_buf));
 	if (unlikely(!hw_sync_data)) {
 		ret = -ENOMEM;
@@ -667,7 +665,9 @@ static int xvp_file_release_list(struct file *filp)
 	xvp_file = (struct xvp_file *)filp->private_data;
 	xvp = xvp_file->xvp;
 	libinfo = libinfo1 = temp = temp1 = NULL;
-	pr_debug("step 0: find lib in list\n");
+
+	pr_debug("xvp file release list\n");
+
 	mutex_lock(&(xvp->load_lib.libload_mutex));
 
 	/*
@@ -705,33 +705,31 @@ static int xvp_file_release_list(struct file *filp)
 		if (1 != find) {
 			/*if not find in other files need unload */
 			/*do unload process--------------- later */
-			pr_debug("step 1:create unload cmd\n");
+
 			ret = xrp_create_unload_cmd(filp, libinfo, &unloadinfo);
 			if (ret != LIB_RESULT_OK) {
 				pr_err("xrp_create_unload_cmd failed, maybe library leak\n");
 				result = -EINVAL;
 				continue;
 			}
-			pr_debug("step 2:send unload cmd\n");
+			pr_debug("send unload cmd\n");
 			mutex_unlock(&(xvp->load_lib.libload_mutex));
 			libinfo->load_count = 1;	/*force set 1 here */
 			snprintf(libname, XRP_NAMESPACE_ID_SIZE, "%s", libinfo->libname);
 			ret = xrp_ioctl_submit_sync(filp, NULL, unloadinfo.rq);
-			pr_debug("step 3: send cmd result,ret:%d\n", ret);
 			mutex_lock(&(xvp->load_lib.libload_mutex));
 			if (ret == -ENODEV) {
 				/*if went off , release here */
 				xrp_library_decrease(filp, libname);
 			}
 			xrp_free_unload_cmd(filp, &unloadinfo);
-			pr_debug("step 4: file release end\n");
 		} else {
 			list_del(&libinfo->node_libinfo);
 			vfree(libinfo);
 		}
 	}
 	mutex_unlock(&(xvp->load_lib.libload_mutex));
-	pr_debug("step 5:release  powerhint\n");
+
 	/*release power hint later */
 	vdsp_release_powerhint(filp);
 	return result;
@@ -776,7 +774,7 @@ static int xrp_boot_firmware(struct xvp *xvp)
 
 	tv2 = ktime_to_us(ktime_get());
 	/*request firmware - sync */
-	pr_debug("[TIME]boot firmware ok,request fw(%s):%lld (us), sync:%lld (us)\n",
+	pr_info("[TIME]boot firmware ok,request fw(%s):%lld (us), sync:%lld (us)\n",
 		xvp->firmware_name, tv1 - tv0, tv2 - tv1);
 	return 0;
 }
@@ -797,9 +795,8 @@ static int sprd_unmap_request(struct file *filp, struct xrp_request *rq, uint32_
 	long ret = 0;
 	struct xvp_buf *in_buf;
 
-	pr_debug("[UNMAP][IN]\n");
 	if (krqflag == 1) {
-		pr_debug("[UNMAP] krqflag is 1 [OUT]\n");
+		pr_debug("kernel request, no need unmap\n");
 		return 0;
 	}
 	if (rq->ioctl_queue.in_data_size > XRP_DSP_CMD_INLINE_DATA_SIZE) {
@@ -846,9 +843,8 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq, uint32_t 
 	struct xvp_buf *out_buf = NULL;
 	unsigned long addr = 0;
 
-	pr_debug("[MAP][IN]\n");
 	if (1 == krqflag) {
-		pr_debug("[MAP] krqflag is 1 [OUT]");
+		pr_debug("kernel request, no need map\n");
 		return 0;
 	}
 
@@ -903,7 +899,7 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq, uint32_t 
 			goto free_indata_err;
 		}
 		rq->in_buf = in_buf;
-		pr_debug("in_data_fd=%d, in_data_phys=0x%x size=%d\n",
+		pr_info("in_data_fd=%d, in_data_phys=0x%x size=%d\n",
 			(int)in_buf->buf_id, (uint32_t)in_buf->iova, (uint32_t)in_buf->size);
 	} else {
 		if (copy_from_user(rq->in_data, (void __user*)(unsigned long)rq->ioctl_queue.in_data_addr,
@@ -925,7 +921,7 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq, uint32_t 
 		}
 		rq->out_buf = out_buf;
 
-		pr_debug("out_data_fd=%d, out_data_phys=0x%x, size=%d\n",
+		pr_info("out_data_fd=%d, out_data_phys=0x%x, size=%d\n",
 			(int)out_buf->buf_id, (uint32_t)out_buf->iova, (uint32_t)out_buf->size);
 	}
 	//bufer addr
@@ -952,7 +948,7 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq, uint32_t 
 					xvpfile_buf_get(xvp_file, ioctl_buffer.fd));
 				dsp_buffer->fd = ioctl_buffer.fd;
 
-				pr_debug("dsp_buffer[%d] addr:0x%x, size:%d, fd:%d, flags:%d\n",
+				pr_info("dsp_buffer[%d] addr:0x%x, size:%d, fd:%d, flags:%d\n",
 					i, dsp_buffer->addr, dsp_buffer->size, dsp_buffer->fd, dsp_buffer->flags);
 			}
 		}
@@ -961,7 +957,7 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq, uint32_t 
 share_err:
 	if (ret < 0)
 		sprd_unmap_request(filp, rq, krqflag);
-	pr_debug("[MAP][OUT]\n");
+
 	return ret;
 free_outdata_err:
 free_indata_err:
@@ -1092,7 +1088,7 @@ retry:
 			/*check whether libload command and if it is, do load */
 			tv2 = ktime_to_us(ktime_get());
 			load_flag = xrp_check_load_unload(xvp, rq, krqflag);
-			pr_debug("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d, filp:[%lx]\n",
+			pr_info("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d, filp:[%lx]\n",
 				rq->nsid, load_flag, (unsigned long)filp);
 			mutex_lock(&(xvp->load_lib.libload_mutex));
 			lib_result = xrp_pre_process_request(filp, rq, load_flag, libname, krqflag);
@@ -1115,7 +1111,7 @@ retry:
 			tv3 = ktime_to_us(ktime_get());
 
 			xrp_send_device_irq(xvp);
-			pr_debug("send vdsp cmd-32k time[%lld]\n", sprd_sysfrt_read());
+			pr_info("send vdsp cmd-32k time[%lld]\n", sprd_sysfrt_read());
 
 			if (xvp->host_irq_mode) {
 				ret = xvp_complete_cmd_irq(xvp, queue, xrp_cmd_complete);
@@ -1138,7 +1134,7 @@ retry:
 				}
 				//dump vdsp
 				vdsp_log_coredump(xvp);
-				pr_debug("###enter reboot flow!###\n");
+				pr_info("###enter reboot flow!###\n");
 				for (i = 0; i < xvp->n_queues; ++i)
 					if (xvp->queue + i != queue)
 						mutex_lock(&xvp->queue[i].lock);
@@ -1201,7 +1197,7 @@ retry:
 	 * this memory.
 	 */
 	tv5 = ktime_to_us(ktime_get());
-	pr_debug("[TIME](cmd->nsid:%s)total:%lld(us),map:%lld(us),load/unload:%lld(us),"
+	pr_info("[TIME](cmd->nsid:%s)total:%lld(us),map:%lld(us),load/unload:%lld(us),"
 	     "vdsp:%lld(us),unmap:%lld(us),ret:%d\n", rq->nsid, tv5 - tv0, tv1,
 	     tv2, tv3, tv5 - tv4, ret);
 
@@ -1305,7 +1301,9 @@ static int xrp_ioctl_mem_import(struct file *filp, struct xrp_import_ctrl __user
 		return -1;
 	}
 	ctrl.buf_id = buf->buf_id;
-	pr_debug("import buf_id=%d\n", buf->buf_id);
+
+	pr_info("import:size %ld, fd %llX, cpu_ptr %llX, heap_id %d attr %d, name %s -> buf_id=%d\n",
+		ctrl.size, ctrl.buf_fd, ctrl.cpu_ptr, ctrl.heap_id, ctrl.attributes, ctrl.name, buf->buf_id);
 	if (unlikely(copy_to_user(arg, &ctrl, sizeof(struct xrp_import_ctrl)))) {
 		pr_err("[ERROR]copy to user failed\n");
 		return -EFAULT;
@@ -1325,15 +1323,17 @@ static long xrp_ioctl_mem_export(struct file *filp, struct xrp_export_ctrl __use
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("export:buf_id %d, size %d, attr %d\n", ctrl.buf_id, ctrl.size, ctrl.attributes);
+	pr_info("export:buf_id %d, size %d, attr %d\n", ctrl.buf_id, ctrl.size, ctrl.attributes);
 	buf = xvpfile_buf_get(xvp_file, ctrl.buf_id);
 	if (!buf) {
+		pr_err("xvpfile_buf_get fail\n");
 		return -1;
 	}
 	ret = xvpfile_buf_export(xvp_file, buf);
-	if (ret)
+	if (ret) {
+		pr_err("xvpfile_buf_export fail\n");
 		return ret;
-
+	}
 	if (unlikely(copy_to_user(arg, &ctrl, sizeof(struct xrp_export_ctrl)))) {
 		pr_err("[ERROR]copy to user failed\n");
 		return -EFAULT;
@@ -1352,7 +1352,8 @@ static long xrp_ioctl_mem_alloc(struct file *filp, struct xrp_alloc_ctrl __user 
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("alloc:size %ld, heap_id %d, attr %d, name %s\n", ctrl.attributes, ctrl.name,ctrl.size, ctrl.heap_id);
+	pr_debug("alloc:size %ld, heap_id %d, attr %d, name %s\n",
+		ctrl.size, ctrl.heap_id, ctrl.attributes, ctrl.name);
 
 	buf = xvpfile_buf_alloc(xvp_file, ctrl.name, (size_t)ctrl.size, ctrl.heap_id, ctrl.attributes);
 	if (!buf) {
@@ -1360,7 +1361,8 @@ static long xrp_ioctl_mem_alloc(struct file *filp, struct xrp_alloc_ctrl __user 
 		return -1;
 	}
 	ctrl.buf_id = buf->buf_id;
-	pr_debug("calloc buf_id=%d\n", buf->buf_id);
+	pr_info("alloc:size %ld, heap_id %d, attr %d, name %s --> buf id=%d\n",
+		ctrl.size, ctrl.heap_id, ctrl.attributes, ctrl.name, buf->buf_id);
 
 	if (unlikely(copy_to_user(arg, &ctrl, sizeof(struct xrp_alloc_ctrl)))) {
 		pr_err("[ERROR]copy to user failed\n");
@@ -1397,7 +1399,7 @@ static int xrp_ioctl_mem_iommu_map(struct file *filp, struct xrp_map_ctrl __user
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	//pr_debug("map:virt_addr %llX, buf_id %d, flags %d\n", ctrl.virt_addr, ctrl.buf_id, ctrl.flags);
+	pr_debug("buf_id %d, flags %d\n", ctrl.buf_id, ctrl.flags);
 
 	buf = xvpfile_buf_get(xvp_file, ctrl.buf_id);
 	if (!buf) {
@@ -1477,7 +1479,7 @@ static long xvp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	long retval = -EINVAL;
 	struct xvp_file *xvp_file = NULL;
 
-	pr_debug("cmd:%x, filp[%lx]:cmd_name:%s\n,",
+	pr_debug("cmd:%x, filp[%lx]:cmd_name:%s\n",
 		cmd, (unsigned long)filp, debug_get_ioctl_cmd_name(cmd));
 	mutex_lock(&xvp_global_lock);
 	if (unlikely(filp->private_data == NULL)) {
@@ -1688,7 +1690,7 @@ int xvp_open(struct inode *inode, struct file *filp)
 
 	tv0 = ktime_to_us(ktime_get());
 
-	pr_debug("xvp is:%p, filp:0x%lx , flags:0x%x, fmode:0x%x\n",
+	pr_info("vdsp open, xvp is:%p, filp:0x%lx , flags:0x%x, fmode:0x%x\n",
 		xvp, (unsigned long)filp, filp->f_flags, filp->f_mode);
 	mutex_lock(&xvp_global_lock);
 #ifdef FACEID_VDSP_FULL_TEE
@@ -1805,7 +1807,7 @@ int xvp_open(struct inode *inode, struct file *filp)
 	xrp_add_known_file(filp);
 	tv3 = ktime_to_us(ktime_get());
 	/*total - map */
-	pr_debug("[TIME]VDSP Open total(xvp->sync done):%lld(us),map firmware:%lld(us),ret:%d\n",
+	pr_info("[TIME]VDSP Open total(xvp->sync done):%lld(us),map firmware:%lld(us),ret:%d\n",
 		tv3 - tv0, tv2 - tv1, ret);
 	xvp->open_count++;
 	xvp->cur_opentype = opentype;
@@ -1847,6 +1849,7 @@ static int xvp_close(struct inode *inode, struct file *filp)
 	struct xvp_file *xvp_file = filp->private_data;
 	int ret = 0;
 	int retmid = 0;
+	uint32_t vdsp_count = 0;
 	struct xvp *xvp = (struct xvp *)(xvp_file->xvp);
 
 	mutex_lock(&xvp_global_lock);
@@ -1862,7 +1865,7 @@ static int xvp_close(struct inode *inode, struct file *filp)
 	pm_runtime_put_sync(xvp_file->xvp->dev);
 #endif
 	xvp_file->xvp->open_count--;
-
+	vdsp_count = xvp_file->xvp->open_count;
 	pr_debug("xvp_close open_count is:%d, filp:%lx\n", xvp_file->xvp->open_count, (unsigned long)filp);
 	// debug_check_xvp_buf_leak(xvp_file); //for DEBUG
 	if (0 == xvp_file->xvp->open_count) {
@@ -1892,7 +1895,8 @@ static int xvp_close(struct inode *inode, struct file *filp)
 	mutex_unlock(&xvp_file->lock);
 	devm_kfree(xvp_file->xvp->dev, xvp_file);
 	mutex_unlock(&xvp_global_lock);
-	pr_debug("[OUT]ret:%d\n", ret | retmid);
+
+	pr_info("[OUT]vdsp close, open count:%d, ret:%d\n", vdsp_count, ret | retmid);
 	return (ret | retmid);
 }
 
@@ -1959,7 +1963,7 @@ static int sprd_vdsp_init_buffer(struct platform_device *pdev, struct xvp *xvp)
 	struct xvp_buf *buf = NULL;
 	int ret = 0;
 
-	//xvp ipc buffer for mesg
+	//xvp ipc buffer for message
 	name = "xvp ipc buffer";
 	size = PAGE_SIZE;
 	heap_type = SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED;
@@ -2024,6 +2028,7 @@ static int sprd_vdsp_parse_soft_dt(struct xvp *xvp, struct platform_device *pdev
 		pr_debug("multiqueue (%d) configuration, queue priorities:\n", xvp->n_queues);
 		for (i = 0; i < xvp->n_queues; ++i)
 			pr_debug("	%d\n", xvp->queue_priority[i]);
+
 	} else {
 		xvp->n_queues = 1;
 	}
@@ -2082,6 +2087,9 @@ static long vdsp_init_common(struct platform_device *pdev,
 	int nodeid;
 	unsigned int index;
 
+	/*debug fs */
+	vdsp_debugfs_init();
+
 	xvp = devm_kzalloc(&pdev->dev, sizeof(*xvp), GFP_KERNEL);
 	if (unlikely(!xvp)) {
 		ret = -ENOMEM;
@@ -2103,10 +2111,11 @@ static long vdsp_init_common(struct platform_device *pdev,
 		pr_err("Error: xvp iommus init failed\n");
 		goto err_iommus_init;
 	}
-
+	// iommu info printf
 	for (index = 0; index < SPRD_VDSP_IOMMU_MAX; index++) {
 		debug_print_iommu_dev(xvp->iommus->iommu_devs[index]);
 	}
+
 	// add iommus init --- end
 	// mem init  --- start
 	ret = sprd_vdsp_mem_xvp_init(xvp);
@@ -2154,8 +2163,6 @@ static long vdsp_init_common(struct platform_device *pdev,
 		ret = -1;
 		goto err_parse_soft_dt;
 	}
-	/*debug fs */
-	ret = vdsp_debugfs_init();
 	if (unlikely(vdsp_log_init(xvp) != 0))
 		pr_err("vdsp log init fail. \n");
 
@@ -2192,7 +2199,8 @@ static long vdsp_init_common(struct platform_device *pdev,
 	if (unlikely(ret < 0))
 		goto err_misc_register;
 
-	pr_debug("vdsp_init_common end,vdsp init sucessed\n");
+	pr_info("vdsp_init_common end, vdsp init sucessed\n");
+
 	return PTR_ERR(xvp);
 
 err_misc_register:
@@ -2200,7 +2208,7 @@ err_misc_register:
 	ida_simple_remove(&xvp_nodeid, nodeid);
 err_ida_simple_get:
 	pr_err("Error: err_ida_simple_get \n");
-	vdsp_debugfs_exit();
+
 #ifdef MYL5
 err_pm_disable :
 	pm_runtime_disable(xvp->dev);
@@ -2229,6 +2237,7 @@ err_iommus_devm_kzalloc:
 	devm_kfree(&pdev->dev, xvp);
 
 err:
+	vdsp_debugfs_exit();
 	pr_err("Error:ret = %ld\n", ret);
 	return ret;
 }

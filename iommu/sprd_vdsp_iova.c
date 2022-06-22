@@ -14,7 +14,6 @@
 #endif
 #define pr_fmt(fmt) "sprd-vdsp: [iommu_iova]: %d %d %s: "\
         fmt, current->pid, __LINE__, __func__
-static unsigned int trace_iova_alloc_free = 0;
 
 static int genalloc_iova_init(struct sprd_vdsp_iommu_iova *iova,
 	unsigned long iova_base, size_t iova_size,
@@ -68,10 +67,8 @@ static void genalloc_iova_free(struct sprd_vdsp_iommu_iova *iova,
 	struct iova_reserve *reserve = iova->reserve_data;
 	int i;
 
-	if (trace_iova_alloc_free) {
-		pr_debug("iova->pool:0x%lx\n", ( unsigned long) iova->pool);
-		pr_debug("iova_addr:0x%lx\n", iova_addr);
-	}
+	pr_debug("iova->pool:0x%lx\n", ( unsigned long) iova->pool);
+	pr_debug("iova_addr:0x%lx\n", iova_addr);
 	//free reserve iova
 	if (reserve) {
 		for (i = 0; i < iova->reserve_num; i++) {

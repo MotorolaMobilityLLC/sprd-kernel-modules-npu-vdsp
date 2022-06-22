@@ -191,7 +191,7 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 		.vdsp_log_addr = log_addr,
 	};
 	pr_debug("device_mmio_base:%lx , (host_irq)mode:%d, offset:%d, bit:%d,"
-		"(device_irq)mode:%d, offset:%d, bit:%d, irq:%d"
+		"(device_irq)mode:%d, offset:%d, bit:%d, irq:%d,"
 		"vdsp_smsg addr:0x%lx, vdsp_log_addr:0x%lx\n",
 		hw_sync_data->device_mmio_base, hw_sync_data->host_irq_mode,
 		hw_sync_data->host_irq_offset, hw_sync_data->host_irq_bit,
@@ -552,7 +552,7 @@ static void setdvfs(void *hw_arg, uint32_t index)
 	if (debugfs_dvfs_level > 0)
 	{
 		index = debugfs_dvfs_level;
-		pr_debug("debugfs_dvfs_level, index:%d\n", index);
+		pr_info("debugfs_dvfs_level, index:%d\n", index);
 	}
 
 #ifdef WORKAROUND_USING_SW_DVFS
@@ -824,8 +824,6 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 	}
 	pr_debug("irq is:%d , ret:%ld , host_irq_mode:%d\n", hw->client_irq, ret, hw->host_irq_mode);
 	if (hw->client_irq >= 0) {
-		pr_debug("host IRQ = %d,", hw->client_irq);
-
 		if (hw->vdsp_mbox_desc) {
 			hw->vdsp_mbox_desc->irq_mode = hw->host_irq_mode;
 			hw->vdsp_mbox_desc->mm_ahb = hw->mm_ahb;
@@ -884,7 +882,7 @@ static int vdsp_driver_probe(struct platform_device *pdev)
 	long (*init) (struct platform_device *pdev, struct vdsp_hw *hw);
 	long ret;
 
-	pr_debug(" sprd-vdsp: vdsp_driver probe \n");//for debug
+	pr_info(" sprd-vdsp: vdsp_driver probe \n");//for debug
 	if (!hw)
 		return -ENOMEM;
 

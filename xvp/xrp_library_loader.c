@@ -848,7 +848,7 @@ int32_t xrp_pre_process_request(struct file *filp, struct xrp_request *rq,
 			pr_debug("lib_processing_count:%d\n", libinfo->lib_processing_count);
 			mutex_unlock(&libinfo->mutex);
 		} else {
-			pr_err("libinfo null\n");
+			pr_debug("libinfo null\n");
 		}
 		/*check whether libname unloading state, if unloading return */
 		pr_debug("Command libname:%s\n", rq->nsid);

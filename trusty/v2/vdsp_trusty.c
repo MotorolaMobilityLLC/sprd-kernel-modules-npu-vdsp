@@ -156,7 +156,6 @@ bool vdsp_ca_connect(void)
 		pr_err("vdsp wait read response time out!\n");
 		ret = false;
 	}
-	//pr_info("ret =%d\n", ret);
 
 	return ret;
 }
@@ -414,8 +413,6 @@ bool trusty_kernelbootcp_connect(void)
 	int chan_conn_ret = 0;
 	bool ret = false;
 
-	//pr_info("bootcp chanel_state =%d\n", ca->chanel_state);
-
 	if (ca->chanel_state == TIPC_CHANNEL_CONNECTED) {
 		pr_debug("bootcp has already been connected\n");
 		return true;
@@ -452,7 +449,6 @@ bool trusty_kernelbootcp_connect(void)
 		pr_err("bootcp wait read response time out!\n");
 		ret = false;
 	}
-	//pr_info("bootcp ret = %d\n", ret);
 
 	return ret;
 

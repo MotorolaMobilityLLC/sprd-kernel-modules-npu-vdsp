@@ -289,7 +289,7 @@ int vdsp_dvfs_thread(void *data)
 		}
 		mutex_unlock(&xvp->dvfs_info.powerhint_lock);	//.unlock();
 		ret = wait_event_interruptible_timeout(xvp->dvfs_info.wait_q,
-						       kthread_should_stop(), msecs_to_jiffies(1000));
+			kthread_should_stop(), msecs_to_jiffies(1000));
 		pr_debug("wait_event_interruptible_timeout ret:%ld\n", ret);
 	}
 	pr_debug("dvfs exit\n");
@@ -441,7 +441,7 @@ static int set_work_index_sw(void *data, uint32_t index)
 		pr_err("Invalid argument");
 		return -EINVAL;
 	}
-	pr_debug("[workaround] vdsp set index:%d", index);
+	pr_info("[workaround] vdsp set index:%d, freq:%d\n", index, vdsp_table[index].clk);
 	mm_clk_config = ioremap(0x30010000, 0x1000);
 	set_clk_index(vdsp_table[index].clk_index);
 	iounmap(mm_clk_config);

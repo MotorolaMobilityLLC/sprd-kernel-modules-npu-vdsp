@@ -113,7 +113,7 @@ int sprd_request_weights(struct xvp *xvp, char *name, struct xvp_buf **coeff_buf
 		name, xvp->dev);
 
 	if (unlikely(ret < 0)) {
-		pr_info("request %s weights fail\n", name);
+		pr_err("request %s weights fail\n", name);
 		return ret;
 	}
 
@@ -216,7 +216,7 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 		return ret;
 	}
 
-	pr_info("request signed fw size 0x%X\n", xvp->firmware2_sign->size);
+	pr_debug("request signed fw size 0x%X\n", xvp->firmware2_sign->size);
 
 	//fw_sign_buf
 	name = "xvp faceid_fw_sign_buffer";
@@ -236,7 +236,7 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 		pr_err("Error: xvp_buf_kmap failed\n");
 		return -EFAULT;
 	}
-	pr_info("signed fw paddr %lx size %d\n", xvp->faceid_fws_buf->paddr,
+	pr_debug("signed fw paddr %lx size %d\n", xvp->faceid_fws_buf->paddr,
 		xvp->faceid_fws_buf->size);
 
 	//fw_buf
@@ -262,7 +262,7 @@ static int sprd_alloc_faceid_fwbuffer(struct xvp *xvp)
 		return -EFAULT;
 	}
 	xvp->faceid_addr_offset += VDSP_FACEID_FIRMWIRE_SIZE;
-	pr_info("fw paddr %lx size %d\n", xvp->faceid_fw_buf->paddr,
+	pr_debug("fw paddr %lx size %d\n", xvp->faceid_fw_buf->paddr,
 		xvp->faceid_fw_buf->size);
 
 	return 0;
@@ -511,7 +511,7 @@ int sprd_faceid_sync_vdsp(struct xvp *xvp)
 
 		msg.vdsp_log_addr = xvp->faceid_fw_buf->iova +
 			hw->vdsp_reserved_mem_size - VDSP_FACEID_LOG_ADDR_OFFSET;
-		pr_info("vdsp log addr %lx\n", msg.vdsp_log_addr);
+		pr_debug("vdsp log addr %lx\n", msg.vdsp_log_addr);
 		ret = vdsp_sync_sec(&msg);
 		if (!ret) {
 			pr_err("sync vdsp fail\n");
@@ -778,7 +778,7 @@ int sprd_faceid_boot_firmware(struct xvp *xvp)
 
 	tv2 = ktime_to_us(ktime_get());
 	/*request firmware - sync */
-	pr_info("[TIME]request firmware:%lld(us), sync:%lld(us)\n",
+	pr_debug("[TIME]request firmware:%lld(us), sync:%lld(us)\n",
 		tv1 - tv0, tv2 - tv1);
 	return 0;
 }

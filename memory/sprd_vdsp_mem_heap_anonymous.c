@@ -101,8 +101,7 @@ static int anonymous_heap_import(struct device *device, struct heap *heap,
 
 		sg_set_page(sgl, page, PAGE_SIZE, 0);
 
-		if (vdsp_debugfs_trace_mem())
-			pr_debug("phys %#llx length %d\n", (unsigned long long)sg_phys(sgl), sgl->length);
+		pr_debug("phys %#llx length %d\n", (unsigned long long)sg_phys(sgl), sgl->length);
 
 		/* Sanity check if physical address is
 		 * accessible from the device PoV */

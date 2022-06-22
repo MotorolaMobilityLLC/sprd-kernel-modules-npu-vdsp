@@ -23,7 +23,6 @@
 static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 	struct device_node *iommu_dev_of_node)
 {
-
 	uint32_t val32 = 0;
 	uint64_t val64 = 0;
 	uint32_t size32 = 0;
@@ -42,7 +41,7 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 	ret = of_property_read_u32(iommu_dev_of_node, "sprd,iommu-version", &val32);
 	if (ret < 0)
 		val32 = 12;	// read failed set default version
-	// return ret;
+
 	pr_debug("sprd,iommu-version:%x\n", val32);
 	iommu_dev->iommu_version = val32;
 
@@ -53,27 +52,37 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 	//ctrl reg and pgt_base
 	if (1 == of_n_addr_cells(iommu_dev_of_node)) {
 		ret = of_property_read_u32_index(iommu_dev_of_node, "reg", 0, &val32);
-		if (ret < 0)
+		if (ret < 0) {
+			pr_err("read reg base fail\n");
 			return ret;
-		pr_debug("reg base:0x%x\n", val32);
-
+		}
 		ret = of_property_read_u32_index(iommu_dev_of_node, "reg", 1, &size32);
-		if (ret < 0)
+		if (ret < 0) {
+			pr_err("read reg size fail\n");
 			return ret;
+		}
+
+		pr_debug("reg base:0x%x\n", val32);
 		pr_debug("reg size:0x%x\n", size32);
+
 		iommu_dev->pgt_base = (unsigned long)ioremap(val32, size32);	//0xf12f9000
 		iommu_dev->pgt_size = size32;
 		iommu_dev->ctrl_reg = (unsigned long)ioremap(val32, size32);	//0xf12fb000 Duplicate mapping
 	} else {
 		ret = of_property_read_u64_index(iommu_dev_of_node, "reg", 0, &val64);
-		if (ret < 0)
+		if (ret < 0) {
+			pr_err("read reg base fail\n");
 			return ret;
-		pr_debug("reg base:0x%llx\n", val64);
-
+		}
 		ret = of_property_read_u64_index(iommu_dev_of_node, "reg", 1, &size64);
-		if (ret < 0)
+		if (ret < 0) {
+			pr_err("read reg size fail\n");
 			return ret;
+		}
+
+		pr_debug("reg base:0x%llx\n", val64);
 		pr_debug("reg size:0x%llx\n", size64);
+
 		iommu_dev->pgt_base = (unsigned long)ioremap(val64, size64);
 		iommu_dev->pgt_size = size64;
 		iommu_dev->ctrl_reg = (unsigned long)ioremap(val64, size64);
@@ -83,35 +92,41 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 
 	ret = of_property_read_u32(iommu_dev_of_node, "sprd,iova-base", &val32);
 	if (ret < 0) {
-		ret = of_property_read_u32(iommu_dev_of_node, "iova-base",
-			&val32);
-		if (ret < 0)
+		ret = of_property_read_u32(iommu_dev_of_node, "iova-base", &val32);
+		if (ret < 0) {
+			pr_err("read iova-base fail\n");
 			return ret;
+		}
 	}
-	pr_debug("iova_base:0x%x\n", val32);
 	iommu_dev->iova_base = val32;
 	ret = of_property_read_u32(iommu_dev_of_node, "sprd,iova-size", &val32);
 	if (ret < 0) {
 		ret = of_property_read_u32(iommu_dev_of_node, "iova-size", &val32);
-		if (ret < 0)
+		if (ret < 0) {
+			pr_err("read iova-size fail\n");
 			return ret;
+		}
 	}
 	iommu_dev->iova_size = val32;
-	pr_debug("iova_size:0x%zx\n", val32);
-
 	page = __get_free_page(GFP_KERNEL);
 	if (page)
 		iommu_dev->fault_page = virt_to_phys((void *)page);
 	else
 		iommu_dev->fault_page = 0;
+
+	pr_debug("iova_base:0x%x\n", iommu_dev->iova_base);
+	pr_debug("iova_size:0x%zx\n", iommu_dev->iova_size);
 	pr_debug("fault_page: 0x%lx\n", iommu_dev->fault_page);
+
 	return 0;
 }
 
 static void iommu_dev_dt_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 {
 	__free_page(phys_to_virt(iommu_dev->fault_page));
+
 	pr_debug("iommu_dev_dt_release sucessed\n");
+
 	return;
 }
 
@@ -180,6 +195,7 @@ static int iommu_dev_pagetable_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 		return -ENOMEM;
 	}
 	iommu_dev->pagt_ddr_size = size;
+
 	pr_debug("iommu %s : pgt virt 0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_virt);
 	pr_debug("iommu %s : pgt phy  0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_ddr);
 	pr_debug("iommu %s : pgt size 0x%x\n", iommu_dev->name,
@@ -555,7 +571,7 @@ static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
 	struct sprd_vdsp_iommu_iova *iova_dev = NULL;
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
 	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
-	struct sprd_iommu_unmap_param unmap_param;	//临时，兼容变量
+	struct sprd_iommu_unmap_param unmap_param;
 	unsigned long irq_flag = 0;
 	int ret;
 

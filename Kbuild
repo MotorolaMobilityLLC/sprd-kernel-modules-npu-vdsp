@@ -21,7 +21,7 @@ VERSION_DIR := v2
 ccflags-y += -DMYN6
 endif
 
-ccflags-y += -DDEBUG
+#ccflags-y += -DDEBUG
 ccflags-y += -g
 ccflags-y += -DIOMMUANDMEM
 ccflags-y += -DK515_ENABLE

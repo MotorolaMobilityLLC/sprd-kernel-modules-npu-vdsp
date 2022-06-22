@@ -11,7 +11,6 @@
 #include "sprd_vdsp_mem_core.h"
 #include "sprd_vdsp_mem_xvp_init.h"
 #include "sprd_vdsp_mem_test_debug.h"
-#include "vdsp_debugfs.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -100,8 +99,8 @@ int sprd_vdsp_mem_xvp_init(struct xvp *xvp)
 	pr_debug("heaps = %d\n", heaps);
 
 	for (i = 0; i < heaps; i++) {
-
 		pr_debug("adding heap of type %d\n", heap_configs[i].type);
+
 		if (heap_configs[i].type == SPRD_VDSP_MEM_HEAP_TYPE_CARVEOUT) {
 			sprd_vdsp_parse_reserved_mem(&heap_configs[i]);
 		}
@@ -131,6 +130,7 @@ int sprd_vdsp_mem_xvp_init(struct xvp *xvp)
 	xvp->drv_mem_ctx = xvp_mem_dev->xvp_mem_ctx;
 
 	pr_debug("sprd vdsp mem vxp init done\n");
+
 	return 0;
 
 create_proc_ctx_failed:
@@ -277,8 +277,7 @@ int __xvp_buf_alloc(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		pr_err("Error: input args EINVAL\n");
 		return ret;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("xvp_alloc_buffer :\"%s\"\n", xvp_buf->name);
+	pr_debug("xvp_alloc_buffer :\"%s\"\n", xvp_buf->name);
 
 	heap_id = sprd_vdsp_mem_get_heap_id(xvp_buf->heap_type);
 	if (heap_id == -1) {
@@ -298,8 +297,7 @@ int __xvp_buf_alloc(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		|| (sprd_vdsp_mem_get_heap_id(SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED) == heap_id)) {
 		xvp_buf->paddr = sprd_vdsp_mem_get_phy_addr(mem_ctx, xvp_buf->buf_id);
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("\"%s\" alloc sucessed, buffer id %d\n", xvp_buf->name, xvp_buf->buf_id);
+	pr_debug("\"%s\" alloc sucessed, buffer id %d\n", xvp_buf->name, xvp_buf->buf_id);
 
 	return 0;
 }
@@ -316,8 +314,7 @@ int __xvp_buf_free(struct xvp *xvp, struct xvp_buf *xvp_buf)
 	}
 	sprd_vdsp_mem_free(mem_ctx, xvp_buf->buf_id);
 	xvp_buf->buf_id = 0;
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("xvp_free_buffer \"%s\" sucessed\n", xvp_buf->name);
+	pr_debug("xvp_free_buffer \"%s\" sucessed\n", xvp_buf->name);
 	return 0;
 }
 
@@ -326,8 +323,8 @@ int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 	struct mem_ctx *mem_ctx = NULL;
 	int ret = 0;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("xvp buf kmap start\n");
+	pr_debug("xvp buf kmap start\n");
+
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
 		pr_err("Error: input args EINVAL\n");
@@ -337,6 +334,7 @@ int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 	xvp_buf->vaddr = sprd_vdsp_mem_get_kptr(mem_ctx, xvp_buf->buf_id);
 
 	pr_debug("xvp buf kmap vaddr:%lx\n", ( unsigned long) (xvp_buf->vaddr));
+
 	BUG_ON(xvp_buf->vaddr);
 	ret = sprd_vdsp_mem_map_km(mem_ctx, xvp_buf->buf_id);
 	if (unlikely(0 != ret)) {
@@ -344,9 +342,9 @@ int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		return -EFAULT;
 	}
 	xvp_buf->vaddr = sprd_vdsp_mem_get_kptr(mem_ctx, xvp_buf->buf_id);
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("\"%s\" kmap sucessed ,vaddr:%lx,size:%ld\n",
-			xvp_buf->name, ( unsigned long) (xvp_buf->vaddr), xvp_buf->size);
+
+	pr_debug("\"%s\" kmap sucessed ,vaddr:%lx,size:%ld\n",
+		xvp_buf->name, ( unsigned long) (xvp_buf->vaddr), xvp_buf->size);
 
 	return 0;
 }
@@ -371,8 +369,7 @@ int xvp_buf_kunmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		return -EFAULT;
 	}
 	xvp_buf->vaddr = NULL;
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("\"%s\" kunmap sucessed\n", xvp_buf->name);
+	pr_debug("\"%s\" kunmap sucessed\n", xvp_buf->name);
 
 	return 0;
 }
@@ -402,8 +399,7 @@ int xvp_buf_iommu_map(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		return ret;
 	}
 	xvp_buf->iova = sprd_vdsp_mem_get_dev_addr(mem_ctx, xvp_buf->buf_id);
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("\"%s\" iommu_map sucessed ,iova:%#lx\n", xvp_buf->name, xvp_buf->iova);
+	pr_debug("\"%s\" iommu_map sucessed ,iova:%#lx\n", xvp_buf->name, xvp_buf->iova);
 	return 0;
 }
 
@@ -431,8 +427,7 @@ int xvp_buf_iommu_unmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		return -EINVAL;
 	}
 	xvp_buf->iova = 0;
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("\"%s\" iommu_unmap sucessed\n", xvp_buf->name);
+	pr_debug("\"%s\" iommu_unmap sucessed\n", xvp_buf->name);
 
 	return 0;
 }
@@ -445,8 +440,7 @@ struct xvp_buf *xvp_buf_alloc(struct xvp *xvp, char *name, uint64_t size,
 	int ret = 0;
 	struct xvp_mem_dev *mem_dev = xvp->mem_dev;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("xvp buf alloc, name[%s] size[%ld] type[%d] attr[%d]\n", name, size, type, attr);
+	pr_debug("xvp buf alloc, name[%s] size[%ld] type[%d] attr[%d]\n", name, size, type, attr);
 
 	if (!mem_dev) {
 		pr_err("Error: mem_dev is NULL");
@@ -464,8 +458,7 @@ struct xvp_buf *xvp_buf_alloc(struct xvp *xvp, char *name, uint64_t size,
 		goto err_alloc;
 	}
 	mutex_unlock(&mem_dev->buf_list_mutex);
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("xvp_buf_alloc \"%s\" sucessed\n", buf->name);
+	pr_debug("xvp_buf_alloc \"%s\" sucessed\n", buf->name);
 	return buf;
 
 err_alloc:
@@ -492,8 +485,7 @@ int xvp_buf_free(struct xvp *xvp, struct xvp_buf *buf)
 		goto err;
 	}
 	mutex_unlock(&mem_dev->buf_list_mutex);
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("xvp_buf_free buf_id=%d sucessed\n", buf_id);
+	pr_debug("xvp_buf_free buf_id=%d sucessed\n", buf_id);
 	return 0;
 err:
 	mutex_unlock(&mem_dev->buf_list_mutex);
@@ -548,8 +540,8 @@ struct xvp_buf *xvp_buf_get_by_id(struct xvp *xvp, uint32_t buf_id)
 		pr_err("Error: mem_dev is NULL");
 		return NULL;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("get buf_id=%d\n", buf_id);
+	pr_debug("get buf_id=%d\n", buf_id);
+
 	mutex_lock(&mem_dev->buf_list_mutex);
 	list_for_each_entry(buf, &mem_dev->buf_list, list_node)
 	{
@@ -561,10 +553,7 @@ struct xvp_buf *xvp_buf_get_by_id(struct xvp *xvp, uint32_t buf_id)
 	}
 	mutex_unlock(&mem_dev->buf_list_mutex);
 	if (find) {
-		if (vdsp_debugfs_trace_mem()) {
-			pr_debug("get xvp buf name=%s, id=%d\n", buf->name, buf->buf_id);
-			debug_xvp_buf_print(buf);
-		}
+		debug_xvp_buf_print(buf);
 		return buf;
 	} else {
 		pr_err("Error: xvp_buf_get_by_id failed id=%d\n", buf_id);

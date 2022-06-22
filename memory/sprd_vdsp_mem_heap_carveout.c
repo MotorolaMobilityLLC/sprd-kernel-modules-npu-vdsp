@@ -321,14 +321,14 @@ static int carveout_heap_export(struct device *device, struct heap *heap,
 			goto free_sgt_mem;
 		}
 		sg_set_page(buffer_data->sgt->sgl,
-				pfn_to_page(PFN_DOWN(buffer_data->addr+heap->options.carveout.offs)),
+				pfn_to_page(PFN_DOWN(buffer_data->addr + heap->options.carveout.offs)),
 				PAGE_ALIGN(size), 0);
 		/* Store dma info */
 		if (heap->to_dev_addr)
 			buffer_data->dma_base = heap->to_dev_addr(&heap->options,
 					buffer_data->addr+heap->options.carveout.offs);
 		else
-			buffer_data->dma_base = buffer_data->addr+heap->options.carveout.offs;
+			buffer_data->dma_base = buffer_data->addr + heap->options.carveout.offs;
 
 		buffer_data->dma_size = PAGE_ALIGN(size);
 		/* No mapping yet */
@@ -382,8 +382,7 @@ static int carveout_heap_alloc(struct device *device, struct heap *heap,
 	phys_addr_t phys_addr;
 	size_t pages, page;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d (0x%p)\n",buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n",buffer->id, buffer);
 
 	buffer_data = kzalloc(sizeof(struct buffer_data), GFP_KERNEL);
 	if (!buffer_data)
@@ -418,8 +417,7 @@ static int carveout_heap_alloc(struct device *device, struct heap *heap,
 
 	page = 0;
 	while (page < pages) {
-		if (vdsp_debugfs_trace_mem())
-			pr_debug("alloc phys %llx\n", (unsigned long long)phys_addr);
+		pr_debug("alloc phys %llx\n", (unsigned long long)phys_addr);
 		buffer_data->addrs[page++] = phys_addr;
 		phys_addr += PAGE_SIZE;
 	};
@@ -502,20 +500,17 @@ static int carveout_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	size_t pages, page;
 	unsigned long addr;
 
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
-		pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
-			vma->vm_start, vma->vm_end,
-			vma->vm_end - vma->vm_start);
-	}
+	pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
+	pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
+		vma->vm_start, vma->vm_end,
+		vma->vm_end - vma->vm_start);
 
 	page = 0;
 	pages = buffer->actual_size / PAGE_SIZE;
 	addr = vma->vm_start;
 	while (page < pages && addr < vma->vm_end) {
 		phys_addr = buffer_data->addrs[page++];
-		if (vdsp_debugfs_trace_mem())
-			pr_debug("vmf addr %lx phys:%#llx\n", addr, (unsigned long long)phys_addr);
+		pr_debug("vmf addr %lx phys:%#llx\n", addr, (unsigned long long)phys_addr);
 
 		{
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
@@ -625,8 +620,7 @@ static int carveout_heap_map_km(struct heap *heap, struct buffer *buffer)
 
 static int carveout_heap_unmap_km(struct heap *heap, struct buffer *buffer)
 {
-	pr_debug("buffer %d (0x%p) kptr 0x%p\n",
-		buffer->id, buffer, buffer->kptr);
+	pr_debug("buffer %d (0x%p) kptr 0x%p\n", buffer->id, buffer, buffer->kptr);
 
 	if (!buffer->kptr) {
 		pr_warn("called for unmapped buffer %d\n", buffer->id);

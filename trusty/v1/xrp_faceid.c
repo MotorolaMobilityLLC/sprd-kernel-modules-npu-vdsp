@@ -113,7 +113,7 @@ int sprd_request_weights(struct xvp *xvp, char *name, struct ion_buf *coeff_ion)
 	int ret = request_firmware(&xvp->faceid_fw, name, xvp->dev);
 
 	if (unlikely(ret < 0)) {
-		pr_info("request %s weights fail\n", name);
+		pr_err("request %s weights fail\n", name);
 		return ret;
 	}
 

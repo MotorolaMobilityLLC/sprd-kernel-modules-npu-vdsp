@@ -148,7 +148,7 @@ static int iommus_init(struct sprd_vdsp_iommus *iommus,
 			pr_err("Error: iommu node[%d]=%s not found\n", index, iommu_name);
 			return -EINVAL;
 		} else {
-			pr_info("iommu node[%d]=%s  found\n", index, iommu_name);
+			pr_debug("iommu node[%d]=%s  found\n", index, iommu_name);
 		}
 
 		iommu_dev = devm_kzalloc(dev, sizeof(struct sprd_vdsp_iommu_dev), GFP_KERNEL);

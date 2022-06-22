@@ -138,8 +138,7 @@ int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id)
 	int (*init_fn) (const struct heap_config *heap_cfg, struct heap *heap);
 	int ret;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("add heap\n");
+	pr_debug("add heap\n");
 
 	switch (heap_cfg->type) {
 	case SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED:
@@ -266,7 +265,7 @@ int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t *type, uint32_t *attrs)
 
 	heap = idr_find(&mem_man->heaps, heap_id);
 	if (!heap) {
-		pr_err("heap %d not found!\n", heap_id);
+		pr_debug("heap %d not found!\n", heap_id);
 		mutex_unlock(&mem_man->mutex);
 		return -ENOENT;
 	}
@@ -324,7 +323,7 @@ int sprd_vdsp_mem_create_proc_ctx(struct mem_ctx **new_ctx)
 	struct mem_ctx *ctx;
 	int ret = 0;
 
-	pr_debug("create proc ctx\n");
+	pr_debug("create mem proc ctx\n");
 
 	ctx = kzalloc(sizeof(struct mem_ctx), GFP_KERNEL);
 	if (!ctx)
@@ -342,6 +341,7 @@ int sprd_vdsp_mem_create_proc_ctx(struct mem_ctx **new_ctx)
 	/* Assign id to the newly created context. */
 	ctx->id = ret;
 	mutex_unlock(&mem_man->mutex);
+
 	pr_debug("proc ctx id:%d\n", ctx->id);
 
 	*new_ctx = ctx;
@@ -445,11 +445,11 @@ static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
 	/* Check if heap has been registered using an alternative cache attributes */
 	if (heap->alt_cache_attr &&
 		(heap->alt_cache_attr != (attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK))) {
-		if (vdsp_debugfs_trace_mem()) {
-			pr_debug("heap %d changing cache attributes from %x to %x\n",
-				heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK,
-				heap->alt_cache_attr);
-		}
+
+		pr_debug("heap %d changing cache attributes from %x to %x\n",
+			heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK,
+			heap->alt_cache_attr);
+
 		attr &= ~SPRD_VDSP_MEM_ATTR_CACHE_MASK;
 		attr |= heap->alt_cache_attr;
 	}
@@ -459,20 +459,18 @@ static int _sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx,
 		pr_err("heap %d alloc failed\n", heap->id);
 		goto heap_alloc_failed;
 	}
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("-- Allocating zeroed buffer id:%d  size:%zu\n",
-			buffer->id, buffer->actual_size);
-	}
+	pr_debug("-- Allocating zeroed buffer id:%d  size:%zu\n",
+		buffer->id, buffer->actual_size);
 
 	ctx->mem_usage_curr += buffer->actual_size;
 	if (ctx->mem_usage_curr > ctx->mem_usage_max)
 		ctx->mem_usage_max = ctx->mem_usage_curr;
 
 	*buffer_new = buffer;
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("heap %p ctx %p created buffer %d (%p) actual_size %zu\n",
-			heap, ctx, buffer->id, buffer, buffer->actual_size);
-	}
+
+	pr_debug("heap %p ctx %p created buffer %d (%p) actual_size %zu\n",
+		heap, ctx, buffer->id, buffer, buffer->actual_size);
+
 	return 0;
 
 heap_alloc_failed:
@@ -490,9 +488,7 @@ int sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx, int heap_id,
 	struct buffer *buffer;
 	int ret;
 
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("heap %d ctx %p size %zu\n", heap_id, ctx, size);
-	}
+	pr_debug("heap %d ctx %p size %zu\n", heap_id, ctx, size);
 
 	ret = mutex_lock_interruptible(&mem_man->mutex);
 	if (ret)
@@ -513,10 +509,10 @@ int sprd_vdsp_mem_alloc(struct device *device, struct mem_ctx *ctx, int heap_id,
 
 	*buf_id = buffer->id;
 	mutex_unlock(&mem_man->mutex);
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("heap %s ctx %p created buffer %d (0x%lx) size %zu\n",
-			get_heap_name(heap->type), ctx, *buf_id, ( unsigned long) buffer, size);
-	}
+
+	pr_debug("heap %s ctx %p created buffer %d (0x%lx) size %zu\n",
+		get_heap_name(heap->type), ctx, *buf_id, ( unsigned long) buffer, size);
+
 	return ret;
 }
 
@@ -581,10 +577,10 @@ static int _sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
 	/* Check if heap has been registered using an alternative cache attributes */
 	if (heap->alt_cache_attr &&
 		(heap->alt_cache_attr != (attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK))) {
-		if (vdsp_debugfs_trace_mem()) {
-			pr_debug("heap %d changing cache attributes from %x to %x\n",
-				heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK, heap->alt_cache_attr);
-		}
+
+		pr_debug("heap %d changing cache attributes from %x to %x\n",
+			heap->id, attr & SPRD_VDSP_MEM_ATTR_CACHE_MASK, heap->alt_cache_attr);
+
 		attr &= ~SPRD_VDSP_MEM_ATTR_CACHE_MASK;
 		attr |= heap->alt_cache_attr;
 	}
@@ -597,10 +593,9 @@ static int _sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
 	}
 
 	pr_debug("-- Allocating zeroed buffer id:%d size:%zu for imported data\n",
-			buffer->id, buffer->actual_size);
+		buffer->id, buffer->actual_size);
 	pr_debug("CALLOC :BLOCK_%d %#zx %#zx 0x0\n",
-			buffer->id, buffer->actual_size, align);
-
+		buffer->id, buffer->actual_size, align);
 	ctx->mem_usage_curr += buffer->actual_size;
 	if (ctx->mem_usage_curr > ctx->mem_usage_max)
 		ctx->mem_usage_max = ctx->mem_usage_curr;
@@ -691,8 +686,7 @@ int sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
 	struct page **pages = NULL;
 	int ret;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("heap %d ctx %p hnd %#llx\n", heap_id, ctx, buf_fd);
+	pr_debug("heap %d ctx %p hnd %#llx\n", heap_id, ctx, buf_fd);
 
 	if (cpu_ptr) {
 		ret = _sprd_vdsp_mem_get_user_pages(size, cpu_ptr, &pages);
@@ -729,7 +723,6 @@ int sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,
 		buf_fd, heap_id, get_heap_name(heap->type), *buf_id, size);
 	pr_debug("heap %d ctx %p created buffer %d (%p) size %zu\n",
 		heap_id, ctx, *buf_id, buffer, size);
-
 
 	return 0;
 
@@ -783,9 +776,7 @@ int sprd_vdsp_mem_export(struct device *device, struct mem_ctx *ctx, int buf_id,
 	struct buffer *buffer;
 	int ret;
 
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("ctx %p buffer id %d\n", ctx, buf_id);
-	}
+	pr_debug("ctx %p buffer id %d\n", ctx, buf_id);
 
 	ret = mutex_lock_interruptible(&mem_man->mutex);
 	if (ret)
@@ -807,12 +798,12 @@ int sprd_vdsp_mem_export(struct device *device, struct mem_ctx *ctx, int buf_id,
 	}
 
 	mutex_unlock(&mem_man->mutex);
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("buf_hnd %#llx heap %d (%s) buffer %d size %zu\n",
-			*buf_hnd, heap->id, get_heap_name(heap->type), buf_id, size);
-		pr_debug("heap %d ctx %p exported buffer %d (%p) size %zu\n",
-			heap->id, ctx, buf_id, buffer, size);
-	}
+
+	pr_debug("buf_hnd %#llx heap %d (%s) buffer %d size %zu\n",
+		*buf_hnd, heap->id, get_heap_name(heap->type), buf_id, size);
+	pr_debug("heap %d ctx %p exported buffer %d (%p) size %zu\n",
+		heap->id, ctx, buf_id, buffer, size);
+
 	return ret;
 }
 
@@ -827,8 +818,7 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 	struct mem_ctx *ctx = buffer->mem_ctx;
 	struct sprd_vdsp_iommus *iommus = ctx->xvp->iommus;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer 0x%p\n", buffer);
+	pr_debug("buffer 0x%p\n", buffer);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -836,8 +826,7 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 		pr_err("no free function in heap %d!\n", heap->id);
 		return;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("mapping %d, mmu_idx %d\n", buffer->mapping, buffer->mmu_idx);
+	pr_debug("mapping %d, mmu_idx %d\n", buffer->mapping, buffer->mmu_idx);
 	if ((BUFFER_MAPPING == buffer->mapping)
 		&& (buffer->mmu_idx < SPRD_VDSP_IOMMU_MAX)
 		&& (buffer->mmu_idx >= SPRD_VDSP_IOMMU_EPP)) {
@@ -853,8 +842,7 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 		WARN_ON(1);
 
 	idr_remove(&ctx->buffers, buffer->id);
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("-- Freeing buffer id:%d  size:%zu\n", buffer->id, buffer->actual_size);
+	pr_debug("-- Freeing buffer id:%d  size:%zu\n", buffer->id, buffer->actual_size);
 
 	kfree(buffer);
 }
@@ -864,8 +852,7 @@ void sprd_vdsp_mem_free(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 
@@ -921,8 +908,7 @@ struct dma_fence *sprd_vdsp_mem_add_fence(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 
@@ -963,8 +949,7 @@ void sprd_vdsp_mem_remove_fence(struct mem_ctx *ctx, int buf_id)
 	struct buffer *buffer;
 	struct dma_fence *fence = NULL;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 
@@ -995,8 +980,7 @@ int sprd_vdsp_mem_signal_fence(struct mem_ctx *ctx, int buf_id)
 	struct dma_fence *fence = NULL;
 	int ret = -1;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 
@@ -1022,8 +1006,7 @@ int sprd_vdsp_mem_signal_fence(struct mem_ctx *ctx, int buf_id)
 EXPORT_SYMBOL(sprd_vdsp_mem_signal_fence);
 #endif
 
-static void _sprd_vdsp_mem_sync_device_to_cpu(struct buffer *buffer,
-	bool force);
+static void _sprd_vdsp_mem_sync_device_to_cpu(struct buffer *buffer, bool force);
 
 int sprd_vdsp_mem_map_um(struct mem_ctx *ctx, int buf_id,
 	struct vm_area_struct *vma)
@@ -1070,8 +1053,7 @@ int sprd_vdsp_mem_unmap_um(struct mem_ctx *ctx, int buf_id)
 	struct heap *heap;
 	int ret;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&ctx->buffers, buf_id);
@@ -1080,8 +1062,7 @@ int sprd_vdsp_mem_unmap_um(struct mem_ctx *ctx, int buf_id)
 		mutex_unlock(&mem_man->mutex);
 		return -EINVAL;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer 0x%p\n", buffer);
+	pr_debug("buffer 0x%p\n", buffer);
 
 	heap = buffer->heap;
 	if (heap->ops == NULL || heap->ops->unmap_um == NULL) {
@@ -1104,8 +1085,7 @@ static int _sprd_vdsp_mem_map_km(struct buffer *buffer)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap = buffer->heap;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer 0x%p, heap %d\n", buffer, heap->id);
+	pr_debug("buffer 0x%p, heap %d\n", buffer, heap->id);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -1123,8 +1103,7 @@ int sprd_vdsp_mem_map_km(struct mem_ctx *ctx, int buf_id)
 	struct buffer *buffer;
 	int ret;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&ctx->buffers, buf_id);
@@ -1148,8 +1127,7 @@ static int _sprd_vdsp_mem_unmap_km(struct buffer *buffer)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap = buffer->heap;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer 0x%p\n", buffer);
+	pr_debug("buffer 0x%p\n", buffer);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -1167,8 +1145,7 @@ int sprd_vdsp_mem_unmap_km(struct mem_ctx *ctx, int buf_id)
 	struct buffer *buffer;
 	int ret;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&ctx->buffers, buf_id);
@@ -1387,9 +1364,8 @@ static void _sprd_vdsp_mem_sync_cpu_to_device(struct buffer *buffer, bool force)
 			buffer->id, buffer->actual_size);
 		return;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d size %zu kptr %p cache(%d:%d)\n",
-			buffer->id, buffer->actual_size, buffer->kptr, force, heap->cache_sync);
+	pr_debug("buffer %d size %zu kptr %p cache(%d:%d)\n",
+		buffer->id, buffer->actual_size, buffer->kptr, force, heap->cache_sync);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -1410,8 +1386,7 @@ int sprd_vdsp_mem_sync_cpu_to_device(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&ctx->buffers, buf_id);
@@ -1439,9 +1414,8 @@ static void _sprd_vdsp_mem_sync_device_to_cpu(struct buffer *buffer, bool force)
 			buffer->id, buffer->actual_size);
 		return;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d size %zu kptr %p cache(%d:%d)\n",
-			buffer->id, buffer->actual_size, buffer->kptr, force, heap->cache_sync);
+	pr_debug("buffer %d size %zu kptr %p cache(%d:%d)\n",
+		buffer->id, buffer->actual_size, buffer->kptr, force, heap->cache_sync);
 
 	WARN_ON(!mutex_is_locked(&mem_man->mutex));
 
@@ -1454,8 +1428,7 @@ int sprd_vdsp_mem_sync_device_to_cpu(struct mem_ctx *ctx, int buf_id)
 	struct mem_man *mem_man = &mem_man_data;
 	struct buffer *buffer;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d\n", buf_id);
+	pr_debug("buffer %d\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&ctx->buffers, buf_id);
@@ -1529,8 +1502,7 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id, int isfixed, uns
 	struct sprd_vdsp_iommus *iommus = NULL;
 	int ret;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("map_iova buffer id=%d,\n", buf_id);
+	pr_debug("map_iova buffer id=%d,\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 	buffer = idr_find(&mem_ctx->buffers, buf_id);
@@ -1539,13 +1511,12 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id, int isfixed, uns
 		ret = -EINVAL;
 		goto error;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("map_iova buffer id =%d addr=0x%lx size=%zu\n",
-			buf_id, ( unsigned long) buffer, buffer->request_size);
 
 	heap = buffer->heap;
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("map_iova buffer from heap %d\n", heap->id);
+
+	pr_debug("map_iova buffer id =%d addr=0x%lx size=%zu, from heap %d\n",
+		buf_id, ( unsigned long) buffer, buffer->request_size, heap->id);
+
 	if (heap->ops && heap->ops->get_sg_table) {
 		struct sg_table *sgt;
 		bool use_sg_dma = false;
@@ -1564,11 +1535,11 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id, int isfixed, uns
 		buffer->map_buf.offset = 0;
 		buffer->map_buf.isfixed = isfixed;
 		buffer->map_buf.fixed_data = fixed_data;
-		if (vdsp_debugfs_trace_mem())
-			pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = %d\n",
-				buffer->map_buf.table, buffer->map_buf.buf,
-				buffer->map_buf.size, buffer->map_buf.isfixed,
-				buffer->map_buf.fixed_data);
+
+		pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = %d\n",
+			buffer->map_buf.table, buffer->map_buf.buf,
+			buffer->map_buf.size, buffer->map_buf.isfixed,
+			buffer->map_buf.fixed_data);
 		iommus = mem_ctx->xvp->iommus;
 
 		ret = _sprd_vdsp_mem_map_iova(iommus, &buffer->map_buf);
@@ -1639,9 +1610,7 @@ int sprd_vdsp_mem_unmap_iova(struct mem_ctx *mem_ctx, int buf_id)
 	struct sprd_vdsp_iommus *iommus = NULL;
 	int ret = 0;
 
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("unmap_iova buffer id=%d,\n", buf_id);
-	}
+	pr_debug("unmap_iova buffer id=%d,\n", buf_id);
 
 	mutex_lock(&mem_man->mutex);
 
@@ -1651,9 +1620,8 @@ int sprd_vdsp_mem_unmap_iova(struct mem_ctx *mem_ctx, int buf_id)
 		ret = -EINVAL;
 		goto error;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("unmap_iova buffer id =%d addr=0x%lx size=%zu\n",
-			buf_id, ( unsigned long) buffer, buffer->request_size);
+	pr_debug("unmap_iova buffer id =%d addr=0x%lx size=%zu\n",
+		buf_id, ( unsigned long) buffer, buffer->request_size);
 
 	iommus = mem_ctx->xvp->iommus;
 	ret = _sprd_vdsp_mem_unmap_iova(iommus, &buffer->map_buf);

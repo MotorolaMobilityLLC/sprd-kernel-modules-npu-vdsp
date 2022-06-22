@@ -13,8 +13,6 @@
 #define pr_fmt(fmt) "sprd-vdsp: [iommu_record]: %d %d %s: "\
                fmt, current->pid, __LINE__, __func__
 
-static unsigned int trace_insert_slot = 0;
-
 int record_init(struct sprd_vdsp_iommu_map_record *record_dev)
 {
 	return 0;
@@ -32,12 +30,11 @@ static bool record_insert_slot(struct sprd_vdsp_iommu_map_record *record_dev,
 	int index = 0;
 	struct sprd_iommu_map_slot *slot;
 
-	if (trace_insert_slot) {
-		pr_debug("sg_table_addr = 0x%lx\n", sg_table_addr);
-		pr_debug("buf_addr      = 0x%lx\n", buf_addr);
-		pr_debug("iova_addr     = 0x%lx\n", iova_addr);
-		pr_debug("iova_size     = 0x%lx\n", iova_size);
-	}
+	pr_debug("sg_table_addr = 0x%lx\n", sg_table_addr);
+	pr_debug("buf_addr      = 0x%lx\n", buf_addr);
+	pr_debug("iova_addr     = 0x%lx\n", iova_addr);
+	pr_debug("iova_size     = 0x%lx\n", iova_size);
+
 	if (record_dev->record_count >= SPRD_MAX_SG_CACHED_CNT) {
 		pr_err("Error: record slot is full,now record %d\n", record_dev->record_count);
 		BUG_ON(record_dev->record_count >= SPRD_MAX_SG_CACHED_CNT);
@@ -105,9 +102,7 @@ static bool record_map_check(struct sprd_vdsp_iommu_map_record *record_dev,
 		if (record_dev->slot[index].status == SG_SLOT_USED &&
 			record_dev->slot[index].buf_addr == buf_addr) {
 			*iova_addr = record_dev->slot[index].iova_addr;
-			pr_debug("Warning: --map_usrs = %d\n", record_dev->slot[index].map_usrs);
 			record_dev->slot[index].map_usrs++;
-			pr_debug("Warning: map_usrs-- = %d\n", record_dev->slot[index].map_usrs);
 			break;
 		}
 	}

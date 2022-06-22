@@ -36,7 +36,7 @@ struct sprd_vdsp_iommu_dev {
 	unsigned long ctrl_reg;	// control register base
 
 	unsigned long pagt_base_ddr;	// page table phy base address dma_alloc_coherent return parameter
-	unsigned long pagt_base_virt;	// page table vir base address dma_alloc_coherent return
+	unsigned long pagt_base_virt;	// page table vir base address dma_alloc_coherent return val
 	unsigned long pagt_ddr_size;	// page table array size
 
 	struct device *dev;

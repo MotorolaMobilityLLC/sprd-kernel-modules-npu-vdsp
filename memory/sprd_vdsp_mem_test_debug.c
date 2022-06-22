@@ -104,8 +104,7 @@ void debug_xvpfile_buf_show_all(struct xvp_file *xvp_file)
 	struct xvp_buf *temp = NULL;
 
 	pr_debug("==========debug_vxpfile_buf_show_all [start]===========\n");
-	list_for_each_entry_safe(buf, temp, &xvp_file->buf_list,
-				 xvp_file_list_node) {
+	list_for_each_entry_safe(buf, temp, &xvp_file->buf_list, xvp_file_list_node) {
 		debug_xvp_buf_print(buf);
 	}
 	pr_debug("==========debug_vxpfile_buf_show_all [end] ===========\n");

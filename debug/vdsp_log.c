@@ -78,7 +78,7 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 		/* Force the loads from log_read_line to complete. */
 		rmb();
 
-		pr_debug("%s", s->line_buffer);
+		pr_info("%s", s->line_buffer);
 		get += read_chars;
 	}
 	log->flag[bank] = BANK_BUSY;

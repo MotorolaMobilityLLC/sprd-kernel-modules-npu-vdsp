@@ -312,8 +312,7 @@ static void *unified_vmap_dmabuf(struct dma_buf *buf)
 	if (unified_map_km(heap, buffer))
 		return NULL;
 
-	pr_debug("%s:%d buffer %d kptr 0x%p\n", __func__, __LINE__,
-		buffer->id, buffer->kptr);
+	pr_debug("buffer %d kptr 0x%p\n", buffer->id, buffer->kptr);
 
 	return buffer->kptr;
 }
@@ -406,7 +405,7 @@ static int unified_export(struct device *device, struct heap *heap,
 		return -ENOMEM;
 
 	if (buffer_data->exported) {
-		pr_err("unifief already exported!\n");
+		pr_err("unified already exported!\n");
 		return -EBUSY;
 	}
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,17,0)
@@ -740,12 +739,10 @@ static int unified_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	int err;
 	unsigned long addr;
 
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
-		pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
-			vma->vm_start, vma->vm_end,
-			vma->vm_end - vma->vm_start);
-	}
+	pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
+	pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
+		vma->vm_start, vma->vm_end,
+		vma->vm_end - vma->vm_start);
 
 	sgl = sgt->sgl;
 	addr = vma->vm_start;
@@ -756,9 +753,8 @@ static int unified_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			return VM_FAULT_SIGBUS;
 		}
 
-		if (vdsp_debugfs_trace_mem())
-			pr_debug("vmf addr %lx page_address:%p phys:%#llx\n",
-				addr, page, (unsigned long long)page_to_phys(page));
+		pr_debug("vmf addr %lx page_address:%p phys:%#llx\n",
+			addr, page, (unsigned long long)page_to_phys(page));
 
 		err = vm_insert_page(vma, addr, page);
 		switch (err) {

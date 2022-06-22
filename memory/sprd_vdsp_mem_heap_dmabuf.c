@@ -95,8 +95,7 @@ static int dmabuf_heap_import(struct device *device, struct heap *heap,
 		ret = -EINVAL;
 		goto dma_buf_get_failed;
 	}
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d dma_buf %p\n", buffer->id, data->dma_buf);
+	pr_debug("buffer %d dma_buf %p\n", buffer->id, data->dma_buf);
 
 	data->attach = dma_buf_attach(data->dma_buf, device);
 	if (IS_ERR(data->attach)) {
@@ -131,8 +130,7 @@ static int dmabuf_heap_import(struct device *device, struct heap *heap,
 	data->mattr = attr;
 	data->mapped_vma = NULL;
 	buffer->priv = data;
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer->paddr[%#llx] end\n", buffer->paddr);
+	pr_debug("buffer->paddr[%#llx] end\n", buffer->paddr);
 
 	return 0;
 
@@ -174,8 +172,7 @@ static void dmabuf_heap_free(struct heap *heap, struct buffer *buffer)
 	dma_buf_put(data->dma_buf);
 	kfree(data);
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug(" dmabuf heap free end\n");
+	pr_debug(" dmabuf heap free end\n");
 }
 
 static void dmabuf_mmap_open(struct vm_area_struct *vma)
@@ -198,8 +195,7 @@ static void dmabuf_mmap_open(struct vm_area_struct *vma)
 	}
 	data->mapped_vma = vma;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("dmabuf mmap open end\n");
+	pr_debug("dmabuf mmap open end\n");
 }
 
 static void dmabuf_mmap_close(struct vm_area_struct *vma)
@@ -211,8 +207,7 @@ static void dmabuf_mmap_close(struct vm_area_struct *vma)
 		return;
 
 	data = buffer->priv;
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("dmabuf mmap close start, buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
+	pr_debug("dmabuf mmap close start, buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
 
 	if (!(data->mattr & SPRD_VDSP_MEM_ATTR_UNCACHED)) {
 		/* User may have written to the buffer so flush D-cache */
@@ -221,8 +216,7 @@ static void dmabuf_mmap_close(struct vm_area_struct *vma)
 
 	data->mapped_vma = NULL;
 
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("dmabuf mmap close end\n");
+	pr_debug("dmabuf mmap close end\n");
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -240,11 +234,9 @@ static int dmabuf_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	dma_addr_t phys = 0;
 	unsigned long addr;
 
-	if (vdsp_debugfs_trace_mem()) {
-		pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
-		pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
-			 vma->vm_start, vma->vm_end, vma->vm_end - vma->vm_start);
-	}
+	pr_debug("buffer %d (0x%p) vma:%p\n", buffer->id, buffer, vma);
+	pr_debug("vm_start %#lx vm_end %#lx total size %ld\n",
+		 vma->vm_start, vma->vm_end, vma->vm_end - vma->vm_start);
 
 	sgl = sgt->sgl;
 	addr = vma->vm_start;
@@ -418,8 +410,9 @@ static int dmabuf_heap_unmap_km(struct heap *heap, struct buffer *buffer)
 #else
 	dma_buf_vunmap(dma_buf, buffer->kptr);
 #endif
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("buffer %d kunmap from 0x%p\n", buffer->id, buffer->kptr);
+
+	pr_debug("buffer %d kunmap from 0x%p\n", buffer->id, buffer->kptr);
+
 	buffer->kptr = NULL;
 
 	return 0;
@@ -472,8 +465,7 @@ static void dmabuf_sync_dev_to_cpu(struct heap *heap, struct buffer *buffer)
 
 static void dmabuf_heap_destroy(struct heap *heap)
 {
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("dmabuf heap destroy\n");
+	pr_debug("dmabuf heap destroy\n");
 }
 
 static struct heap_ops dmabuf_heap_ops = {
@@ -494,8 +486,7 @@ static struct heap_ops dmabuf_heap_ops = {
 
 int sprd_vdsp_mem_dmabuf_init(const struct heap_config *heap_cfg, struct heap *heap)
 {
-	if (vdsp_debugfs_trace_mem())
-		pr_debug("dma buf ops init\n");
+	pr_debug("dma buf ops init\n");
 
 	heap->ops = &dmabuf_heap_ops;
 
