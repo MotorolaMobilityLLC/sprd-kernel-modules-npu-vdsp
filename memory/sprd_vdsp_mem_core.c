@@ -617,7 +617,7 @@ static void _sprd_vdsp_mem_put_pages(size_t size, struct page **pages)
 
 	for (i = 0; i < num_pages; i++)
 		if (pages[i])
-			put_page(pages[i]);		
+			put_page(pages[i]);
 	kfree(pages);
 }
 
@@ -673,7 +673,7 @@ static int _sprd_vdsp_mem_get_user_pages(size_t size, uint64_t cpu_ptr,
 out_get_user_pages:
 	_sprd_vdsp_mem_put_pages(size, tmp_pages);
 
-	return ret;	
+	return ret;
 }
 
 int sprd_vdsp_mem_import(struct device *device, struct mem_ctx *ctx,

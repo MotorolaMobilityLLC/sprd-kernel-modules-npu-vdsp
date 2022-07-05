@@ -51,6 +51,11 @@
 #define MBOXID_CH	(0x1)
 #define MBOXID_VDSP	(0x2)
 
+#define PMU_SET_OFFSET		0x1000
+#define PMU_CLR_OFFSET		0x2000
+#define MMSYS_SET_OFFSET	0x1000
+#define MMSYS_CLR_OFFSET	0x2000
+
  // waitting cam driver ready Porting for A12 K54 version*/
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 int sprd_cam_pw_on(void);
@@ -100,7 +105,7 @@ static int vdsp_regmap_read(struct regmap *regmap, uint32_t reg, uint32_t *val)
 	return regmap_read(regmap, reg, val);
 }
 
-static int vdsp_regmap_write(struct regmap *regmap, uint32_t reg, uint32_t  val)
+static int vdsp_regmap_write(struct regmap *regmap, uint32_t reg, uint32_t val)
 {
 	return regmap_write(regmap, reg, val);
 }
@@ -118,27 +123,118 @@ int vdsp_regmap_read_mask(struct regmap *regmap, uint32_t reg,
 	return ret;
 }
 
-int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
-	uint32_t mask, uint32_t val)
+static int regmap_set(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
+{
+	int ret = -1;
+	switch (rt) {
+	case RT_PMU:
+		ret = vdsp_regmap_write(regmap, offset + PMU_SET_OFFSET, val);
+		break;
+	case RT_MMSYS:
+		ret = vdsp_regmap_write(regmap, offset + MMSYS_SET_OFFSET, val);
+		break;
+	default:
+		break;
+	};
+	pr_debug("return:%d, reg type\n", ret, rt);
+	return ret;
+}
+
+static int regmap_clr(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
+{
+	int ret = -2;
+	switch (rt) {
+	case RT_PMU:
+		ret = vdsp_regmap_write(regmap, offset + PMU_CLR_OFFSET, val);
+		break;
+	case RT_MMSYS:
+		ret = vdsp_regmap_write(regmap, offset + MMSYS_CLR_OFFSET, val);
+		break;
+	default:
+		break;
+	};
+	pr_debug("return:%d, reg type\n", ret, rt);
+	return ret;
+}
+
+static int vdsp_regmap_set_clr(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val, enum reg_type rt)
+{
+	int ret = 0;
+	unsigned int set, clr;
+	set = val & mask;
+	clr = (~val) & mask;
+
+	pr_debug("regmap:%#lx, offset:%#x, mask:%#x val:%#x,rt:%#x\n", regmap, offset, mask, val, rt);
+	if (set) {
+		ret = regmap_set(regmap, offset, set, rt);
+		if (ret) {
+			pr_err("regmap_set failed, regmap:%#lx, offset:%#x, set:%#x,rt:%#x\n",
+				regmap, offset, set, rt);
+			goto end;
+		}
+	}
+	if (clr) {
+		ret = regmap_clr(regmap, offset, clr, rt);
+		if (ret) {
+			pr_err("regmap_clr failed, regmap:%#lx, offset:%#x, clr:%#x,rt:%#x\n",
+				regmap, offset, clr, rt);
+			goto end;
+		}
+	}
+end:
+	return ret;
+}
+
+static int vdsp_regmap_not_set_clr(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val, enum reg_type rt)
 {
 	int ret = -1;
 	uint tmp;
 
-#if 1
+	pr_debug("regmap:%#lx, offset:%#x, mask:%#x, val:%#x, rt:%#x\n", regmap, offset, mask, val, rt);
+
+	ret = vdsp_regmap_read(regmap, offset, &tmp);
+	if (ret) {
+		pr_err("regmap read  error!\n");
+		return ret;
+	}
+	tmp &= ~mask;
+	ret = vdsp_regmap_write(regmap, offset, tmp | (val & mask));
+	return ret;
+}
+
+int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val, enum reg_type rt)
+{
+	int ret = 0;
+	if (rt == RT_PMU || rt == RT_MMSYS)
+		ret = vdsp_regmap_set_clr(regmap, offset, mask, val, rt);
+	else if (rt == RT_NO_SET_CLR)
+		ret = vdsp_regmap_not_set_clr(regmap, offset, mask, val, rt);
+	else
+		ret = -3;
+	if (ret)
+		pr_err("error ret:%d, reg type:%d\n", ret, rt);
+	return ret;
+}
+
+#if 0
+int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val, enum reg_type rt)
+{
+	int ret = -1;
+	uint tmp;
+
 	ret = regmap_read(regmap, offset, &tmp);
 	if (ret)
 		return ret;
 	tmp &= ~mask;
 	ret = regmap_write(regmap, offset, tmp | (val & mask));
 
-#else
-	ret = regmap_update_bits(regmap, offset, mask, val);
-#endif
-
 	return ret;
 }
-
-
+#endif
 
 static int vdsp_reg_read(struct vdsp_reg *p, uint32_t *val)
 {
@@ -152,12 +248,12 @@ static int vdsp_reg_read(struct vdsp_reg *p, uint32_t *val)
 	return ret;
 }
 
-static int vdsp_reg_update(struct vdsp_reg *p, uint32_t val)
+static int vdsp_reg_update(struct vdsp_reg *p, uint32_t val, enum reg_type rt)
 {
 	if ((!p) || (!(p->gpr))) {
 		return -1;
 	}
-	return vdsp_regmap_update_bits(p->gpr, p->reg, p->mask, val);
+	return vdsp_regmap_update_bits(p->gpr, p->reg, p->mask, val, rt);
 }
 /***********************register function end********************/
 
@@ -208,8 +304,8 @@ static void reset(void *hw_arg)
 {
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
-	vdsp_regmap_update_bits(hw->mm_ahb, REG_RESET, VDSP_RESET, ~((uint32_t) 0));
-	vdsp_regmap_update_bits(hw->mm_ahb, REG_RESET, VDSP_RESET, 0);
+	vdsp_regmap_update_bits(hw->mm_ahb, REG_RESET, VDSP_RESET, ~((uint32_t) 0), RT_MMSYS);
+	vdsp_regmap_update_bits(hw->mm_ahb, REG_RESET, VDSP_RESET, 0, RT_MMSYS);
 }
 
 static void halt(void *hw_arg)
@@ -217,10 +313,10 @@ static void halt(void *hw_arg)
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	uint32_t val = 0;
 
-	if (vdsp_regmap_read_mask(hw->mm_ahb, VDSP_CORE_CFG, 0xffffffff, &val))
+	if (vdsp_regmap_read_mask(hw->mm_ahb, VDSP_CORE_CFG, 0xFFFFFFFF, &val))
 		pr_err("error read mmahb:%d\n", VDSP_CORE_CFG);
 	val |= (VDSP_RUNSTALL);
-	if (vdsp_regmap_write(hw->mm_ahb, VDSP_CORE_CFG, val))
+	if (vdsp_regmap_update_bits(hw->mm_ahb, VDSP_CORE_CFG, 0xFFFFFFFF, val, RT_NO_SET_CLR))
 		pr_err("error write mmahb:%d\n", VDSP_CORE_CFG);
 }
 
@@ -231,7 +327,7 @@ static void stop_vdsp(void *hw_arg)
 	uint32_t i = 0;
 
 	/*mask all interrupt and wait vdsp to pwaitmode */
-	vdsp_reg_update(&dts_info->regs[INTR_DIS], ~((uint32_t) 0));
+	vdsp_reg_update(&dts_info->regs[INTR_DIS], ~((uint32_t) 0), RT_PMU);
 	do {
 		i++;
 		udelay(100);
@@ -250,7 +346,7 @@ static void release(void *hw_arg)
 	if (vdsp_regmap_read_mask(hw->mm_ahb, VDSP_CORE_CFG, 0xffffffff, &val))
 		pr_err("error read mmahb:%d\n", VDSP_CORE_CFG);
 	val &= ~(VDSP_RUNSTALL);	/*clear bit2 */
-	if (vdsp_regmap_write(hw->mm_ahb, VDSP_CORE_CFG, val))
+	if (vdsp_regmap_update_bits(hw->mm_ahb, VDSP_CORE_CFG, 0xFFFFFFFF, val, RT_NO_SET_CLR))
 		pr_err("error write mmahb:%d\n", VDSP_CORE_CFG);
 }
 
@@ -264,11 +360,11 @@ static int vdsp_power_on(void *hw_arg)
 
 	/* vdsp domain power on */
 	/* 1:auto shutdown en, shutdown with ap; 0: control by bit25 */
-	vdsp_reg_update(&dts_info->regs[AUTO_SHUTDOWN], 0);
+	vdsp_reg_update(&dts_info->regs[AUTO_SHUTDOWN], 0, RT_PMU);
 	/* set 0 to shutdown */
-	vdsp_reg_update(&dts_info->regs[FORCE_SHUTDOWN], 0);
+	vdsp_reg_update(&dts_info->regs[FORCE_SHUTDOWN], 0, RT_PMU);
 	/* deep sleep disable */
-	vdsp_reg_update(&dts_info->regs[DPSL_EN], 0);
+	vdsp_reg_update(&dts_info->regs[DPSL_EN], 0, RT_PMU);
 
 	/*Wait for the pmu state to stabilize */
 	do {
@@ -300,7 +396,7 @@ static int vdsp_power_on(void *hw_arg)
 	return ret;
 
 error:
-	vdsp_reg_update(&dts_info->regs[FORCE_SHUTDOWN], ~((uint32_t) 0));
+	vdsp_reg_update(&dts_info->regs[FORCE_SHUTDOWN], ~((uint32_t) 0), RT_PMU);
 	return ret;
 }
 
@@ -309,10 +405,12 @@ static int vdsp_power_off(void *hw_arg)
 	unsigned int pwait = 0;
 	int cycle;
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
-	unsigned int power_state1, power_state2, power_state3;
+	unsigned int power_state1 = 0;
+	unsigned int power_state2 = 0;
+	unsigned int power_state3 = 0;
 
 	pr_debug("power start\n");
-	vdsp_reg_update(&dts_info->regs[INTR_DIS], ~((uint32_t) 0));
+	vdsp_reg_update(&dts_info->regs[INTR_DIS], ~((uint32_t) 0), RT_PMU);
 	/* Wait 100 ms for pwait mode */
 	for (cycle = 0; cycle < 4000; cycle++) {
 		if (vdsp_regmap_read_mask(hw->mm_ahb, VDSP_CORE_CFG, 0x1000, &pwait)) {
@@ -329,13 +427,13 @@ static int vdsp_power_off(void *hw_arg)
 
 	if (cycle == 4000) {
 		pr_err("[error]vdsp cannot pwaitmode!!\n");
-		vdsp_reg_update(&dts_info->regs[FORCE_SHUTDOWN], ~((uint32_t) 0));
-		vdsp_reg_update(&dts_info->regs[AUTO_SHUTDOWN], 0);
+		vdsp_reg_update(&dts_info->regs[FORCE_SHUTDOWN], ~((uint32_t) 0), RT_PMU);
+		vdsp_reg_update(&dts_info->regs[AUTO_SHUTDOWN], 0, RT_PMU);
 		return -ENOMSG;
 	} else {
-		vdsp_reg_update(&dts_info->regs[DPSL_EN], ~((uint32_t) 0));
-		vdsp_reg_update(&dts_info->regs[VDSP_PD_SEL], 0);
-		vdsp_reg_update(&dts_info->regs[AUTO_SHUTDOWN], ~((uint32_t) 0));
+		vdsp_reg_update(&dts_info->regs[DPSL_EN], ~((uint32_t) 0), RT_PMU);
+		vdsp_reg_update(&dts_info->regs[VDSP_PD_SEL], 0, RT_PMU);
+		vdsp_reg_update(&dts_info->regs[AUTO_SHUTDOWN], ~((uint32_t) 0), RT_PMU);
 	}
 
 	/*Wait for the pmu state to stabilize */
@@ -373,11 +471,11 @@ static int vdsp_blk_enable(void *hw_arg)
 	int ret = 0;
 
 	/* vdsp blk en */
-	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_BLK_EN, 0x1CFF, ~((uint32_t) 0));
+	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_BLK_EN, 0x1FFF, ~((uint32_t) 0), RT_MMSYS);
 	if (ret)
 		pr_err("set vdsp blk failed:%d\n", ret);
 	/*vdsp int mask */
-	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_INT_MASK, 0xFFFF, 0);
+	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_INT_MASK, 0x3F, 0, RT_NO_SET_CLR);
 	if (ret)
 		pr_err("clear intr mask failed:%d\n", ret);
 	return ret;
@@ -389,11 +487,11 @@ static int vdsp_blk_disable(void *hw_arg)
 	int ret = 0;
 
 	/* vdsp blk disable */
-	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_BLK_EN, 0x1CFF, 0);
+	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_BLK_EN, 0x1FFF, 0, RT_MMSYS);
 	if (ret)
 		pr_err("clear vdsp blk failed:%d\n", ret);
 	/*vdsp int mask all */
-	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_INT_MASK, 0x3F, ~((uint32_t) 0));
+	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_INT_MASK, 0x3F, ~((uint32_t) 0), RT_NO_SET_CLR);
 	if (ret)
 		pr_err("set vdsp blk failed:%d\n", ret);
 	return ret;
@@ -424,8 +522,8 @@ static int enable(void *hw_arg)
 	}
 #endif
 	/* cancel force off vdsppll, need to wait 224us */
-	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0);
-	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0x1);
+	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0, RT_PMU);
+	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0x1, RT_PMU);
 	udelay(224);
 
 	ret = vdsp_power_on(hw);
@@ -443,8 +541,8 @@ static int enable(void *hw_arg)
 err_dsp_blk_eb:
 	vdsp_power_off(hw);
 err_dsp_pw_on:
-	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2);
-	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0);
+	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2, RT_PMU);
+	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0, RT_PMU);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	sprd_cam_domain_disable();
@@ -471,8 +569,8 @@ static int disable(void *hw_arg)
 		pr_err("[error]vdsp pw off ret:%d\n", ret);
 	}
 	/*force off vdsppll, need after vdsp power off */
-	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2);
-	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0);
+	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2, RT_PMU);
+	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0, RT_PMU);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	ret = sprd_cam_domain_disable();
 	if (ret) {
@@ -496,7 +594,7 @@ static void enable_dvfs(void *hw_arg)
 		pr_err("Invalid argument\n");
 		return;
 	}
-	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, DVFS_EN))
+	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, DVFS_EN, RT_MMSYS))
 		pr_err("error enable dvfs\n");
 }
 
@@ -508,7 +606,7 @@ static void disable_dvfs(void *hw_arg)
 		pr_err("Invalid argument\n");
 		return;
 	}
-	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, 0))
+	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, 0, RT_MMSYS))
 		pr_err("error disable dvfs\n");
 }
 

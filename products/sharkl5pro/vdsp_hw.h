@@ -20,25 +20,25 @@
 #include <linux/types.h>
 #include "vdsp_ipi_drv.h"
 
-#define VDSP_FIRMWIRE_SIZE    (1024*1024*6)
-#define VDSP_DRAM_ADDR       (0x7f000000)
-#define VDSP_DRAM_SIZE       (256*1024)
+#define VDSP_FIRMWIRE_SIZE			(1024*1024*6)
+#define VDSP_DRAM_ADDR				(0x7f000000)
+#define VDSP_DRAM_SIZE				(256*1024)
 
-#define DRIVER_NAME "vdsp"
-#define REG_RESET		(0x04)
-#define REG_RUNSTALL	(0x3084)
-#define REG_LP_CTL          (0x3090)
-#define REG_VDSP_INT_CTL         (0x3094)
-#define REG_QOS_THRESHOLD   (0xBC)
-#define REG_QOS_3           (0xD4)
-#define REG_QOS_SEL3        (0xD8)
+#define DRIVER_NAME             "vdsp"
+#define REG_RESET               (0x04)
+#define REG_RUNSTALL            (0x3084)	//not support set/clr
+#define REG_LP_CTL              (0x3090)	//not support set/clr
+#define REG_VDSP_INT_CTL        (0x3094)	//not support set/clr
+#define REG_QOS_THRESHOLD       (0xBC)
+#define REG_QOS_3               (0xD4)
+#define REG_QOS_SEL3            (0xD8)
 
-#define REG_PD_AP_VDSP_CFG   (0x7e4)
+#define REG_PD_AP_VDSP_CFG                (0x7e4)
 #define REG_PD_AP_VDSP_CORE_INT_DISABLE   (0x7f8)
-#define REG_PD_AP_VDSP_DLSP_ENA    (0x804)
-#define REG_ISPPLL_REL_CFG       (0x8c)
+#define REG_PD_AP_VDSP_DLSP_ENA           (0x804)
+#define REG_ISPPLL_REL_CFG                (0x8c)
 
-#define REG_AP_DFS_EN_CTL      (0x8)
+#define REG_AP_DFS_EN_CTL        (0x8)
 
 #define T610_MAX_FREQ      768
 #define T618_MAX_FREQ      936
@@ -62,6 +62,12 @@ enum {
 enum vdsp_init_flags {
 	/*! Use interrupts in DSP->host communication */
 	XRP_INIT_USE_HOST_IRQ = 0x1,
+};
+
+enum reg_type{
+	RT_PMU = 0,
+	RT_APAHB,
+	RT_NO_SET_CLR,
 };
 
 struct xvp;
@@ -266,6 +272,6 @@ int vdsp_runtime_resume(struct device *dev);
 int vdsp_runtime_suspend(struct device *dev);
 
 int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
-	uint32_t mask, uint32_t val);
+	uint32_t mask, uint32_t val, enum reg_type rt);
 
 #endif

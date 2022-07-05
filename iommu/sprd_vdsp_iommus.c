@@ -197,7 +197,6 @@ error_iova_init:
 
 static void iommus_release(struct sprd_vdsp_iommus *iommus)
 {
-
 	unsigned int index = 0;
 	struct sprd_vdsp_iommu_dev *iommu_dev = NULL;
 
@@ -209,7 +208,6 @@ static void iommus_release(struct sprd_vdsp_iommus *iommus)
 
 	for (index = 0; index < SPRD_VDSP_IOMMU_MAX; index++) {
 		iommu_dev = iommus->iommu_devs[index];
-		pr_debug("iommus[%d]\n", index);
 		if ((iommu_dev) && (iommu_dev->status & (0x1 << 0))) {
 			iommu_dev->ops->release(iommu_dev);
 			kfree(iommu_dev);

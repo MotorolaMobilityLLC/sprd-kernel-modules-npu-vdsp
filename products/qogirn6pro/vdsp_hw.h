@@ -24,41 +24,35 @@
 #define VDSP_DRAM_ADDR       (0x34000000)
 #define VDSP_DRAM_SIZE       (256*1024)
 
-#define DRIVER_NAME "vdsp"
+#define DRIVER_NAME		"vdsp"
+
+/*CAMSYS AHB 0x30000000*/
 #define MM_SYS_EN		(0x0)
 #define VDSP_BLK_EN		(0x8)
-#define VDSP_INT_MASK	(0x18)
+#define VDSP_INT_MASK	(0x18)		//not support set/clr
+#define VDSP_CORE_CFG	(0xBC)		//not support set/clr
 #define REG_RESET		(0xd4)
-#define APB_EB0			(0x0)
-#define REG_QOS_THRESHOLD0  (0xBC)	/*hww */
-#define REG_QOS_3           (0xD4)
-#define REG_QOS_SEL3        (0xD8)
 
-/*MM_SYS_EN		(0x0)*/
-#define DVFS_EN		BIT(3)	//GENMASK(23, 16)
+/*MM_SYS_EN (0x0)*/
+#define DVFS_EN			BIT(3)	//GENMASK(23, 16)
 
-#define T610_MAX_FREQ      768
-#define T618_MAX_FREQ      936
 #define N6PRO_MAX_FREQ		1014
 
 /*PUM REG*/
 #define PD_STATUS			(0x510)
 #define DSLP_ENA			(0x1FC)
 #define CORE_INT_DISABLE	(0x25C)
-#define PD_CAMERA_CFG_0				(0x2E8)
+#define PD_CAMERA_CFG_0		(0x2E8)
 #define PD_CFG_0			(0x2FC)
 
 /*PD_VDSP_BLK_CFG_0*/
-#define PD_SEL			(1U << 27)
+#define PD_SEL			    (1U << 27)
 #define PD_FORCE_SHUTDOWN	(1U << 25)
 #define PD_AUTO_SHUTDOWN	(1U << 24)
 
-/*CAMSYS AHB*/
-#define VDSP_CORE_CFG	0xBC
-
 /*VDSP_CORE_CFG*/
-#define VDSP_PWAITMODE	(1U << 12)	/* OFFSET 0xBC */
-#define VDSP_RUNSTALL	(1U << 2)
+#define VDSP_PWAITMODE		(1U << 12)	/* OFFSET 0xBC */
+#define VDSP_RUNSTALL		(1U << 2)
 
 /*MM_RESET*/
 #define VDSP_RESET	(1U << 5)
@@ -82,6 +76,12 @@ enum {
 enum vdsp_init_flags {
 	/*! Use interrupts in DSP->host communication */
 	XRP_INIT_USE_HOST_IRQ = 0x1,
+};
+
+enum reg_type{
+	RT_PMU = 0,
+	RT_MMSYS,
+	RT_NO_SET_CLR,
 };
 
 enum sprd_vdsp_kernel_power_level {
@@ -308,6 +308,6 @@ int vdsp_runtime_suspend(struct device *dev);
 int vdsp_irq_register(void *data);
 
 int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
-	uint32_t mask, uint32_t val);
+	uint32_t mask, uint32_t val, enum reg_type rt);
 
 #endif

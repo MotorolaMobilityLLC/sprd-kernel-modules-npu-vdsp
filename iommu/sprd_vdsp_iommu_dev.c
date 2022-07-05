@@ -571,7 +571,7 @@ static int iommu_dev_unmap(struct sprd_vdsp_iommu_dev *iommu_dev,
 	struct sprd_vdsp_iommu_iova *iova_dev = NULL;
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev = NULL;
 	struct sprd_vdsp_iommu_map_record *record_dev = NULL;
-	struct sprd_iommu_unmap_param unmap_param;
+	struct sprd_iommu_unmap_param unmap_param; //temp
 	unsigned long irq_flag = 0;
 	int ret;
 

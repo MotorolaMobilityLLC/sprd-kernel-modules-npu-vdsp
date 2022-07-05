@@ -28,6 +28,7 @@
 #include "vdsp_hw.h"
 #include "xrp_internal.h"
 #include "sprd_dvfs_vdsp.h"
+#include "vdsp_debugfs.h"
 
 #if 1
 #define 	VDSP_CLK256M		256000000	//SHARKL5PRO_VDSP_CLK256M
@@ -45,13 +46,18 @@
 	fmt, current->pid, __LINE__, __func__
 
 
+#define PMU_SET_OFFSET		0x1000
+#define PMU_CLR_OFFSET		0x2000
+#define APAHB_SET_OFFSET	0x1000
+#define APAHB_CLR_OFFSET	0x2000
+
  /***********************register function********************/
 int vdsp_regmap_read(struct regmap *regmap, uint32_t reg, uint32_t *val)
 {
 	return regmap_read(regmap, reg, val);
 }
 
-int vdsp_regmap_write(struct regmap *regmap, uint32_t reg, uint32_t  val)
+int vdsp_regmap_write(struct regmap *regmap, uint32_t reg, uint32_t val)
 {
 	return regmap_write(regmap, reg, val);
 }
@@ -69,25 +75,97 @@ int vdsp_regmap_read_mask(struct regmap *regmap, uint32_t reg,
 	return ret;
 }
 
-int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
-	uint32_t mask, uint32_t val)
+static int regmap_set(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
+{
+	int ret = -1;
+	switch (rt) {
+	case RT_PMU:
+		ret = vdsp_regmap_write(regmap, offset + PMU_SET_OFFSET, val);
+		break;
+	case RT_APAHB:
+		ret = vdsp_regmap_write(regmap, offset + APAHB_SET_OFFSET, val);
+		break;
+	default:
+		break;
+	};
+	pr_debug("return:%d, reg type\n", ret, rt);
+	return ret;
+}
+
+static int regmap_clr(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
+{
+	int ret = -2;
+	switch (rt) {
+	case RT_PMU:
+		ret = vdsp_regmap_write(regmap, offset + PMU_CLR_OFFSET, val);
+		break;
+	case RT_APAHB:
+		ret = vdsp_regmap_write(regmap, offset + APAHB_CLR_OFFSET, val);
+		break;
+	default:
+		break;
+	};
+	pr_debug("return:%d, reg type\n", ret, rt);
+	return ret;
+}
+
+static int vdsp_regmap_set_clr(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val, enum reg_type rt)
+{
+	int ret = 0;
+	unsigned int set, clr;
+	set = val & mask;
+	clr = (~val) & mask;
+
+	pr_debug("regmap:%#lx, offset:%#x, mask:%#x val:%#x,rt:%#x\n", regmap, offset, mask, val, rt);
+	if (set) {
+		ret = regmap_set(regmap, offset, set, rt);
+		if (ret) {
+			pr_err("regmap_set failed, regmap:%#lx, offset:%#x, set:%#x,rt:%#x\n",
+				regmap, offset, set, rt);
+			goto end;
+		}
+	}
+	if (clr) {
+		ret = regmap_clr(regmap, offset, clr, rt);
+		if (ret) {
+			pr_err("regmap_clr failed, regmap:%#lx, offset:%#x, clr:%#x,rt:%#x\n",
+				regmap, offset, clr, rt);
+			goto end;
+		}
+	}
+end:
+	return ret;
+}
+
+static int vdsp_regmap_not_set_clr(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val, enum reg_type rt)
 {
 	int ret = -1;
 	uint tmp;
 
-#if 1
-	ret = regmap_read(regmap, offset, &tmp);
+	ret = vdsp_regmap_read(regmap, offset, &tmp);
 	if (ret)
 		return ret;
 	tmp &= ~mask;
-	ret = regmap_write(regmap, offset, tmp | (val & mask));
-
-#else
-	ret = regmap_update_bits(regmap, offset, mask, val);
-#endif
+	ret = vdsp_regmap_write(regmap, offset, tmp | (val & mask));
 
 	return ret;
 }
+
+int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
+	uint32_t mask, uint32_t val, enum reg_type rt)
+{
+	if (rt == RT_PMU || rt == RT_APAHB){
+		return vdsp_regmap_set_clr(regmap, offset, mask, val, rt);
+	} else if (rt == RT_NO_SET_CLR) {
+		return vdsp_regmap_not_set_clr(regmap, offset, mask, val, rt);
+	} else {
+		pr_err("[error]input unknowned reg type\n");
+		return -3;
+	}
+}
+
 /***********************register function end********************/
 
 static void parse_qos(void *hw_arg, void *of_node)
@@ -148,7 +226,7 @@ static void set_qos(void *hw_arg)
 
 	/*set qos threshold */
 	vdsp_regmap_update_bits(hw->ahb_regmap, REG_QOS_THRESHOLD, (0xf << 28 | 0xf << 24),
-		((hw->qos.ar_qos_threshold << 28) | (hw->qos.aw_qos_threshold << 24)));
+		((hw->qos.ar_qos_threshold << 28) | (hw->qos.aw_qos_threshold << 24)), RT_APAHB);
 	/*set qos 3 */
 	vdsp_regmap_update_bits(hw->ahb_regmap, REG_QOS_3, 0xf0ffffff,
 		((hw->qos.ar_qos_vdsp_msti << 28)
@@ -157,10 +235,10 @@ static void set_qos(void *hw_arg)
 		| (hw->qos.ar_qos_vdsp_idma << 12)
 		| (hw->qos.aw_qos_vdsp_idma << 8)
 		| (hw->qos.ar_qos_vdma << 4)
-		| (hw->qos.aw_qos_vdma)));
+		| (hw->qos.aw_qos_vdma)), RT_APAHB);
 
 	/*set qos sel 3 */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_QOS_SEL3, 0x7f, 0x7f);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_QOS_SEL3, 0x7f, 0x7f, RT_APAHB);
 }
 
 static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
@@ -210,9 +288,9 @@ static void reset(void *hw_arg)
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	pr_debug("arg:%p ,offset:%x, value:0\n", hw->ahb_regmap, REG_RESET);
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RESET, (0x3 << 9), (0x3 << 9));
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RESET, (0x3 << 9), (0x3 << 9), RT_APAHB);
 	udelay(10);
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RESET, (0x3 << 9), 0);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RESET, (0x3 << 9), 0, RT_APAHB);
 }
 
 static void halt(void *hw_arg)
@@ -220,7 +298,7 @@ static void halt(void *hw_arg)
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	pr_debug("arg:%p ,offset:%x, value:1\n", hw->ahb_regmap, REG_RUNSTALL);
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RUNSTALL, (0x1 << 2), (0x1 << 2));
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RUNSTALL, (0x1 << 2), (0x1 << 2), RT_NO_SET_CLR);
 }
 
 static void release(void *hw_arg)
@@ -228,12 +306,11 @@ static void release(void *hw_arg)
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	pr_debug("arg:%p ,offset:%x, value:0\n", hw->ahb_regmap, REG_RUNSTALL);
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RUNSTALL, (0x1 << 2), 0);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RUNSTALL, (0x1 << 2), 0, RT_NO_SET_CLR);
 }
 
 static void get_max_freq(uint32_t * max_freq)
 {
-#if 1
 	struct device_node *hwf;
 	const char *chip_type;
 
@@ -252,12 +329,6 @@ static void get_max_freq(uint32_t * max_freq)
 	}
 efuse_out:
 	pr_debug("get max_freq:%d\n", *max_freq);
-
-#else
-	*max_freq = T610_MAX_FREQ;
-
-	pr_debug("get max_freq:%d\n", *max_freq);
-#endif
 }
 
 static int enable(void *hw_arg)
@@ -267,13 +338,13 @@ static int enable(void *hw_arg)
 	int ret = 0;
 
 	/*pd_ap_vdsp_force_shutdown bit */
-	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CORE_INT_DISABLE, (0x1 << 0), 0);
-	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CFG, (0x1 << 25), 0);
-	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_DLSP_ENA, (0x1 << 0), 0);
+	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CORE_INT_DISABLE, (0x1 << 0), 0, RT_PMU);
+	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CFG, (0x1 << 25), 0, RT_PMU);
+	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_DLSP_ENA, (0x1 << 0), 0, RT_PMU);
 	/*vdsp_stop_en */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_LP_CTL, 0xC, 0x8);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_LP_CTL, 0xC, 0x8, RT_NO_SET_CLR);
 	/*isppll open for 936M */
-	vdsp_regmap_update_bits(hw->pmu_regmap, REG_ISPPLL_REL_CFG, (0x1 << 0), 0x1);
+	vdsp_regmap_update_bits(hw->pmu_regmap, REG_ISPPLL_REL_CFG, (0x1 << 0), 0x1, RT_PMU);
 	/* loop PD_AD_VDSP_STATE */
 	do {
 		if (vdsp_regmap_read_mask(hw->pmu_regmap, 0xbc, 0xff000000, &rdata)) {
@@ -283,9 +354,9 @@ static int enable(void *hw_arg)
 	} while (rdata);
 
 	/* IPI &vdma enable */
-	vdsp_regmap_update_bits(hw->ahb_regmap, 0x0, (0x1 << 6) | (0x1 << 3), (0x1 << 6) | (0x1 << 3));
+	vdsp_regmap_update_bits(hw->ahb_regmap, 0x0, (0x1 << 6) | (0x1 << 3), (0x1 << 6) | (0x1 << 3), RT_APAHB);
 	/*vdsp_all_int_mask = 0 */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_VDSP_INT_CTL, (0x1 << 13), 0);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_VDSP_INT_CTL, (0x1 << 13), 0, RT_NO_SET_CLR);
 
 	return ret;
 }
@@ -297,14 +368,14 @@ static void disable(void *hw_arg)
 	uint32_t count = 0;
 
 	/*vdma&IPI  disable */
-	vdsp_regmap_update_bits(hw->ahb_regmap, 0x0, (0x1 << 3) | (0x1 << 6), 0);
+	vdsp_regmap_update_bits(hw->ahb_regmap, 0x0, (0x1 << 3) | (0x1 << 6), 0, RT_APAHB);
 	/*vdsp_stop_en = 1 */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_LP_CTL, (0x1 << 2), (0x1 << 2));
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_LP_CTL, (0x1 << 2), (0x1 << 2), RT_NO_SET_CLR);
 	/*mask all int */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_VDSP_INT_CTL, 0x1ffff, 0x1ffff);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_VDSP_INT_CTL, 0x1ffff, 0x1ffff, RT_NO_SET_CLR);
 	/*pmu ap_vdsp_core_int_disable set 1 */
-	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CORE_INT_DISABLE, 0x1, 0x1);
-
+	vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CORE_INT_DISABLE,
+		0x1, 0x1, RT_PMU);
 	udelay(1);
 	/*wait for vdsp enter pwait mode */
 	while (((rdata & (0x1 << 5)) == 0) && (count < 100)) {
@@ -318,12 +389,12 @@ static void disable(void *hw_arg)
 	pr_debug("disable wait count:%d\n", count);
 	if (count < 100) {
 		/*pmu auto shutdown by vdsp core */
-		vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CFG, 0x9000000, 0x1000000);	/*bit 24 27 */
-		vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_DLSP_ENA, 0x1, 0x1);
+		vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CFG, 0x9000000, 0x1000000, RT_PMU);	/*bit 24 27 */
+		vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_DLSP_ENA, 0x1, 0x1, RT_PMU);
 	} else {
 		pr_err("timed out need force shut down\n");
 		/*bit25 =1 , bit24 = 0 */
-		vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CFG, 0xb000000, 0x2000000);
+		vdsp_regmap_update_bits(hw->pmu_regmap, REG_PD_AP_VDSP_CFG, 0xb000000, 0x2000000, RT_PMU);
 	}
 }
 
@@ -351,9 +422,17 @@ static uint32_t translate_dvfsindex_to_freq(uint32_t index)
 
 static void setdvfs(void *hw_arg, uint32_t index)
 {
-	uint32_t freq = translate_dvfsindex_to_freq(index);
+	uint32_t freq;
+	unsigned int debugfs_dvfs_level;
 
-	pr_debug("freq:%d, index:%d\n", freq, index);
+	debugfs_dvfs_level = vdsp_debugfs_dvfs_level();
+	if (debugfs_dvfs_level > 0)
+	{
+		index = debugfs_dvfs_level;
+		pr_info("debugfs force dvfs, freq:%d, index:%d\n", translate_dvfsindex_to_freq(index), index);
+	}
+	freq = translate_dvfsindex_to_freq(index);
+	pr_debug("set vdsp dvfs, freq:%d, index:%d\n", freq, index);
 	vdsp_dvfs_notifier_call_chain(&freq);
 }
 

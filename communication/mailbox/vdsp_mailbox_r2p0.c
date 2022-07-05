@@ -343,7 +343,7 @@ static int mbox_enable(void *ctx)
 	struct vdsp_mbox_ctx_desc *context = (struct vdsp_mbox_ctx_desc *)ctx;
 
 	/*power domain on follow cam sys */
-	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, ~((uint32_t) 0));
+	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, ~((uint32_t) 0), RT_MMSYS);
 	reg_write32((void *)(vdsp_outbox_base + MBOX_FIFO_RST), FIFO_RESET_BIT);
 	reg_write32((void *)(vdsp_inbox_base + MBOX_IRQ_MSK), mbox_cfg.inbox_irq_mask);
 	reg_write32((void *)(vdsp_outbox_base + MBOX_IRQ_MSK), mbox_cfg.outbox_irq_mask);
@@ -368,7 +368,7 @@ static int mbox_disable(void *ctx)
 	context->mbox_active = 0;
 	spin_unlock_irqrestore(&context->mbox_spinlock, flags);
 	/*mailbox disable */
-	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, 0);
+	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, 0, RT_MMSYS);
 	/*power domain off follow cam sys */
 	return ret;
 }
