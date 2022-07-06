@@ -19,6 +19,10 @@ else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 PROJ_DIR := qogirn6pro
 VERSION_DIR := v2
 ccflags-y += -DMYN6
+else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6l)
+PROJ_DIR := qogirn6l
+VERSION_DIR := v2
+ccflags-y += -DMYN6
 endif
 
 #ccflags-y += -DDEBUG
@@ -54,6 +58,8 @@ ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),sharkl5pro) # sharkl5pro
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/ipi/*.c)
 else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro) # qogirn6pro
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/mailbox/*.c)
+else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6l) # qogirn6l
+KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/mailbox/*.c)
 endif
 
 #
@@ -75,6 +81,14 @@ endif
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 ccflags-y += -I$(srctree)/drivers/devfreq/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/dvfs_driver/dvfs_reg_param/qogirn6pro/
+ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/mmsys_comm/
+ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/common/
+ccflags-y += -I$(KO_MODULE_PATH)/communication/mailbox/
+endif
+
+ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6l)
+ccflags-y += -I$(srctree)/drivers/devfreq/
+ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/dvfs_driver/dvfs_reg_param/qogirn6l/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/mmsys_comm/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/common/
 ccflags-y += -I$(KO_MODULE_PATH)/communication/mailbox/
