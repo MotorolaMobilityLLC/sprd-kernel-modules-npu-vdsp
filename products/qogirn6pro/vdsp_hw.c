@@ -56,6 +56,9 @@
 #define MMSYS_SET_OFFSET	0x1000
 #define MMSYS_CLR_OFFSET	0x2000
 
+#define vmin(a, b) ((a) < (b) ? (a) :(b))
+#define vmax(a, b) ((a) > (b) ? (a) :(b))
+
  // waitting cam driver ready Porting for A12 K54 version*/
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 int sprd_cam_pw_on(void);
@@ -641,11 +644,12 @@ static void setdvfs(void *hw_arg, uint32_t index)
 #ifdef WORKAROUND_USING_SW_DVFS
 	struct dvfs_ops_sw *dvfs_sw = get_dvfs_ops_sw();
 #else
-	uint32_t freq = translate_dvfsindex_to_freq(index);
+	uint32_t freq;
 	struct ip_dvfs_ops *vdsp_dvfs_ops_ptr = NULL;
 #endif
 	unsigned int debugfs_dvfs_level;
 
+	index = vmin(index, 3);
 	debugfs_dvfs_level = vdsp_debugfs_dvfs_level();
 	if (debugfs_dvfs_level > 0)
 	{
@@ -658,6 +662,7 @@ static void setdvfs(void *hw_arg, uint32_t index)
 	pr_debug("using sw dvfs [workaround], index:%d\n", index);
 #else
 	vdsp_dvfs_ops_ptr = get_vdsp_dvfs_ops();
+	freq = translate_dvfsindex_to_freq(index);
 	pr_debug("freq:%d, index:%d\n", freq, index);
 	vdsp_dvfs_ops_ptr->set_work_freq(NULL, freq);
 #endif
