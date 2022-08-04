@@ -361,15 +361,26 @@ static int mbox_enable(void *ctx)
 static int mbox_disable(void *ctx)
 {
 	int ret = 0;
+	int count = 0;
+	uint32_t read_value = 0;
 	unsigned long flags = 0;
 	struct vdsp_mbox_ctx_desc *context = (struct vdsp_mbox_ctx_desc *)ctx;
+
+	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, 0, RT_MMSYS);
+	/*power domain off follow cam sys */
+
+	do {
+		vdsp_regmap_read_mask(context->mm_ahb, 0, MM_AHB_MBOX_EB, &read_value);
+		if (read_value == 0)
+			break;
+		count++;
+	} while (count < 10);
+	pr_debug("AHB Mbox en disable, read_value[%d], count[%d]\n", read_value, count);
 
 	spin_lock_irqsave(&context->mbox_spinlock, flags);
 	context->mbox_active = 0;
 	spin_unlock_irqrestore(&context->mbox_spinlock, flags);
-	/*mailbox disable */
-	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, 0, RT_MMSYS);
-	/*power domain off follow cam sys */
+
 	return ret;
 }
 

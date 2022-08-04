@@ -309,5 +309,6 @@ int vdsp_irq_register(void *data);
 
 int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
 	uint32_t mask, uint32_t val, enum reg_type rt);
-
+int vdsp_regmap_read_mask(struct regmap *regmap, uint32_t reg,
+	uint32_t mask, uint32_t *val);
 #endif
