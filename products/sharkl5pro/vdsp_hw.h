@@ -40,8 +40,6 @@
 
 #define REG_AP_DFS_EN_CTL        (0x8)
 
-#define T610_MAX_FREQ      768
-#define T618_MAX_FREQ      936
 
 #define APAHB_HREG_MWR(reg, msk, val) \
 		(REG_WR((reg), \
@@ -225,18 +223,6 @@ struct xrp_hw_ops {
 	 */
 	void (*memset_hw) (void __iomem *dst, int c, size_t sz);
 	/*!
-	 * enable dvfs
-	 */
-	void (*enable_dvfs) (void *hw_arg);
-	/*!
-	 * disable dvfs
-	 */
-	void (*disable_dvfs) (void *hw_arg);
-	/*!
-	 * set dvfs index
-	 */
-	void (*setdvfs) (void *hw_arg, uint32_t index);
-	/*!
 	 * Check DSP status.
 	 *
 	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
@@ -244,14 +230,15 @@ struct xrp_hw_ops {
 	 * \return whether the core has crashed and needs to be restarted
 	 */
 	bool(*panic_check) (void *hw_arg);
+
 	/*set qos */
-	void (*set_qos) (void *hw_arg);
+	int (*set_qos) (void *hw_arg);
+
 	/*request irq */
 	int (*vdsp_request_irq) (void *xvp_arg, void *hw_arg);
+
 	/*free irq */
 	void (*vdsp_free_irq) (void *xvp_arg, void *hw_arg);
-	/*get max_freq */
-	void (*get_max_freq) (uint32_t *max_freq);
 };
 
 long sprd_vdsp_init(struct platform_device *pdev, enum vdsp_init_flags flags,

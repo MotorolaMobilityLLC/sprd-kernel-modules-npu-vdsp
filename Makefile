@@ -12,6 +12,9 @@ KO_MODULE_NAME := sprd_vdsp
 KO_MODULE_OUT := $(BSP_MODULES_OUT)/sprd_vdsp
 KO_MODULE_KBUILD := $(CURDIR)/Kbuild
 
+KBUILD_EXTRA_SYMBOLS += $(BSP_MODULES_OUT)/mmdvfs/Module.symvers
+export KBUILD_EXTRA_SYMBOLS
+
 .PHONY: modules modules_install clean
 
 ifndef BSP_BOARD_PRODUCT_USING_VDSP

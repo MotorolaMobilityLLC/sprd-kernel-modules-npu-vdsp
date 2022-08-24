@@ -97,13 +97,13 @@ struct xrp_dvfs_ctrl {
 	__u32 en_ctl_flag;
 	union {
 		__u32 enable;
-		__u32 index;
+		__u32 level;
 	};
 };
 
 struct xrp_powerhint_ctrl {
 	int level;
-	__u32 acquire_release;
+	__u32 flag;
 };
 
 struct xrp_faceid_ctrl {

@@ -1,6 +1,6 @@
 
 /*
- * Copyright (C) 2017-2018 Spreadtrum Communications Inc.
+ * Copyright (C) 2021 Unisoc Communications Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -12,32 +12,23 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/regmap.h>
-#include <linux/mfd/syscon.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
+#include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/soc/sprd/hwfeature.h>
 #include <asm/cacheflush.h>
-#include "xrp_kernel_defs.h"
-#include "vdsp_hw.h"
-#include "xrp_internal.h"
-#include "sprd_dvfs_vdsp.h"
 #include "vdsp_debugfs.h"
-
-#if 1
-#define 	VDSP_CLK256M		256000000	//SHARKL5PRO_VDSP_CLK256M
-#define 	VDSP_CLK384M		384000000	//SHARKL5PRO_VDSP_CLK384M
-#define 	VDSP_CLK512M		512000000	//SHARKL5PRO_VDSP_CLK512M
-#define 	VDSP_CLK614M4		614400000	//SHARKL5PRO_VDSP_CLK614M4
-#define 	VDSP_CLK768M		768000000	//SHARKL5PRO_VDSP_CLK768M
-#define 	VDSP_CLK936M		936000000	//SHARKL5PRO_VDSP_CLK936M
-#endif
+#include "vdsp_hw.h"
+#include "vdsp_qos.h"
+#include "xrp_internal.h"
+#include "xrp_kernel_defs.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -52,12 +43,12 @@
 #define APAHB_CLR_OFFSET	0x2000
 
  /***********************register function********************/
-int vdsp_regmap_read(struct regmap *regmap, uint32_t reg, uint32_t *val)
+static int vdsp_regmap_read(struct regmap *regmap, uint32_t reg, uint32_t *val)
 {
 	return regmap_read(regmap, reg, val);
 }
 
-int vdsp_regmap_write(struct regmap *regmap, uint32_t reg, uint32_t val)
+static int vdsp_regmap_write(struct regmap *regmap, uint32_t reg, uint32_t val)
 {
 	return regmap_write(regmap, reg, val);
 }
@@ -72,12 +63,14 @@ int vdsp_regmap_read_mask(struct regmap *regmap, uint32_t reg,
 	ret = regmap_read(regmap, reg, val);
 	if (!ret)
 		*val &= ( uint32_t) mask;
+
 	return ret;
 }
 
 static int regmap_set(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
 {
 	int ret = -1;
+
 	switch (rt) {
 	case RT_PMU:
 		ret = vdsp_regmap_write(regmap, offset + PMU_SET_OFFSET, val);
@@ -88,13 +81,14 @@ static int regmap_set(struct regmap *regmap, uint32_t offset, uint32_t val, enum
 	default:
 		break;
 	};
-	pr_debug("return:%d, reg type\n", ret, rt);
+	pr_debug("return:%d, reg type:%d\n", ret, rt);
 	return ret;
 }
 
 static int regmap_clr(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
 {
-	int ret = -2;
+	int ret = -1;
+
 	switch (rt) {
 	case RT_PMU:
 		ret = vdsp_regmap_write(regmap, offset + PMU_CLR_OFFSET, val);
@@ -105,19 +99,21 @@ static int regmap_clr(struct regmap *regmap, uint32_t offset, uint32_t val, enum
 	default:
 		break;
 	};
-	pr_debug("return:%d, reg type\n", ret, rt);
+	pr_debug("return:%d, reg type:%d\n", ret, rt);
 	return ret;
 }
 
 static int vdsp_regmap_set_clr(struct regmap *regmap, uint32_t offset,
 	uint32_t mask, uint32_t val, enum reg_type rt)
 {
+	uint32_t set, clr;
 	int ret = 0;
-	unsigned int set, clr;
+
 	set = val & mask;
 	clr = (~val) & mask;
 
 	pr_debug("regmap:%#lx, offset:%#x, mask:%#x val:%#x,rt:%#x\n", regmap, offset, mask, val, rt);
+
 	if (set) {
 		ret = regmap_set(regmap, offset, set, rt);
 		if (ret) {
@@ -141,12 +137,16 @@ end:
 static int vdsp_regmap_not_set_clr(struct regmap *regmap, uint32_t offset,
 	uint32_t mask, uint32_t val, enum reg_type rt)
 {
+	uint32_t tmp;
 	int ret = -1;
-	uint tmp;
+
+	pr_debug("regmap:%#lx, offset:%#x, mask:%#x, val:%#x, rt:%#x\n", regmap, offset, mask, val, rt);
 
 	ret = vdsp_regmap_read(regmap, offset, &tmp);
-	if (ret)
+	if (ret) {
+		pr_err("regmap read  error!\n");
 		return ret;
+	}
 	tmp &= ~mask;
 	ret = vdsp_regmap_write(regmap, offset, tmp | (val & mask));
 
@@ -156,90 +156,17 @@ static int vdsp_regmap_not_set_clr(struct regmap *regmap, uint32_t offset,
 int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
 	uint32_t mask, uint32_t val, enum reg_type rt)
 {
-	if (rt == RT_PMU || rt == RT_APAHB){
+	if (rt == RT_PMU || rt == RT_APAHB) {
 		return vdsp_regmap_set_clr(regmap, offset, mask, val, rt);
 	} else if (rt == RT_NO_SET_CLR) {
 		return vdsp_regmap_not_set_clr(regmap, offset, mask, val, rt);
 	} else {
 		pr_err("[error]input unknowned reg type\n");
-		return -3;
+		return -1;
 	}
 }
 
 /***********************register function end********************/
-
-static void parse_qos(void *hw_arg, void *of_node)
-{
-	struct device_node *qos_node = NULL;
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
-
-	if ((NULL == hw_arg) || (NULL == of_node)) {
-		pr_err("hw_arg:%lx , of_node:%lx\n", (unsigned long)hw_arg, (unsigned long)of_node);
-		return;
-	}
-	qos_node = of_parse_phandle(of_node, "vdsp-qos", 0);
-	if (qos_node) {
-		if (of_property_read_u8(qos_node, "arqos-vdsp-msti", &hw->qos.ar_qos_vdsp_msti))
-			hw->qos.ar_qos_vdsp_msti = 6;
-
-		if (of_property_read_u8(qos_node, "awqos-vdsp-mstd", &hw->qos.aw_qos_vdsp_mstd))
-			hw->qos.aw_qos_vdsp_mstd = 6;
-
-		if (of_property_read_u8(qos_node, "arqos-vdsp-mstd", &hw->qos.ar_qos_vdsp_mstd))
-			hw->qos.ar_qos_vdsp_mstd = 6;
-
-		if (of_property_read_u8(qos_node, "arqos-vdsp-idma", &hw->qos.ar_qos_vdsp_idma))
-			hw->qos.ar_qos_vdsp_idma = 1;
-
-		if (of_property_read_u8(qos_node, "awqos-vdsp-idma", &hw->qos.aw_qos_vdsp_idma))
-			hw->qos.aw_qos_vdsp_idma = 1;
-
-		if (of_property_read_u8(qos_node, "arqos-vdma", &hw->qos.ar_qos_vdma))
-			hw->qos.ar_qos_vdma = 1;
-
-		if (of_property_read_u8(qos_node, "awqos-vdma", &hw->qos.aw_qos_vdma))
-			hw->qos.aw_qos_vdma = 1;
-
-		if (of_property_read_u8(qos_node, "arqos-threshold", &hw->qos.ar_qos_threshold))
-			hw->qos.ar_qos_threshold = 0x0f;
-
-		if (of_property_read_u8(qos_node, "awqos-threshold", &hw->qos.aw_qos_threshold))
-			hw->qos.aw_qos_threshold = 0x0f;
-
-	} else {
-		hw->qos.ar_qos_vdsp_msti = 6;
-		hw->qos.ar_qos_vdsp_mstd = 6;
-		hw->qos.aw_qos_vdsp_mstd = 6;
-		hw->qos.ar_qos_vdsp_idma = 1;
-		hw->qos.aw_qos_vdsp_idma = 1;
-		hw->qos.ar_qos_vdma = 1;
-		hw->qos.aw_qos_vdma = 1;
-		hw->qos.ar_qos_threshold = 0x0f;
-		hw->qos.aw_qos_threshold = 0x0f;
-	}
-	return;
-}
-
-static void set_qos(void *hw_arg)
-{
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
-
-	/*set qos threshold */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_QOS_THRESHOLD, (0xf << 28 | 0xf << 24),
-		((hw->qos.ar_qos_threshold << 28) | (hw->qos.aw_qos_threshold << 24)), RT_APAHB);
-	/*set qos 3 */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_QOS_3, 0xf0ffffff,
-		((hw->qos.ar_qos_vdsp_msti << 28)
-		| (hw->qos.ar_qos_vdsp_mstd << 20)
-		| (hw->qos.aw_qos_vdsp_mstd << 16)
-		| (hw->qos.ar_qos_vdsp_idma << 12)
-		| (hw->qos.aw_qos_vdsp_idma << 8)
-		| (hw->qos.ar_qos_vdma << 4)
-		| (hw->qos.aw_qos_vdma)), RT_APAHB);
-
-	/*set qos sel 3 */
-	vdsp_regmap_update_bits(hw->ahb_regmap, REG_QOS_SEL3, 0x7f, 0x7f, RT_APAHB);
-}
 
 static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 {
@@ -269,8 +196,8 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 		.vdsp_smsg_addr = (unsigned int)*sz,
 		.vdsp_log_addr = log_addr,
 	};
-	pr_debug("device_mmio_base:%lx , (host_irq)mode:%d, offset:%d, bit:%d, "
-		"(device_irq)mode:%d, offset:%d, bit:%d, irq:%d, "
+	pr_debug("device_mmio_base:%lx, (host_irq)mode:%d, offset:%d, bit:%d,"
+		"(device_irq)mode:%d, offset:%d, bit:%d, irq:%d,"
 		"vdsp_smsg addr:0x%lx, vdsp_log_addr:0x%lx\n",
 		hw_sync_data->device_mmio_base, hw_sync_data->host_irq_mode,
 		hw_sync_data->host_irq_offset, hw_sync_data->host_irq_bit,
@@ -309,27 +236,6 @@ static void release(void *hw_arg)
 	vdsp_regmap_update_bits(hw->ahb_regmap, REG_RUNSTALL, (0x1 << 2), 0, RT_NO_SET_CLR);
 }
 
-static void get_max_freq(uint32_t * max_freq)
-{
-	struct device_node *hwf;
-	const char *chip_type;
-
-	hwf = of_find_node_by_path("/hwfeature/auto");
-	if (!hwf) {
-		*max_freq = T610_MAX_FREQ;
-		goto efuse_out;
-	}
-	chip_type = of_get_property(hwf, "efuse", NULL);
-	pr_debug("efuse was %s\n", chip_type);
-
-	if (!strcmp(chip_type, "T618")) {
-		*max_freq = T618_MAX_FREQ;
-	} else {
-		*max_freq = T610_MAX_FREQ;
-	}
-efuse_out:
-	pr_debug("get max_freq:%d\n", *max_freq);
-}
 
 static int enable(void *hw_arg)
 {
@@ -398,44 +304,6 @@ static void disable(void *hw_arg)
 	}
 }
 
-static uint32_t translate_dvfsindex_to_freq(uint32_t index)
-{
-
-	switch (index) {
-	case 0:
-		return VDSP_CLK256M;
-	case 1:
-		return VDSP_CLK384M;
-	case 2:
-		return VDSP_CLK512M;
-	case 3:
-		return VDSP_CLK614M4;
-	case 4:
-		return VDSP_CLK768M;
-	case 5:
-		return VDSP_CLK936M;
-	default:
-		return VDSP_CLK256M;
-	}
-	return 0;
-}
-
-static void setdvfs(void *hw_arg, uint32_t index)
-{
-	uint32_t freq;
-	unsigned int debugfs_dvfs_level;
-
-	debugfs_dvfs_level = vdsp_debugfs_dvfs_level();
-	if (debugfs_dvfs_level > 0)
-	{
-		index = debugfs_dvfs_level;
-		pr_info("debugfs force dvfs, freq:%d, index:%d\n", translate_dvfsindex_to_freq(index), index);
-	}
-	freq = translate_dvfsindex_to_freq(index);
-	pr_debug("set vdsp dvfs, freq:%d, index:%d\n", freq, index);
-	vdsp_dvfs_notifier_call_chain(&freq);
-}
-
 static void send_irq(void *hw_arg)
 {
 	struct vdsp_hw *hw = hw_arg;
@@ -494,20 +362,16 @@ static const struct xrp_hw_ops hw_ops = {
 	.memset_hw = NULL, /*memset_hw_function*/
 	.enable = enable,
 	.disable = disable,
-	.enable_dvfs = NULL,
-	.disable_dvfs = NULL,
-	.setdvfs = setdvfs,
 	.set_qos = set_qos,
 	.vdsp_request_irq = vdsp_request_irq,
 	.vdsp_free_irq = vdsp_free_irq,
-	.get_max_freq = get_max_freq,
 };
 
 static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 	struct vdsp_hw *hw, int mem_idx, enum vdsp_init_flags *init_flags)
 {
-	struct resource *mem;
 	long ret;
+	struct resource *mem;
 	struct device_node *np;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, mem_idx);
@@ -537,37 +401,31 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 	/* qos */
 	parse_qos(hw, pdev->dev.of_node);
 	/* irq */
-	ret = of_property_read_u32_array(pdev->dev.of_node,
-		"device-irq", hw->device_irq, ARRAY_SIZE(hw->device_irq));
-	if (ret == 0) {
-		u32 device_irq_host_offset;
+	ret = of_property_read_u32_array(pdev->dev.of_node, "device-irq", hw->device_irq,
+		ARRAY_SIZE(hw->device_irq));
+	if (ret) {
+		pr_debug("using polling mode on the device side\n");
+	} else {
+		u32 device_irq_host_offset = 0;
+		u32 device_irq_mode = 0;
 
-		ret = of_property_read_u32(pdev->dev.of_node, "device-irq-host-offset", &device_irq_host_offset);
-		if (ret == 0) {
+		ret = of_property_read_u32(pdev->dev.of_node, "device-irq-host-offset",
+			&device_irq_host_offset);
+		if (ret == 0)
 			hw->device_irq_host_offset = device_irq_host_offset;
-		} else {
+		else
 			hw->device_irq_host_offset = hw->device_irq[0];
-			ret = 0;
-		}
-	}
-	if (ret == 0) {
-		u32 device_irq_mode;
 
 		ret = of_property_read_u32(pdev->dev.of_node, "device-irq-mode", &device_irq_mode);
-		if (likely(device_irq_mode < XRP_IRQ_MAX))
+		if (likely(device_irq_mode < XRP_IRQ_MAX)) {
 			hw->device_irq_mode = device_irq_mode;
-		else
-			ret = -ENOENT;
-	}
-	if (ret == 0) {
-		pr_debug("device IRQ MMIO host offset = 0x%08x,"
-			"offset = 0x%08x, bit = %d,"
-			"device IRQ = %d, IRQ mode = %d",
-			hw->device_irq_host_offset,
-			hw->device_irq[0], hw->device_irq[1],
-			hw->device_irq[2], hw->device_irq_mode);
-	} else {
-		pr_debug("using polling mode on the device side\n");
+			pr_debug("device IRQ MMIO host offset = 0x%08x,"
+				"offset = 0x%08x, bit = %d,"
+				"device IRQ = %d, IRQ mode = %d",
+				hw->device_irq_host_offset,
+				hw->device_irq[0], hw->device_irq[1],
+				hw->device_irq[2], hw->device_irq_mode);
+		}
 	}
 
 	ret = of_property_read_u32_array(pdev->dev.of_node, "host-irq", hw->host_irq,
@@ -579,7 +437,7 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 		if (likely(host_irq_mode < XRP_IRQ_MAX))
 			hw->host_irq_mode = host_irq_mode;
 		else
-			ret = -ENOENT;
+			return -ENOENT;
 	}
 
 	if (ret == 0 && hw->host_irq_mode != XRP_IRQ_NONE)
@@ -642,11 +500,10 @@ static int vdsp_driver_probe(struct platform_device *pdev)
 {
 	struct vdsp_hw *hw = devm_kzalloc(&pdev->dev, sizeof(*hw), GFP_KERNEL);
 	const struct of_device_id *match;
-	long (*init) (struct platform_device * pdev, struct vdsp_hw * hw);
+	long (*init) (struct platform_device *pdev, struct vdsp_hw *hw);
 	long ret;
 
-	pr_debug(" sprd-vdsp: vdsp_driver probe \n");
-
+	pr_info(" sprd-vdsp: vdsp_driver probe \n");//for debug
 	if (!hw)
 		return -ENOMEM;
 
@@ -662,7 +519,6 @@ static int vdsp_driver_probe(struct platform_device *pdev)
 		hw->xrp = ERR_PTR(ret);
 		return 0;
 	}
-
 }
 
 static int vdsp_driver_remove(struct platform_device *pdev)

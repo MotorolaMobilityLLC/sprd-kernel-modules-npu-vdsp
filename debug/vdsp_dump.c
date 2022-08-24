@@ -1,3 +1,7 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
+
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/hashtable.h>

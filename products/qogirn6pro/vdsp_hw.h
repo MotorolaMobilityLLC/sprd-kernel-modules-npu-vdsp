@@ -20,33 +20,31 @@
 #include <linux/types.h>
 #include "vdsp_mailbox_drv.h"
 
-#define VDSP_FIRMWIRE_SIZE    (1024*1024*6)
-#define VDSP_DRAM_ADDR       (0x34000000)
-#define VDSP_DRAM_SIZE       (256*1024)
+#define VDSP_FIRMWIRE_SIZE		(1024*1024*6)
+#define VDSP_DRAM_ADDR			(0x34000000)
+#define VDSP_DRAM_SIZE			(256*1024)
 
 #define DRIVER_NAME		"vdsp"
 
 /*CAMSYS AHB 0x30000000*/
 #define MM_SYS_EN		(0x0)
 #define VDSP_BLK_EN		(0x8)
-#define VDSP_INT_MASK	(0x18)		//not support set/clr
-#define VDSP_CORE_CFG	(0xBC)		//not support set/clr
+#define VDSP_INT_MASK		(0x18)		//not support set/clr
+#define VDSP_CORE_CFG		(0xBC)		//not support set/clr
 #define REG_RESET		(0xd4)
 
 /*MM_SYS_EN (0x0)*/
 #define DVFS_EN			BIT(3)	//GENMASK(23, 16)
 
-#define N6PRO_MAX_FREQ		1014
-
 /*PUM REG*/
-#define PD_STATUS			(0x510)
-#define DSLP_ENA			(0x1FC)
+#define PD_STATUS		(0x510)
+#define DSLP_ENA		(0x1FC)
 #define CORE_INT_DISABLE	(0x25C)
 #define PD_CAMERA_CFG_0		(0x2E8)
-#define PD_CFG_0			(0x2FC)
+#define PD_CFG_0		(0x2FC)
 
 /*PD_VDSP_BLK_CFG_0*/
-#define PD_SEL			    (1U << 27)
+#define PD_SEL			(1U << 27)
 #define PD_FORCE_SHUTDOWN	(1U << 25)
 #define PD_AUTO_SHUTDOWN	(1U << 24)
 
@@ -55,7 +53,7 @@
 #define VDSP_RUNSTALL		(1U << 2)
 
 /*MM_RESET*/
-#define VDSP_RESET	(1U << 5)
+#define VDSP_RESET		(1U << 5)
 
 #define APAHB_HREG_MWR(reg, msk, val) \
 		(REG_WR((reg), \
@@ -82,17 +80,6 @@ enum reg_type{
 	RT_PMU = 0,
 	RT_MMSYS,
 	RT_NO_SET_CLR,
-};
-
-enum sprd_vdsp_kernel_power_level {
-	SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS = -1,
-	SPRD_VDSP_KERNEL_POWERHINT_LEVEL_0,
-	SPRD_VDSP_KERNEL_POWERHINT_LEVEL_1,
-	SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2,
-	SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3,
-	SPRD_VDSP_KERNEL_POWERHINT_LEVEL_4,
-	SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5,
-	SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX,
 };
 
 struct xvp;
@@ -251,18 +238,6 @@ struct xrp_hw_ops {
 	 */
 	void (*memset_hw) (void __iomem * dst, int c, size_t sz);
 	/*!
-	 * enable dvfs
-	 */
-	void (*enable_dvfs) (void *hw_arg);
-	/*!
-	 * disable dvfs
-	 */
-	void (*disable_dvfs) (void *hw_arg);
-	/*!
-	 * set dvfs index
-	 */
-	void (*setdvfs) (void *hw_arg, uint32_t index);
-	/*!
 	 * Check DSP status.
 	 *
 	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
@@ -270,19 +245,21 @@ struct xrp_hw_ops {
 	 * \return whether the core has crashed and needs to be restarted
 	 */
 	 bool(*panic_check) (void *hw_arg);
+
 	/*set qos */
-	void (*set_qos) (void *hw_arg);
+	int (*set_qos) (void *hw_arg);
+
 	/*request irq */
 	int (*vdsp_request_irq) (void *xvp_arg, void *hw_arg);
+
 	/*free irq */
 	void (*vdsp_free_irq) (void *xvp_arg, void *hw_arg);
-	/*get max_freq */
-	void (*get_max_freq) (uint32_t *max_freq);
+
 	void (*stop_vdsp) (void *hw_arg);
-	 /**/ int (*init_communication_hw) (void *hw_arg);
+
+	 /*communication*/
+	int (*init_communication_hw) (void *hw_arg);
 	int (*deinit_communication_hw) (void *hw_arg);
-	enum sprd_vdsp_kernel_power_level(*translate_powerlevel) (int32_t in);
-	enum sprd_vdsp_kernel_power_level(*get_maxsupported_level) (void *xvp_arg);
 };
 
 long sprd_vdsp_init(struct platform_device *pdev, enum vdsp_init_flags flags,
@@ -301,9 +278,6 @@ irqreturn_t vdsp_log_irq_handler(int irq, void *private);
 
 int vdsp_hw_irq_register(void *data);
 int vdsp_hw_irq_unregister(void);
-
-int vdsp_runtime_resume(struct device *dev);
-int vdsp_runtime_suspend(struct device *dev);
 
 int vdsp_irq_register(void *data);
 

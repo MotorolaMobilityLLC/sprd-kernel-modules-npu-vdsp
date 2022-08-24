@@ -40,7 +40,7 @@
 struct xvp_file {
 	struct xvp *xvp;
 	struct list_head load_lib_list;
-	struct vdsp_dvfs_filpowerhint powerhint_info;
+	struct vdsp_powerhint powerhint;
 	struct mutex lock;
 	uint32_t working;
 	struct list_head buf_list;

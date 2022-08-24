@@ -11,28 +11,27 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#include <linux/version.h>
-#include <linux/regmap.h>
-#include <linux/mfd/syscon.h>
+
 #include <linux/delay.h>
+#include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
+#include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
-#include <linux/slab.h>
-#include <asm/cacheflush.h>
-
 #include <linux/pm_runtime.h>
-#include "xrp_kernel_defs.h"
-#include "vdsp_hw.h"
-#include "xrp_internal.h"
-#include "vdsp_mailbox_drv.h"
-#include "vdsp_dvfs.h"
-#include "mm_dvfs.h"
+#include <linux/regmap.h>
+#include <linux/slab.h>
+#include <linux/version.h>
+#include <asm/cacheflush.h>
 #include "vdsp_debugfs.h"
-
+#include "vdsp_hw.h"
+#include "vdsp_mailbox_drv.h"
+#include "vdsp_qos.h"
+#include "xrp_internal.h"
+#include "xrp_kernel_defs.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -56,16 +55,6 @@
 #define MMSYS_SET_OFFSET	0x1000
 #define MMSYS_CLR_OFFSET	0x2000
 
-#define vmin(a, b) ((a) < (b) ? (a) :(b))
-#define vmax(a, b) ((a) > (b) ? (a) :(b))
-
- // waitting cam driver ready Porting for A12 K54 version*/
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
-int sprd_cam_pw_on(void);
-int sprd_cam_pw_off(void);
-int sprd_cam_domain_eb(void);
-int sprd_cam_domain_disable(void);
-#endif
 
 static const char *const syscon_name[] = {
 	"vdsp_force_shutdown",
@@ -119,16 +108,18 @@ int vdsp_regmap_read_mask(struct regmap *regmap, uint32_t reg,
 	int ret = 0;
 
 	if ((!(regmap)) || (!val))
-		return -1;
+		return -EINVAL;
 	ret = regmap_read(regmap, reg, val);
 	if (!ret)
 		*val &= ( uint32_t) mask;
+
 	return ret;
 }
 
 static int regmap_set(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
 {
 	int ret = -1;
+
 	switch (rt) {
 	case RT_PMU:
 		ret = vdsp_regmap_write(regmap, offset + PMU_SET_OFFSET, val);
@@ -139,13 +130,14 @@ static int regmap_set(struct regmap *regmap, uint32_t offset, uint32_t val, enum
 	default:
 		break;
 	};
-	pr_debug("return:%d, reg type\n", ret, rt);
+	pr_debug("return:%d, reg type:%d\n", ret, rt);
 	return ret;
 }
 
 static int regmap_clr(struct regmap *regmap, uint32_t offset, uint32_t val, enum reg_type rt)
 {
-	int ret = -2;
+	int ret = -1;
+
 	switch (rt) {
 	case RT_PMU:
 		ret = vdsp_regmap_write(regmap, offset + PMU_CLR_OFFSET, val);
@@ -156,19 +148,21 @@ static int regmap_clr(struct regmap *regmap, uint32_t offset, uint32_t val, enum
 	default:
 		break;
 	};
-	pr_debug("return:%d, reg type\n", ret, rt);
+	pr_debug("return:%d, reg type:%d\n", ret, rt);
 	return ret;
 }
 
 static int vdsp_regmap_set_clr(struct regmap *regmap, uint32_t offset,
 	uint32_t mask, uint32_t val, enum reg_type rt)
 {
+	uint32_t set, clr;
 	int ret = 0;
-	unsigned int set, clr;
+
 	set = val & mask;
 	clr = (~val) & mask;
 
 	pr_debug("regmap:%#lx, offset:%#x, mask:%#x val:%#x,rt:%#x\n", regmap, offset, mask, val, rt);
+
 	if (set) {
 		ret = regmap_set(regmap, offset, set, rt);
 		if (ret) {
@@ -192,8 +186,8 @@ end:
 static int vdsp_regmap_not_set_clr(struct regmap *regmap, uint32_t offset,
 	uint32_t mask, uint32_t val, enum reg_type rt)
 {
+	uint32_t tmp;
 	int ret = -1;
-	uint tmp;
 
 	pr_debug("regmap:%#lx, offset:%#x, mask:%#x, val:%#x, rt:%#x\n", regmap, offset, mask, val, rt);
 
@@ -204,40 +198,22 @@ static int vdsp_regmap_not_set_clr(struct regmap *regmap, uint32_t offset,
 	}
 	tmp &= ~mask;
 	ret = vdsp_regmap_write(regmap, offset, tmp | (val & mask));
+
 	return ret;
 }
 
 int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
 	uint32_t mask, uint32_t val, enum reg_type rt)
 {
-	int ret = 0;
-	if (rt == RT_PMU || rt == RT_MMSYS)
-		ret = vdsp_regmap_set_clr(regmap, offset, mask, val, rt);
-	else if (rt == RT_NO_SET_CLR)
-		ret = vdsp_regmap_not_set_clr(regmap, offset, mask, val, rt);
-	else
-		ret = -3;
-	if (ret)
-		pr_err("error ret:%d, reg type:%d\n", ret, rt);
-	return ret;
+	if (rt == RT_PMU || rt == RT_MMSYS) {
+		return vdsp_regmap_set_clr(regmap, offset, mask, val, rt);
+	} else if (rt == RT_NO_SET_CLR) {
+		return vdsp_regmap_not_set_clr(regmap, offset, mask, val, rt);
+	} else {
+		pr_err("[error]input unknowned reg type\n");
+		return -1;
+	}
 }
-
-#if 0
-int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
-	uint32_t mask, uint32_t val, enum reg_type rt)
-{
-	int ret = -1;
-	uint tmp;
-
-	ret = regmap_read(regmap, offset, &tmp);
-	if (ret)
-		return ret;
-	tmp &= ~mask;
-	ret = regmap_write(regmap, offset, tmp | (val & mask));
-
-	return ret;
-}
-#endif
 
 static int vdsp_reg_read(struct vdsp_reg *p, uint32_t *val)
 {
@@ -269,8 +245,7 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 		[XRP_IRQ_EDGE_SW] = XRP_DSP_SYNC_IRQ_MODE_EDGE,
 	};
 	struct vdsp_hw *hw = hw_arg;
-	struct vdsp_side_sync_data *hw_sync_data =
-		kmalloc(sizeof(*hw_sync_data), GFP_KERNEL);
+	struct vdsp_side_sync_data *hw_sync_data = kmalloc(sizeof(*hw_sync_data), GFP_KERNEL);
 
 	if (!hw_sync_data) {
 		pr_err("hw_sync_data is NULL !!!\n");
@@ -289,7 +264,7 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 		.vdsp_smsg_addr = (unsigned int)*sz,
 		.vdsp_log_addr = log_addr,
 	};
-	pr_debug("device_mmio_base:%lx , (host_irq)mode:%d, offset:%d, bit:%d,"
+	pr_debug("device_mmio_base:%lx, (host_irq)mode:%d, offset:%d, bit:%d,"
 		"(device_irq)mode:%d, offset:%d, bit:%d, irq:%d,"
 		"vdsp_smsg addr:0x%lx, vdsp_log_addr:0x%lx\n",
 		hw_sync_data->device_mmio_base, hw_sync_data->host_irq_mode,
@@ -308,13 +283,14 @@ static void reset(void *hw_arg)
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	vdsp_regmap_update_bits(hw->mm_ahb, REG_RESET, VDSP_RESET, ~((uint32_t) 0), RT_MMSYS);
+	udelay(10);
 	vdsp_regmap_update_bits(hw->mm_ahb, REG_RESET, VDSP_RESET, 0, RT_MMSYS);
 }
 
 static void halt(void *hw_arg)
 {
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	uint32_t val = 0;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	if (vdsp_regmap_read_mask(hw->mm_ahb, VDSP_CORE_CFG, 0xFFFFFFFF, &val))
 		pr_err("error read mmahb:%d\n", VDSP_CORE_CFG);
@@ -325,9 +301,9 @@ static void halt(void *hw_arg)
 
 static void stop_vdsp(void *hw_arg)
 {
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
-	uint32_t val = 0;
 	uint32_t i = 0;
+	uint32_t val = 0;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	/*mask all interrupt and wait vdsp to pwaitmode */
 	vdsp_reg_update(&dts_info->regs[INTR_DIS], ~((uint32_t) 0), RT_PMU);
@@ -356,10 +332,10 @@ static void release(void *hw_arg)
 static int vdsp_power_on(void *hw_arg)
 {
 	int ret = 0;
+	unsigned int cycle = 0;
 	unsigned int power_state1 = 0;
 	unsigned int power_state2 = 0;
 	unsigned int power_state3 = 0;
-	unsigned int cycle = 0;
 
 	/* vdsp domain power on */
 	/* 1:auto shutdown en, shutdown with ap; 0: control by bit25 */
@@ -405,12 +381,12 @@ error:
 
 static int vdsp_power_off(void *hw_arg)
 {
+	unsigned int cycle;
 	unsigned int pwait = 0;
-	int cycle;
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	unsigned int power_state1 = 0;
 	unsigned int power_state2 = 0;
 	unsigned int power_state3 = 0;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	pr_debug("power start\n");
 	vdsp_reg_update(&dts_info->regs[INTR_DIS], ~((uint32_t) 0), RT_PMU);
@@ -470,8 +446,8 @@ static int vdsp_power_off(void *hw_arg)
 
 static int vdsp_blk_enable(void *hw_arg)
 {
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	int ret = 0;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	/* vdsp blk en */
 	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_BLK_EN, 0x1FFF, ~((uint32_t) 0), RT_MMSYS);
@@ -481,13 +457,14 @@ static int vdsp_blk_enable(void *hw_arg)
 	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_INT_MASK, 0x3F, 0, RT_NO_SET_CLR);
 	if (ret)
 		pr_err("clear intr mask failed:%d\n", ret);
+
 	return ret;
 }
 
 static int vdsp_blk_disable(void *hw_arg)
 {
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	int ret = 0;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	/* vdsp blk disable */
 	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_BLK_EN, 0x1FFF, 0, RT_MMSYS);
@@ -497,33 +474,23 @@ static int vdsp_blk_disable(void *hw_arg)
 	ret = vdsp_regmap_update_bits(hw->mm_ahb, VDSP_INT_MASK, 0x3F, ~((uint32_t) 0), RT_NO_SET_CLR);
 	if (ret)
 		pr_err("set vdsp blk failed:%d\n", ret);
+
 	return ret;
 }
 
 static int enable(void *hw_arg)
 {
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	int ret = 0;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	pr_debug("vdsp enable\n");
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
-	ret = sprd_cam_pw_on();	//set reference num increase
-	if (ret) {
-		pr_err("[error]cam pw on ret:%d\n", ret);
-		return ret;
-	}
-	ret = sprd_cam_domain_eb();
-	if (ret) {
-		pr_err("[error]cam doamin eb ret:%d\n", ret);
-		goto err_cam_eb;
-	}
-#else
+
 	ret = pm_runtime_get_sync(hw->xrp->dev);
 	if (ret < 0) {
 		pr_err("vdsp fail to power on cam sys\n");
 		goto err_cam_pw_on;
 	}
-#endif
+
 	/* cancel force off vdsppll, need to wait 224us */
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0, RT_PMU);
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0x1, RT_PMU);
@@ -546,22 +513,16 @@ err_dsp_blk_eb:
 err_dsp_pw_on:
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2, RT_PMU);
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0, RT_PMU);
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
-	sprd_cam_domain_disable();
-err_cam_eb:
-	sprd_cam_pw_off();
-#else
 err_cam_pw_on:
 	pm_runtime_put_sync(hw->xrp->dev);
-#endif
+
 	return ret;
 }
 
 static int disable(void *hw_arg)
 {
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 	int ret = 0;
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	ret = vdsp_blk_disable(hw);
 	if (ret) {
@@ -574,99 +535,10 @@ static int disable(void *hw_arg)
 	/*force off vdsppll, need after vdsp power off */
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2, RT_PMU);
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0, RT_PMU);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
-	ret = sprd_cam_domain_disable();
-	if (ret) {
-		pr_err("[error]cam dm disable ret:%d\n", ret);
-	}
-	ret = sprd_cam_pw_off();	/*set reference num decrease */
-	if (ret) {
-		pr_err("[error]cam pw off ret:%d\n", ret);
-	}
-#else
+
 	pm_runtime_put_sync(hw->xrp->dev);
-#endif
+
 	return ret;
-}
-
-static void enable_dvfs(void *hw_arg)
-{
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
-
-	if (!(hw->mm_ahb)) {
-		pr_err("Invalid argument\n");
-		return;
-	}
-	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, DVFS_EN, RT_MMSYS))
-		pr_err("error enable dvfs\n");
-}
-
-static void disable_dvfs(void *hw_arg)
-{
-	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
-
-	if (!(hw->mm_ahb)) {
-		pr_err("Invalid argument\n");
-		return;
-	}
-	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, 0, RT_MMSYS))
-		pr_err("error disable dvfs\n");
-}
-
-static uint32_t translate_dvfsindex_to_freq(uint32_t index)
-{
-	switch (index) {
-	case 0:
-		return VDSP_CLK260;
-	case 1:
-		return VDSP_CLK3072;
-	case 2:
-		return VDSP_CLK5120;
-	case 3:
-		return VDSP_CLK6144;
-	case 4:
-		return VDSP_CLK8192;
-	case 5:
-		return VDSP_CLK10140;
-	default:
-		return VDSP_CLK260;
-	}
-}
-
-static void get_max_freq(uint32_t * max_freq)
-{
-	*max_freq = translate_dvfsindex_to_freq((uint32_t) 5);
-	pr_debug("get max_freq:%d\n", *max_freq);
-}
-
-static void setdvfs(void *hw_arg, uint32_t index)
-{
-#ifdef WORKAROUND_USING_SW_DVFS
-	struct dvfs_ops_sw *dvfs_sw = get_dvfs_ops_sw();
-#else
-	uint32_t freq;
-	struct ip_dvfs_ops *vdsp_dvfs_ops_ptr = NULL;
-#endif
-	unsigned int debugfs_dvfs_level;
-
-	index = vmin(index, 3);
-	debugfs_dvfs_level = vdsp_debugfs_dvfs_level();
-	if (debugfs_dvfs_level > 0)
-	{
-		index = debugfs_dvfs_level;
-		pr_info("debugfs_dvfs_level, index:%d\n", index);
-	}
-
-#ifdef WORKAROUND_USING_SW_DVFS
-	dvfs_sw->setdvfs_index(NULL, index);
-	pr_debug("using sw dvfs [workaround], index:%d\n", index);
-#else
-	vdsp_dvfs_ops_ptr = get_vdsp_dvfs_ops();
-	freq = translate_dvfsindex_to_freq(index);
-	pr_debug("freq:%d, index:%d\n", freq, index);
-	vdsp_dvfs_ops_ptr->set_work_freq(NULL, freq);
-#endif
-
 }
 
 static int send_irq(void *hw_arg)
@@ -718,34 +590,6 @@ static int deinit_mbox(void *hw_arg)
 	return -1;
 }
 
-static enum sprd_vdsp_kernel_power_level translate_powerlevel_fromuser(int32_t in)
-{
-	switch (in) {
-	case -1:
-		return SPRD_VDSP_KERNEL_POWERHINT_RESTORE_DVFS;
-	case 0:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_0;
-	case 1:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_1;
-	case 2:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_2;
-	case 3:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_3;
-	case 4:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_4;
-	case 5:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
-	default:
-		return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_MAX;
-	}
-}
-
-static enum sprd_vdsp_kernel_power_level get_maxsupported_level(void *data)
-{
-	(void) data;
-	return SPRD_VDSP_KERNEL_POWERHINT_LEVEL_5;
-}
-
 int vdsp_request_irq(void *xvp_arg, void *hw_arg)
 {
 	struct device *dev = (struct device *)xvp_arg;
@@ -783,17 +627,12 @@ static const struct xrp_hw_ops hw_ops = {
 	.memset_hw = NULL,	/*memset_hw_function */
 	.enable = enable,
 	.disable = disable,
-	.enable_dvfs = enable_dvfs,
-	.disable_dvfs = disable_dvfs,
-	.setdvfs = setdvfs,
+	.set_qos = set_qos,
 	.vdsp_request_irq = vdsp_request_irq,
 	.vdsp_free_irq = vdsp_free_irq,
-	.get_max_freq = get_max_freq,
 	.stop_vdsp = stop_vdsp,
 	.init_communication_hw = init_mbox,
 	.deinit_communication_hw = deinit_mbox,
-	.translate_powerlevel = translate_powerlevel_fromuser,
-	.get_maxsupported_level = get_maxsupported_level,
 };
 #ifdef FACEID_VDSP_FULL_TEE
 static long sprd_vdsp_parse_mem(struct vdsp_hw *hw)
@@ -831,12 +670,12 @@ static long sprd_vdsp_parse_mem(struct vdsp_hw *hw)
 static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 	struct vdsp_hw *hw, int mem_idx, enum vdsp_init_flags *init_flags)
 {
+	int i;
+	uint32_t syscon_args[2];
 	long ret;
 	const char *pname;
 	struct regmap *tregmap;
-	int i;
 	struct device_node *np = pdev->dev.of_node;
-	uint32_t syscon_args[2];
 	struct device_node *sub_np;
 	struct resource parse_resource = {0};
 
@@ -883,8 +722,7 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 		else
 			hw->device_irq_host_offset = hw->device_irq[0];
 
-		ret = of_property_read_u32(pdev->dev.of_node, "device-irq-mode",
-			&device_irq_mode);
+		ret = of_property_read_u32(pdev->dev.of_node, "device-irq-mode", &device_irq_mode);
 		if (likely(device_irq_mode < XRP_IRQ_MAX)) {
 			hw->device_irq_mode = device_irq_mode;
 			pr_debug("device IRQ MMIO host offset = 0x%08x,"
@@ -1007,49 +845,6 @@ static int vdsp_driver_remove(struct platform_device *pdev)
 {
 	return sprd_vdsp_deinit(pdev);
 }
-
-int vdsp_runtime_resume(struct device *dev)
-{
-	struct vdsp_mbox_ctx_desc *mboxdesc = NULL;
-	struct xvp *xvp = dev_get_drvdata(dev);
-
-	if (unlikely(xvp->off)) {
-		//TBD CHECK
-	}
-
-	mboxdesc = get_vdsp_mbox_ctx_desc();
-	if (mboxdesc == NULL) {
-		pr_err("get_vdsp_mbox_ctx_desc failed\n");
-		return -ENOSYS;
-	}
-	pr_debug("mbox init called\n");
-	return mboxdesc->ops->ctx_init(mboxdesc);
-
-}
-
-EXPORT_SYMBOL(vdsp_runtime_resume);
-
-int vdsp_runtime_suspend(struct device *dev)
-{
-	struct vdsp_mbox_ctx_desc *mboxdesc = NULL;
-	struct xvp *xvp = dev_get_drvdata(dev);
-
-	halt(xvp->hw_arg);
-#if 1
-	mboxdesc = get_vdsp_mbox_ctx_desc();
-	if (mboxdesc) {
-		pr_debug("mbox deinit called\n");
-		return mboxdesc->ops->ctx_deinit(mboxdesc);
-	}
-	pr_err("get_vdsp_mbox_ctx_desc failed\n");
-	return -1;
-#else
-	ret = vdsp_commu_hw_suspend();
-#endif
-	return 0;
-}
-
-EXPORT_SYMBOL(vdsp_runtime_suspend);
 
 int vdsp_hw_irq_register(void *data)
 {

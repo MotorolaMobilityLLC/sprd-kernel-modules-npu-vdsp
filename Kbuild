@@ -19,10 +19,10 @@ else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 PROJ_DIR := qogirn6pro
 VERSION_DIR := v2
 ccflags-y += -DMYN6
-else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6l)
-PROJ_DIR := qogirn6l
-VERSION_DIR := v2
-ccflags-y += -DMYN6
+endif
+
+ifeq ($(BSP_VDSP_TARGET_DTB),ums9620_3c10) #Apollo
+ccflags-y += -DDVFS_HIGH_FREQ_RANGE
 endif
 
 #ccflags-y += -DDEBUG
@@ -51,14 +51,12 @@ KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/memory/*.c)
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/xvp/*.c)
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/debug/*.c)
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/products/$(PROJ_DIR)/*.c)
-KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/dvfs/$(VERSION_DIR)/*.c)
+KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/dvfs/*.c)
 # KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/trusty/$(VERSION_DIR)/*.c)
 
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),sharkl5pro) # sharkl5pro
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/ipi/*.c)
 else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro) # qogirn6pro
-KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/mailbox/*.c)
-else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6l) # qogirn6l
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/mailbox/*.c)
 endif
 
@@ -70,7 +68,7 @@ ccflags-y += -I$(KO_MODULE_PATH)/iommu/
 ccflags-y += -I$(KO_MODULE_PATH)/memory/
 ccflags-y += -I$(KO_MODULE_PATH)/debug/
 ccflags-y += -I$(KO_MODULE_PATH)/products/$(PROJ_DIR)/
-ccflags-y += -I$(KO_MODULE_PATH)/dvfs/$(VERSION_DIR)/
+ccflags-y += -I$(KO_MODULE_PATH)/dvfs/
 #ccflags-y += -I$(KO_MODULE_PATH)/trusty/v2/
 
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),sharkl5pro)
@@ -81,14 +79,6 @@ endif
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 ccflags-y += -I$(srctree)/drivers/devfreq/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/dvfs_driver/dvfs_reg_param/qogirn6pro/
-ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/mmsys_comm/
-ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/common/
-ccflags-y += -I$(KO_MODULE_PATH)/communication/mailbox/
-endif
-
-ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6l)
-ccflags-y += -I$(srctree)/drivers/devfreq/
-ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/dvfs_driver/dvfs_reg_param/qogirn6l/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/mmsys_comm/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/common/
 ccflags-y += -I$(KO_MODULE_PATH)/communication/mailbox/

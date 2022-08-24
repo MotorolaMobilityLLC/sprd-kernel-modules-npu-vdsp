@@ -66,31 +66,32 @@
 #include <linux/timer.h>
 #include <asm/mman.h>
 #include <asm/uaccess.h>
-#include "xrp_firmware.h"
-#include "vdsp_hw.h"
-#include "xrp_internal.h"
-#include "xrp_kernel_defs.h"
-#include "xrp_kernel_dsp_interface.h"
-#include "xvp_main.h"
-#ifdef MYN6P
-#include "vdsp_mailbox_drv.h"
-#endif
-#ifdef MYL5
-#include "vdsp_ipi_drv.h"
-#endif
-#ifdef FACEID_VDSP_FULL_TEE
-#include "xrp_faceid.h"
-#endif
-#include "vdsp_log.h"
-#include "vdsp_dvfs.h"
-#include "vdsp_dump.h"
-#include "vdsp_debugfs.h"
+
 #include "sprd_vdsp_iommus.h"
 #include "sprd_vdsp_mem_core.h"
 #include "sprd_vdsp_mem_xvp_init.h"
 #include "sprd_vdsp_mem_xvpfile.h"
 #include "sprd_iommu_test_debug.h"
 #include "sprd_vdsp_mem_test_debug.h"
+#include "vdsp_hw.h"
+#include "vdsp_log.h"
+#include "vdsp_dvfs.h"
+#include "vdsp_dump.h"
+#include "vdsp_debugfs.h"
+#ifdef MYN6P
+#include "vdsp_mailbox_drv.h"
+#endif
+#ifdef MYL5
+#include "vdsp_ipi_drv.h"
+#endif
+#include "xrp_firmware.h"
+#include "xrp_internal.h"
+#include "xrp_kernel_defs.h"
+#include "xrp_kernel_dsp_interface.h"
+#ifdef FACEID_VDSP_FULL_TEE
+#include "xrp_faceid.h"
+#endif
+#include "xvp_main.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -606,25 +607,6 @@ static inline void xrp_release_dsp(struct xvp *xvp)
 			xvp->hw_ops->release(xvp->hw_arg);
 	}
 }
-
-static inline void xvp_dsp_enable_dvfs(struct xvp *xvp)
-{
-	if (xvp->hw_ops->enable_dvfs)
-		xvp->hw_ops->enable_dvfs(xvp->hw_arg);
-}
-
-static inline void xvp_dsp_disable_dvfs(struct xvp *xvp)
-{
-	if (xvp->hw_ops->disable_dvfs)
-		xvp->hw_ops->disable_dvfs(xvp->hw_arg);
-}
-
-static inline void xvp_dsp_setdvfs(struct xvp *xvp, uint32_t index)
-{
-	if (xvp->hw_ops->setdvfs)
-		xvp->hw_ops->setdvfs(xvp->hw_arg, index);
-}
-
 static inline void xvp_set_qos(struct xvp *xvp)
 {
 	if (xvp->hw_ops->set_qos)
@@ -649,14 +631,88 @@ static inline int xvp_deinit_communicaiton(struct xvp *xvp)
 }
 #endif
 
+/**************** dvfs related function ****************/
+static inline int vdsp_dvfs_init(struct xvp *xvp)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->init)
+		return dvfs->ops->init(xvp);
+	return -1;
+}
+
+static inline void vdsp_dvfs_deinit(struct xvp *xvp)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->deinit)
+		dvfs->ops->deinit(xvp);
+}
+
+static inline void vdsp_dvfs_enable(struct xvp *xvp)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->enable)
+		dvfs->ops->enable(xvp->hw_arg);
+}
+
+static inline void vdsp_dvfs_disable(struct xvp *xvp)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->disable)
+		dvfs->ops->disable(xvp->hw_arg);
+}
+
+static inline void vdsp_dvfs_set(struct xvp *xvp, uint32_t level)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->setdvfs)
+		dvfs->ops->setdvfs(xvp->hw_arg, level);
+}
+static inline void vdsp_dvfs_release_powerhint(void *filp)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->release_powerhint)
+		dvfs->ops->release_powerhint(filp);
+}
+
+static inline int32_t vdsp_dvfs_set_powerhint(void *data, int32_t level, uint32_t flag)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->set_powerhint)
+		return dvfs->ops->set_powerhint(data, level, flag);
+	return -1;
+}
+
+static inline void vdsp_dvfs_preprocess(struct xvp *xvp)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->preprocess)
+		dvfs->ops->preprocess(xvp);
+}
+
+static inline void vdsp_dvfs_postprocess(struct xvp *xvp)
+{
+	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
+
+	if (dvfs->ops->postprocess)
+		dvfs->ops->postprocess(xvp);
+}
+
 static int xvp_file_release_list(struct file *filp)
 {
-	struct loadlib_info *libinfo, *libinfo1, *temp, *temp1;
-	struct xvp_file *xvpfile_temp, *xvp_file;
-	unsigned long bkt;
 	uint32_t find = 0;
-	long ret;
 	int32_t result = 0;
+	unsigned long bkt;
+	long ret;
+	struct loadlib_info *libinfo, *libinfo1, *tmp, *tmp1;
+	struct xvp_file *tmp_xvpfile, *xvp_file;
 	struct xrp_known_file *p;
 	struct xvp *xvp;
 	struct xrp_unload_cmdinfo unloadinfo;
@@ -664,7 +720,7 @@ static int xvp_file_release_list(struct file *filp)
 
 	xvp_file = (struct xvp_file *)filp->private_data;
 	xvp = xvp_file->xvp;
-	libinfo = libinfo1 = temp = temp1 = NULL;
+	libinfo = libinfo1 = tmp = tmp1 = NULL;
 
 	pr_debug("xvp file release list\n");
 
@@ -680,15 +736,15 @@ static int xvp_file_release_list(struct file *filp)
 	 */
 
 	/*release lib load list */
-	list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list, node_libinfo) {
+	list_for_each_entry_safe(libinfo, tmp, &xvp_file->load_lib_list, node_libinfo) {
 		find = 0;
 		/*check whether other xvp_file in system has loaded this lib */
 		mutex_lock(&xvp->xrp_known_files_lock);
 		hash_for_each(xvp->xrp_known_files, bkt, p, node) {
 			if (((struct file *)(p->filp))->private_data != xvp_file) {
-				xvpfile_temp = (struct xvp_file *)(((struct file *)(p->filp))->private_data);
+				tmp_xvpfile = (struct xvp_file *)(((struct file *)(p->filp))->private_data);
 				find = 0;
-				list_for_each_entry_safe(libinfo1, temp1, &xvpfile_temp->load_lib_list, node_libinfo) {
+				list_for_each_entry_safe(libinfo1, tmp1, &tmp_xvpfile->load_lib_list, node_libinfo) {
 					if (0 == strcmp(libinfo1->libname, libinfo->libname)) {
 						/*find the same lib loaded by other file */
 						find = 1;
@@ -731,7 +787,7 @@ static int xvp_file_release_list(struct file *filp)
 	mutex_unlock(&(xvp->load_lib.libload_mutex));
 
 	/*release power hint later */
-	vdsp_release_powerhint(filp);
+	vdsp_dvfs_release_powerhint(filp);
 	return result;
 }
 
@@ -790,10 +846,10 @@ static int sprd_vdsp_boot_firmware(struct xvp *xvp)
 
 static int sprd_unmap_request(struct file *filp, struct xrp_request *rq, uint32_t krqflag)
 {
-	struct xvp_file *xvp_file = filp->private_data;
 	size_t n_buffers = rq->n_buffers;
 	long ret = 0;
 	struct xvp_buf *in_buf;
+	struct xvp_file *xvp_file = filp->private_data;
 
 	if (krqflag == 1) {
 		pr_debug("kernel request, no need unmap\n");
@@ -1233,12 +1289,12 @@ static long xrp_ioctl_set_dvfs(struct file *filp, struct xrp_dvfs_ctrl __user *a
 		return -EFAULT;
 	}
 	if (0 == dvfs.en_ctl_flag) {
-		xvp_dsp_setdvfs(xvp, dvfs.index);
+		vdsp_dvfs_set(xvp, dvfs.level);
 	} else {
 		if (dvfs.enable)
-			xvp_dsp_enable_dvfs(xvp);
+			vdsp_dvfs_enable(xvp);
 		else
-			xvp_dsp_disable_dvfs(xvp);
+			vdsp_dvfs_disable(xvp);
 	}
 	return 0;
 }
@@ -1251,9 +1307,10 @@ static long xrp_ioctl_set_powerhint(struct file *filp, struct xrp_powerhint_ctrl
 		pr_err("copy_from_user failed\n");
 		return -EFAULT;
 	}
-	return (long)set_powerhint_flag(filp, powerhint.level, powerhint.acquire_release);
+	return (long)vdsp_dvfs_set_powerhint(filp, powerhint.level, powerhint.flag);
 }
 
+/******************* mem related ioctl **********************/
 static long xrp_ioctl_mem_query(struct file *filp, struct xrp_heaps_ctrl __user *arg)
 {
 	struct xrp_heaps_ctrl data;
@@ -1500,9 +1557,9 @@ static long xvp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		case XRP_IOCTL_QUEUE:
 		case XRP_IOCTL_QUEUE_NS:
-			preprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
+			vdsp_dvfs_preprocess(((struct xvp_file *)(filp->private_data))->xvp);
 			retval = xrp_ioctl_submit_sync(filp, (struct xrp_ioctl_queue __user *) arg, NULL);
-			postprocess_work_piece(((struct xvp_file *)(filp->private_data))->xvp);
+			vdsp_dvfs_postprocess(((struct xvp_file *)(filp->private_data))->xvp);
 			break;
 
 		case XRP_IOCTL_SET_DVFS:
@@ -1759,7 +1816,7 @@ int xvp_open(struct inode *inode, struct file *filp)
 		}
 		ret = vdsp_dvfs_init(xvp);
 		if (unlikely(ret < 0)) {
-			pr_err("vdsp_dvfs_init failed\n");
+			pr_err("vdsp dvfs init failed\n");
 			goto dvfs_init_fault;
 		}
 #ifdef MYN6
@@ -1781,9 +1838,7 @@ int xvp_open(struct inode *inode, struct file *filp)
 		}
 #endif
 
-#ifdef MYL5
 		xvp_set_qos(xvp);
-#endif
 		ret = sprd_vdsp_boot_firmware(xvp);
 		if (unlikely(ret < 0)) {
 			pr_err("[ERROR]vdsp boot firmware failed\n");
@@ -1846,10 +1901,10 @@ err_unlock:
 
 static int xvp_close(struct inode *inode, struct file *filp)
 {
-	struct xvp_file *xvp_file = filp->private_data;
 	int ret = 0;
 	int retmid = 0;
 	uint32_t vdsp_count = 0;
+	struct xvp_file *xvp_file = filp->private_data;
 	struct xvp *xvp = (struct xvp *)(xvp_file->xvp);
 
 	mutex_lock(&xvp_global_lock);
@@ -1857,7 +1912,7 @@ static int xvp_close(struct inode *inode, struct file *filp)
 	while (xvp_file->working) {
 		mutex_unlock(&xvp_file->lock);
 		pr_warn("xvpfile is working\n");
-		schedule();
+		schedule();	//what is the meaning? automaticlly abandon CPU.
 		mutex_lock(&xvp_file->lock);
 	}
 #ifdef MYL5
@@ -2072,7 +2127,6 @@ static int vdsp_dma_set_mask_and_coherent(struct device *dev)
 	} else {
 		pr_debug("vdsp: set dma mask as 64bit\n");
 	}
-	pr_debug("dma_mask:%#llx\n", *dev->dma_mask);
 	return 0;
 }
 
@@ -2081,11 +2135,11 @@ static long vdsp_init_common(struct platform_device *pdev,
 	const struct xrp_hw_ops *hw_ops, void *hw_arg,
 	int (*vdsp_init_bufs) (struct platform_device *pdev, struct xvp *xvp))
 {
+	int nodeid;
+	unsigned int index;
 	long ret;
 	char nodename[sizeof("vdsp") + 3 * sizeof(int)];
 	struct xvp *xvp;
-	int nodeid;
-	unsigned int index;
 
 	/*debug fs */
 	vdsp_debugfs_init();
@@ -2096,9 +2150,10 @@ static long vdsp_init_common(struct platform_device *pdev,
 		goto err;
 	}
 
-	//  dma_mask_set
+	/* dma_mask_set*/
 	vdsp_dma_set_mask_and_coherent(&pdev->dev);
-	// add iommus init --- start
+
+	/* iommus init */
 	xvp->iommus = devm_kzalloc(&pdev->dev, sizeof(struct sprd_vdsp_iommus), GFP_KERNEL);
 	if (xvp->iommus == NULL) {
 		pr_err("Error: fail to kzalloc\n");
@@ -2111,29 +2166,26 @@ static long vdsp_init_common(struct platform_device *pdev,
 		pr_err("Error: xvp iommus init failed\n");
 		goto err_iommus_init;
 	}
-	// iommu info printf
 	for (index = 0; index < SPRD_VDSP_IOMMU_MAX; index++) {
 		debug_print_iommu_dev(xvp->iommus->iommu_devs[index]);
 	}
 
-	// add iommus init --- end
-	// mem init  --- start
+	/*  mem init */
 	ret = sprd_vdsp_mem_xvp_init(xvp);
 	if (ret) {
 		pr_err("Error: sprd_vdsp_mem_xvp_init failed\n");
 		goto err_mem_xvp_init;
 	}
-	//mem init ---end
 
-	// iova_reserve_init --- start
+	/* iova_reserve_init */
 	ret = xvp->iommus->ops->reserve_init(xvp->iommus, iova_reserve_data,
 		ARRAY_SIZE(iova_reserve_data));
 	if (ret) {
 		pr_err("Error: iova_reserve_init failed\n");
 		goto err_iova_reserve_init;
 	}
-	// iova_reserve_init --- end
 
+	/* other parameters */
 	mutex_init(&(xvp->load_lib.libload_mutex));
 	mutex_init(&(xvp->dvfs_info.dvfs_lock));
 	mutex_init(&xvp_global_lock);
@@ -2153,6 +2205,8 @@ static long vdsp_init_common(struct platform_device *pdev,
 
 	if (init_flags & XRP_INIT_USE_HOST_IRQ)
 		xvp->host_irq_mode = true;
+
+	/* need understand */
 	platform_set_drvdata(pdev, xvp);
 
 	if (unlikely(vdsp_init_bufs(pdev, xvp))) {
@@ -2166,11 +2220,10 @@ static long vdsp_init_common(struct platform_device *pdev,
 	if (unlikely(vdsp_log_init(xvp) != 0))
 		pr_err("vdsp log init fail. \n");
 
+	/* pm runtime, there need modify later */
 #ifdef MYN6
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 	pm_runtime_set_active(xvp->dev);
 	pm_runtime_enable(xvp->dev);
-#endif
 #endif
 #ifdef MYL5
 	pm_runtime_enable(xvp->dev);
@@ -2180,6 +2233,8 @@ static long vdsp_init_common(struct platform_device *pdev,
 			goto err_pm_disable;
 	}
 #endif
+
+	/* device register */
 	nodeid = ida_simple_get(&xvp_nodeid, 0, 0, GFP_KERNEL);
 	if (unlikely(nodeid < 0)) {
 		ret = nodeid;
@@ -2254,14 +2309,10 @@ int sprd_vdsp_deinit(struct platform_device *pdev)
 {
 	struct xvp *xvp = platform_get_drvdata(pdev);
 
-#ifdef MYN6
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+	/* pm runtime*/
 	pm_runtime_disable(xvp->dev);
-#endif
-#endif
 
 #ifdef MYL5
-	pm_runtime_disable(xvp->dev);
 	if (!pm_runtime_status_suspended(xvp->dev))
 		vdsp_runtime_suspend(xvp->dev);
 #endif
