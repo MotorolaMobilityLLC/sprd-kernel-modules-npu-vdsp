@@ -282,7 +282,7 @@ enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request 
 	void *tempsrc = NULL;
 
 	indata_size = rq->ioctl_queue.in_data_size;
-	if (0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID)) {
+	if (0 == memcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID, sizeof(LIBRARY_LOAD_UNLOAD_NSID))) {
 		if (indata_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
 			tempsrc = (void *)(rq->ioctl_queue.in_data_addr);
 		else

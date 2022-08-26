@@ -31,6 +31,8 @@ static void vdsp_add_dec_level_tofile(struct file *filp,
 {
 	struct xvp_file *xvp_file = (struct xvp_file *)filp->private_data;
 
+	if (level < 0)
+		return;
 	if (flag == VDSP_POWERHINT_ADD_LEVELCOUNT) {
 		xvp_file->powerhint_info.powerhint_count_level[level]++;
 	} else if (flag == VDSP_POWERHINT_DEC_LEVELCOUNT) {
