@@ -161,12 +161,4 @@ struct vdsp_mbox_ctx_desc *get_vdsp_mbox_ctx_desc(void)
 	return &s_mbox_desc;
 }
 
-int vdsp_commu_hw_resume(void)
-{
-	return vdsp_mbox_enable(&s_mbox_desc);
-}
 
-int vdsp_commu_hw_suspend(void)
-{
-	return vdsp_mbox_disable(&s_mbox_desc);
-}

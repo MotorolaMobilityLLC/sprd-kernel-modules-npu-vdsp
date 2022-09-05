@@ -1,3 +1,7 @@
+/**
+ * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ */
+
 #include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/types.h>

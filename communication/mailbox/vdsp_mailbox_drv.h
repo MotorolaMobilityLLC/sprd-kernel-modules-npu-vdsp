@@ -78,6 +78,4 @@ struct vdsp_mbox_ops {
 };
 
 struct vdsp_mbox_ctx_desc *get_vdsp_mbox_ctx_desc(void);
-int vdsp_commu_hw_resume(void);
-int vdsp_commu_hw_suspend(void);
 #endif /* SPRD_MAILBOX_DRV_H */
