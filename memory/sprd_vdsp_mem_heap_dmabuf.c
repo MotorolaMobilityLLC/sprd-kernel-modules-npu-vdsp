@@ -1,4 +1,6 @@
-
+/**
+ * Copyright (C) 2021-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ */
 /*****************************************************************************
  *
  * Copyright (c) Imagination Technologies Ltd.
@@ -39,6 +41,9 @@
  * "MIT_COPYING".
  *
  *****************************************************************************/
+/*
+ * This file has been modified by UNISOC to adapt vdsp driver to call.
+ */
 
 #include <linux/module.h>
 #include <linux/mm.h>

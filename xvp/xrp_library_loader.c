@@ -1,6 +1,16 @@
-/**
- * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
- */
+/*
+* SPDX-FileCopyrightText: 2019-2022 Unisoc (Shanghai) Technologies Co., Ltd
+* SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+*
+* Copyright 2019-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+* Licensed under the Unisoc General Software License, version 1.0 (the License);
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+* Software distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+* See the Unisoc General Software License, version 1.0 for more details.
+*/
 
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
@@ -35,7 +45,7 @@
 #define pr_fmt(fmt) "sprd-vdsp: library_loader %d %d %s : "\
         fmt, current->pid, __LINE__, __func__
 
-static void *libinfo_alloc_element()
+static void *libinfo_alloc_element(void)
 {
 	struct loadlib_info *pnew = NULL;
 
@@ -188,7 +198,7 @@ static int32_t xrp_library_load_internal(struct file *filp, const char *buffer,
 
 	/*load library to ddr */
 	size = xtlib_pi_library_size((xtlib_packaged_library *) buffer);
-	pr_debug("libname:%s, library size:%ld\n", libname, size);
+	pr_debug("libname:%s, library size:%lld\n", libname, size);
 	if (size <= 0) {
 		pr_err("library size is invaild\n");
 		return -EFAULT;
@@ -254,7 +264,7 @@ static int32_t xrp_library_load_internal(struct file *filp, const char *buffer,
 		new_element->lib_processing_count = 0;
 		new_element->original_flag = 1;
 	}
-	pr_debug("add new libinfo xvpfile:%x, libname:%s\n", xvp_file, libname);
+	pr_debug("add new libinfo xvpfile:%p, libname:%s\n", xvp_file, libname);
 	pr_debug("lib_buf_id:%d, libinfo_buf_id:%d\n", lib_buf->buf_id, libinfo_buf->buf_id);
 	list_add_tail(&new_element->node_libinfo, &xvp_file->load_lib_list);
 
@@ -405,7 +415,7 @@ static int32_t xrp_library_increase(struct file *filp, const char *libname,
 			// bellow always find = 0 ,
 			if ((0 == find) && (inlibinfo != NULL)) {
 				newlibinfo = libinfo_alloc_element();
-				pr_debug("alloc new element xvpfile:%x, libname:%s\n",
+				pr_debug("alloc new element xvpfile:%p, libname:%s\n",
 					xvp_file, inlibinfo->libname);
 				if (newlibinfo) {
 					find = 1;
@@ -418,7 +428,7 @@ static int32_t xrp_library_increase(struct file *filp, const char *libname,
 					list_add_tail(&newlibinfo->node_libinfo, &xvp_file->load_lib_list);
 				}
 			} else {
-				pr_err("find is:%d , inlibinfo:%x\n", find, inlibinfo);
+				pr_err("find is:%d , inlibinfo:%p\n", find, inlibinfo);
 			}
 		}
 	}
@@ -698,7 +708,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 					return ret;
 				} else {
 					*(( uint32_t *) (input_ptr + LIBRARY_CMD_PIL_INFO_OFFSET)) = libinfo->pil_info;
-					pr_debug("nsid:%s, loadflag:%d, libname:%s, pil_info:%x,indata_size:%d\n",
+					pr_debug("nsid:%s, loadflag:%d, libname:%s, pil_info:%d,indata_size:%d\n",
 						rq->nsid, load_flag, libname, libinfo->pil_info, indata_size);
 				}
 				ret = xvpfile_buf_kmap(xvp_file, rq->in_buf);
@@ -735,11 +745,9 @@ int32_t xrp_library_release_all(struct xvp *xvp)
 	mutex_lock(&xvp->xrp_known_files_lock);
 	hash_for_each(xvp->xrp_known_files, bkt, p, node)
 	{
-		//pr_debug("known file-p:%lx\n", ( unsigned long) p);
 		xvp_file = (struct xvp_file *)(((struct file *)(p->filp))->private_data);
 		list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list, node_libinfo)
 		{
-			//pr_debug("foreach libinfo:%lx, libname:%s\n", ( unsigned long) libinfo, libinfo->libname);
 			if (likely(NULL != libinfo)) {
 				if (library_check_otherfile_count(p->filp, libinfo->libname) == 0) {
 					xvp_buf_kunmap(xvp, xvp_buf_get_by_id(xvp_file->xvp, libinfo->handle));
@@ -747,7 +755,6 @@ int32_t xrp_library_release_all(struct xvp *xvp)
 					xvp_buf_kunmap(xvp, xvp_buf_get_by_id(xvp_file->xvp, libinfo->pil_handle));
 					xvp_buf_free_with_iommu(xvp_file->xvp, xvp_buf_get_by_id(xvp_file->xvp, libinfo->pil_handle));
 				}
-				//pr_debug("release lib info pil handle current:%p, original_flag:%d\n", get_current(), libinfo->original_flag);
 				list_del(&libinfo->node_libinfo);
 				vfree(libinfo);
 			}

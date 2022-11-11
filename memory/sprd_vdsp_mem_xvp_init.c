@@ -1,8 +1,16 @@
-
-/*****************************************************************************
- * Copyright (C) 2020 Unisoc Inc.
- * SPDX-License-Identifier: GPL-2.0
- *****************************************************************************/
+/*
+ * SPDX-FileCopyrightText: 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd
+ * SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+ *
+ * Copyright 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+ * Licensed under the Unisoc General Software License, version 1.0 (the License);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+ * Software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+ * See the Unisoc General Software License, version 1.0 for more details.
+ */
 
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -62,7 +70,7 @@ static int sprd_vdsp_parse_reserved_mem(struct heap_config *hc)
 		pr_err("Error: read vdsp-mem reg failed\n");
 		return -ENOENT;
 	}
-	pr_debug("vdsp-mem node: mem addr %#x size %#x\n",
+	pr_debug("vdsp-mem node: mem addr %#llx size %#lx\n",
 		hc->options.carveout.phys, hc->options.carveout.size);
 	return 0;
 }
@@ -87,7 +95,7 @@ int sprd_vdsp_mem_xvp_init(struct xvp *xvp)
 		pr_err("failed to alloc xvp_mem_dev!\n");
 		return -ENOMEM;
 	}
-	pr_debug("xvp->mem_dev=%#lx\n", xvp->mem_dev);
+	pr_debug("xvp->mem_dev=%p\n", xvp->mem_dev);
 	// mem man init
 	sprd_vdsp_mem_core_init();
 
@@ -343,7 +351,7 @@ int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 	}
 	xvp_buf->vaddr = sprd_vdsp_mem_get_kptr(mem_ctx, xvp_buf->buf_id);
 
-	pr_debug("\"%s\" kmap sucessed ,vaddr:%lx,size:%ld\n",
+	pr_debug("\"%s\" kmap sucessed ,vaddr:%lx,size:%lld\n",
 		xvp_buf->name, ( unsigned long) (xvp_buf->vaddr), xvp_buf->size);
 
 	return 0;
@@ -387,7 +395,7 @@ int xvp_buf_iommu_map(struct xvp *xvp, struct xvp_buf *xvp_buf)
 	xvp_buf->iova = sprd_vdsp_mem_get_dev_addr(mem_ctx, xvp_buf->buf_id);
 
 	if (xvp_buf->iova) {
-		pr_warn("Warning: \"%s\" is been aiommu_maped  ,iova:%#lx\n",
+		pr_warn("Warning: \"%s\" is been aiommu_maped  ,iova:%#llx\n",
 			xvp_buf->name, xvp_buf->iova);
 		//BUG_ON(xvp_buf->iova);
 		return 0;
@@ -399,7 +407,7 @@ int xvp_buf_iommu_map(struct xvp *xvp, struct xvp_buf *xvp_buf)
 		return ret;
 	}
 	xvp_buf->iova = sprd_vdsp_mem_get_dev_addr(mem_ctx, xvp_buf->buf_id);
-	pr_debug("\"%s\" iommu_map sucessed ,iova:%#lx\n", xvp_buf->name, xvp_buf->iova);
+	pr_debug("\"%s\" iommu_map sucessed ,iova:%#llx\n", xvp_buf->name, xvp_buf->iova);
 	return 0;
 }
 
@@ -440,7 +448,7 @@ struct xvp_buf *xvp_buf_alloc(struct xvp *xvp, char *name, uint64_t size,
 	int ret = 0;
 	struct xvp_mem_dev *mem_dev = xvp->mem_dev;
 
-	pr_debug("xvp buf alloc, name[%s] size[%ld] type[%d] attr[%d]\n", name, size, type, attr);
+	pr_debug("xvp buf alloc, name[%s] size[%lld] type[%d] attr[%d]\n", name, size, type, attr);
 
 	if (!mem_dev) {
 		pr_err("Error: mem_dev is NULL");
@@ -508,7 +516,7 @@ struct xvp_buf *xvp_buf_alloc_with_iommu(struct xvp *xvp, char *name,
 	}
 	return buf;
 err:
-	pr_err("Error:xvp_buf_alloc_with_iommu failed,buf name=%s\n");
+	pr_err("Error:xvp_buf_alloc_with_iommu failed,buf name=%s\n", name);
 	return NULL;
 }
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ * Copyright (C) 2019-2022 UNISOC Technologies Co.,Ltd.
  */
 
 /*
@@ -28,6 +28,11 @@
  *
  * Alternatively you can use and distribute this file under the terms of
  * the GNU General Public License version 2 or later.
+ */
+
+/*
+ * This file has been modified by UNISOC to expanding communication module to
+ * realize vdsp device communication and add memory,dvfs, faceid contol
  */
 
 #include <linux/version.h>
@@ -847,7 +852,7 @@ static int sprd_vdsp_boot_firmware(struct xvp *xvp)
 static int sprd_unmap_request(struct file *filp, struct xrp_request *rq, uint32_t krqflag)
 {
 	size_t n_buffers = rq->n_buffers;
-	long ret = 0;
+	int ret = 0;
 	struct xvp_buf *in_buf;
 	struct xvp_file *xvp_file = filp->private_data;
 
@@ -870,7 +875,7 @@ static int sprd_unmap_request(struct file *filp, struct xrp_request *rq, uint32_
 			ret |= -EFAULT;
 		}
 	}
-	pr_debug("rq->n_buffers = %d\n", n_buffers);
+	pr_debug("rq->n_buffers = %zu\n", n_buffers);
 	if (n_buffers) {
 		xvpfile_buf_kunmap(xvp_file, rq->dsp_buf);
 		ret = xvpfile_buf_free_with_iommu(xvp_file, rq->dsp_buf);
@@ -878,7 +883,7 @@ static int sprd_unmap_request(struct file *filp, struct xrp_request *rq, uint32_
 		rq->n_buffers = 0;
 	}
 	if (ret != 0)
-		pr_err("[ERROR] sprd_unmap_request failed ret:%x\n", ret);
+		pr_err("[ERROR] sprd_unmap_request failed ret:%d\n", ret);
 	return ret;
 }
 
@@ -889,7 +894,7 @@ static int sprd_map_request(struct file *filp, struct xrp_request *rq, uint32_t 
 	int n_buffers = 0;
 	int i;
 	int nbufferflag = 0;
-	long ret = 0;
+	int ret = 0;
 	char *name = NULL;
 	uint64_t size = 0;
 	uint32_t heap_type = 0;
@@ -1144,8 +1149,8 @@ retry:
 			/*check whether libload command and if it is, do load */
 			tv2 = ktime_to_us(ktime_get());
 			load_flag = xrp_check_load_unload(xvp, rq, krqflag);
-			pr_info("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d, filp:[%lx]\n",
-				rq->nsid, load_flag, (unsigned long)filp);
+			pr_info("cmd nsid:%s,(cmd:0/load:1/unload:2)flag:%d, filp:[%p]\n",
+				rq->nsid, load_flag, filp);
 			mutex_lock(&(xvp->load_lib.libload_mutex));
 			lib_result = xrp_pre_process_request(filp, rq, load_flag, libname, krqflag);
 			tv2 = ktime_to_us(ktime_get()) - tv2;	//lib load/unload
@@ -1176,7 +1181,7 @@ retry:
 			}
 			tv3 = ktime_to_us(ktime_get()) - tv3;	//send irq->reci
 
-			pr_debug("xvp_complete_cmd_irq ret:%d\n", ret);
+			pr_debug("xvp_complete_cmd_irq ret:%ld\n", ret);
 			/* copy back inline data */
 			if (likely(ret == 0)) {
 				ret = sprd_complete_hw_request(queue->comm, rq);
@@ -1254,7 +1259,7 @@ retry:
 	 */
 	tv5 = ktime_to_us(ktime_get());
 	pr_info("[TIME](cmd->nsid:%s)total:%lld(us),map:%lld(us),load/unload:%lld(us),"
-	     "vdsp:%lld(us),unmap:%lld(us),ret:%d\n", rq->nsid, tv5 - tv0, tv1,
+	     "vdsp:%lld(us),unmap:%lld(us),ret:%ld\n", rq->nsid, tv5 - tv0, tv1,
 	     tv2, tv3, tv5 - tv4, ret);
 
 	return ret;
@@ -1349,7 +1354,7 @@ static int xrp_ioctl_mem_import(struct file *filp, struct xrp_import_ctrl __user
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("import:size %ld, fd %llX, cpu_ptr %llX, heap_id %d attr %d, name %s\n ",
+	pr_debug("import:size %lld, fd %llX, cpu_ptr %llX, heap_id %d attr %d, name %s\n ",
 		ctrl.size, ctrl.buf_fd, ctrl.cpu_ptr, ctrl.heap_id, ctrl.attributes, ctrl.name);
 	buf = xvpfile_buf_import(xvp_file, ctrl.name, (size_t)ctrl.size, ctrl.heap_id, ctrl.attributes,
 		ctrl.buf_fd, ctrl.cpu_ptr);
@@ -1359,7 +1364,7 @@ static int xrp_ioctl_mem_import(struct file *filp, struct xrp_import_ctrl __user
 	}
 	ctrl.buf_id = buf->buf_id;
 
-	pr_info("import:size %ld, fd %llX, cpu_ptr %llX, heap_id %d attr %d, name %s -> buf_id=%d\n",
+	pr_info("import:size %lld, fd %llX, cpu_ptr %llX, heap_id %d attr %d, name %s -> buf_id=%d\n",
 		ctrl.size, ctrl.buf_fd, ctrl.cpu_ptr, ctrl.heap_id, ctrl.attributes, ctrl.name, buf->buf_id);
 	if (unlikely(copy_to_user(arg, &ctrl, sizeof(struct xrp_import_ctrl)))) {
 		pr_err("[ERROR]copy to user failed\n");
@@ -1380,7 +1385,7 @@ static long xrp_ioctl_mem_export(struct file *filp, struct xrp_export_ctrl __use
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_info("export:buf_id %d, size %d, attr %d\n", ctrl.buf_id, ctrl.size, ctrl.attributes);
+	pr_info("export:buf_id %d, size %lld, attr %d\n", ctrl.buf_id, ctrl.size, ctrl.attributes);
 	buf = xvpfile_buf_get(xvp_file, ctrl.buf_id);
 	if (!buf) {
 		pr_err("xvpfile_buf_get fail\n");
@@ -1409,16 +1414,16 @@ static long xrp_ioctl_mem_alloc(struct file *filp, struct xrp_alloc_ctrl __user 
 		pr_err("[ERROR]copy from user failed\n");
 		return -EFAULT;
 	}
-	pr_debug("alloc:size %ld, heap_id %d, attr %d, name %s\n",
+	pr_debug("alloc:size %lld, heap_id %d, attr %d, name %s\n",
 		ctrl.size, ctrl.heap_id, ctrl.attributes, ctrl.name);
 
-	buf = xvpfile_buf_alloc(xvp_file, ctrl.name, (size_t)ctrl.size, ctrl.heap_id, ctrl.attributes);
+	buf = xvpfile_buf_alloc(xvp_file, ctrl.name, ctrl.size, ctrl.heap_id, ctrl.attributes);
 	if (!buf) {
 		pr_err("Error: xvpfile_buf_alloc\n");
 		return -1;
 	}
 	ctrl.buf_id = buf->buf_id;
-	pr_info("alloc:size %ld, heap_id %d, attr %d, name %s --> buf id=%d\n",
+	pr_info("alloc:size %lld, heap_id %d, attr %d, name %s --> buf id=%d\n",
 		ctrl.size, ctrl.heap_id, ctrl.attributes, ctrl.name, buf->buf_id);
 
 	if (unlikely(copy_to_user(arg, &ctrl, sizeof(struct xrp_alloc_ctrl)))) {
@@ -1536,8 +1541,8 @@ static long xvp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	long retval = -EINVAL;
 	struct xvp_file *xvp_file = NULL;
 
-	pr_debug("cmd:%x, filp[%lx]:cmd_name:%s\n",
-		cmd, (unsigned long)filp, debug_get_ioctl_cmd_name(cmd));
+	pr_debug("cmd:%x, filp[%p]:cmd_name:%s\n",
+		cmd, filp, debug_get_ioctl_cmd_name(cmd));
 	mutex_lock(&xvp_global_lock);
 	if (unlikely(filp->private_data == NULL)) {
 		mutex_unlock(&xvp_global_lock);
@@ -1747,8 +1752,8 @@ int xvp_open(struct inode *inode, struct file *filp)
 
 	tv0 = ktime_to_us(ktime_get());
 
-	pr_info("vdsp open, xvp is:%p, filp:0x%lx , flags:0x%x, fmode:0x%x\n",
-		xvp, (unsigned long)filp, filp->f_flags, filp->f_mode);
+	pr_info("vdsp open, xvp is:%p, filp:%p, flags:0x%x, fmode:0x%x\n",
+		xvp, filp, filp->f_flags, filp->f_mode);
 	mutex_lock(&xvp_global_lock);
 #ifdef FACEID_VDSP_FULL_TEE
 	if (filp->f_flags & O_APPEND) {
@@ -1821,7 +1826,7 @@ int xvp_open(struct inode *inode, struct file *filp)
 		}
 #ifdef MYN6
 		/*init commuincation hw */
-		ret = xvp_init_communicaiton(xvp);
+		ret = xvp_init_communicaiton(xvp);	//enable mailbox
 		if (unlikely(ret != 0)) {
 			pr_err("init communication hw failed\n");
 			goto init_communicaiton_fault;
@@ -1889,7 +1894,7 @@ xvpfile_buf_init_fault:
 	devm_kfree(xvp->dev, xvp_file);
 alloc_xvp_file_fault:
 err_unlock:
-	pr_err("[ERROR]ret = %ld\n", ret);
+	pr_err("[ERROR]ret = %d\n", ret);
 #ifdef FACEID_VDSP_FULL_TEE
 	if (opentype == 1) {
 		sprd_faceid_secboot_deinit(xvp);
@@ -1921,12 +1926,12 @@ static int xvp_close(struct inode *inode, struct file *filp)
 #endif
 	xvp_file->xvp->open_count--;
 	vdsp_count = xvp_file->xvp->open_count;
-	pr_debug("xvp_close open_count is:%d, filp:%lx\n", xvp_file->xvp->open_count, (unsigned long)filp);
+	pr_debug("xvp_close open_count is:%d, filp:%p\n", xvp_file->xvp->open_count, filp);
 	// debug_check_xvp_buf_leak(xvp_file); //for DEBUG
 	if (0 == xvp_file->xvp->open_count) {
 #ifdef MYN6
 		xrp_stop_dsp(xvp_file->xvp);
-		retmid = xvp_deinit_communicaiton(xvp);
+		retmid = xvp_deinit_communicaiton(xvp);	//disable mailbox
 #endif
 		/*release xvp load_lib info */
 		mutex_lock(&(xvp->load_lib.libload_mutex));
@@ -2103,7 +2108,7 @@ static int sprd_vdsp_parse_soft_dt(struct xvp *xvp, struct platform_device *pdev
 		if (xvp->queue_priority)
 			xvp->queue[i].priority = xvp->queue_priority[i];
 		xvp->queue_ordered[i] = xvp->queue + i;
-		pr_debug("queue i:%d, comm:0x%x\n", i, xvp->queue[i].comm);
+		pr_debug("queue i:%d, comm:%p\n", i, xvp->queue[i].comm);
 	}
 	sort(xvp->queue_ordered, xvp->n_queues, sizeof(*xvp->queue_ordered),
 		compare_queue_priority, NULL);
@@ -2112,7 +2117,7 @@ static int sprd_vdsp_parse_soft_dt(struct xvp *xvp, struct platform_device *pdev
 	if (unlikely(ret == -EINVAL || ret == -ENODATA))
 		pr_err("no firmware-name property, not loading firmware\n");
 	else if (unlikely(ret < 0))
-		pr_err("invalid firmware name (%ld)\n", ret);
+		pr_err("invalid firmware name (%d)\n", ret);
 	return ret;
 }
 
@@ -2218,7 +2223,7 @@ static long vdsp_init_common(struct platform_device *pdev,
 		goto err_parse_soft_dt;
 	}
 	if (unlikely(vdsp_log_init(xvp) != 0))
-		pr_err("vdsp log init fail. \n");
+		pr_err("vdsp log init fail.\n");
 
 	/* pm runtime, there need modify later */
 #ifdef MYN6

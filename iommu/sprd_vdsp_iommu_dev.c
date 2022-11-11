@@ -1,8 +1,17 @@
+/*
+ * SPDX-FileCopyrightText: 2020-2022 Unisoc (Shanghai) Technologies Co., Ltd
+ * SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+ *
+ * Copyright 2020-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+ * Licensed under the Unisoc General Software License, version 1.0 (the License);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+ * Software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+ * See the Unisoc General Software License, version 1.0 for more details.
+ */
 
- /*****************************************************************************
- * Copyright (C) 2020 Unisoc Inc.
- * SPDX-License-Identifier: GPL-2.0
- *****************************************************************************/
 #include <linux/io.h>
 #include <linux/types.h>
 #include <linux/slab.h>
@@ -114,7 +123,7 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 	else
 		iommu_dev->fault_page = 0;
 
-	pr_debug("iova_base:0x%x\n", iommu_dev->iova_base);
+	pr_debug("iova_base:0x%lx\n", iommu_dev->iova_base);
 	pr_debug("iova_size:0x%zx\n", iommu_dev->iova_size);
 	pr_debug("fault_page: 0x%lx\n", iommu_dev->fault_page);
 
@@ -198,7 +207,7 @@ static int iommu_dev_pagetable_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 
 	pr_debug("iommu %s : pgt virt 0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_virt);
 	pr_debug("iommu %s : pgt phy  0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_ddr);
-	pr_debug("iommu %s : pgt size 0x%x\n", iommu_dev->name,
+	pr_debug("iommu %s : pgt size 0x%zx\n", iommu_dev->name,
 		(iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4));
 
 	spin_lock_init(&iommu_dev->pgt_lock);	// pagetable spinlock init

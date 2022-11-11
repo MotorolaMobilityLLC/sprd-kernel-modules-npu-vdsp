@@ -1,16 +1,16 @@
-
 /*
- * Copyright (C) 2021 Unisoc Communications Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- */
+* SPDX-FileCopyrightText: 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd
+* SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+*
+* Copyright 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+* Licensed under the Unisoc General Software License, version 1.0 (the License);
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+* Software distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+* See the Unisoc General Software License, version 1.0 for more details.
+*/
 
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
@@ -161,12 +161,12 @@ static int vdsp_regmap_set_clr(struct regmap *regmap, uint32_t offset,
 	set = val & mask;
 	clr = (~val) & mask;
 
-	pr_debug("regmap:%#lx, offset:%#x, mask:%#x val:%#x,rt:%#x\n", regmap, offset, mask, val, rt);
+	pr_debug("regmap:%p, offset:%#x, mask:%#x val:%#x,rt:%#x\n", regmap, offset, mask, val, rt);
 
 	if (set) {
 		ret = regmap_set(regmap, offset, set, rt);
 		if (ret) {
-			pr_err("regmap_set failed, regmap:%#lx, offset:%#x, set:%#x,rt:%#x\n",
+			pr_err("regmap_set failed, regmap:%p, offset:%#x, set:%#x,rt:%#x\n",
 				regmap, offset, set, rt);
 			goto end;
 		}
@@ -174,7 +174,7 @@ static int vdsp_regmap_set_clr(struct regmap *regmap, uint32_t offset,
 	if (clr) {
 		ret = regmap_clr(regmap, offset, clr, rt);
 		if (ret) {
-			pr_err("regmap_clr failed, regmap:%#lx, offset:%#x, clr:%#x,rt:%#x\n",
+			pr_err("regmap_clr failed, regmap:%p, offset:%#x, clr:%#x,rt:%#x\n",
 				regmap, offset, clr, rt);
 			goto end;
 		}
@@ -189,7 +189,7 @@ static int vdsp_regmap_not_set_clr(struct regmap *regmap, uint32_t offset,
 	uint32_t tmp;
 	int ret = -1;
 
-	pr_debug("regmap:%#lx, offset:%#x, mask:%#x, val:%#x, rt:%#x\n", regmap, offset, mask, val, rt);
+	pr_debug("regmap:%p, offset:%#x, mask:%#x, val:%#x, rt:%#x\n", regmap, offset, mask, val, rt);
 
 	ret = vdsp_regmap_read(regmap, offset, &tmp);
 	if (ret) {
@@ -264,9 +264,9 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz, uint32_t log_addr)
 		.vdsp_smsg_addr = (unsigned int)*sz,
 		.vdsp_log_addr = log_addr,
 	};
-	pr_debug("device_mmio_base:%lx, (host_irq)mode:%d, offset:%d, bit:%d,"
+	pr_debug("device_mmio_base:%x, (host_irq)mode:%d, offset:%d, bit:%d,"
 		"(device_irq)mode:%d, offset:%d, bit:%d, irq:%d,"
-		"vdsp_smsg addr:0x%lx, vdsp_log_addr:0x%lx\n",
+		"vdsp_smsg addr:0x%x, vdsp_log_addr:0x%x\n",
 		hw_sync_data->device_mmio_base, hw_sync_data->host_irq_mode,
 		hw_sync_data->host_irq_offset, hw_sync_data->host_irq_bit,
 		hw_sync_data->device_irq_mode, hw_sync_data->device_irq_offset,
@@ -682,7 +682,7 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 	dts_info = devm_kzalloc(&pdev->dev, sizeof(*dts_info), GFP_KERNEL);
 	hw->mm_ahb = syscon_regmap_lookup_by_phandle(np, "sprd,syscon-mmahb");
 	if (IS_ERR_OR_NULL(hw->mm_ahb)) {
-		pr_err("mm_ahb regmap:0x%x\n", hw->mm_ahb);
+		pr_err("mm_ahb regmap:%p\n", hw->mm_ahb);
 	}
 
 	sub_np = of_parse_phandle(np, "sprd,syscon-mailbox", 0);
@@ -690,12 +690,12 @@ static long sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 		pr_err("get resource failed\n");
 	}
 	hw->mbox_phys = parse_resource.start;
-	pr_debug("hw->mbox_phys:0x%x\n", hw->mbox_phys);
+	pr_debug("hw->mbox_phys:0x%llx\n", hw->mbox_phys);
 
 	for (i = 0; i < ARRAY_SIZE(syscon_name); i++) {
 		pname = syscon_name[i];
 		tregmap = syscon_regmap_lookup_by_phandle_args(np, pname, 2, syscon_args);
-		pr_debug("parse tregmap:0x%x\n", tregmap);
+		pr_debug("parse tregmap:%p\n", tregmap);
 		if (IS_ERR_OR_NULL(tregmap)) {
 			pr_err("fail to read %s regmap\n", pname);
 			continue;

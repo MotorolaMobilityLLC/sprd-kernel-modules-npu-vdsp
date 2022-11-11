@@ -1,3 +1,16 @@
+/*
+* SPDX-FileCopyrightText: 2019-2022 Unisoc (Shanghai) Technologies Co., Ltd
+* SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+*
+* Copyright 2019-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+* Licensed under the Unisoc General Software License, version 1.0 (the License);
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+* Software distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+* See the Unisoc General Software License, version 1.0 for more details.
+*/
 
 #include <linux/notifier.h>
 #include <linux/mm.h>
@@ -67,7 +80,7 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 	}
 	get = s->get;
 	put = log->log_size[bank];
-	pr_debug("addr %x, log size %d\n", addr, put);
+	pr_debug("addr %p, log size %d\n", addr, put);
 	while (put != get) {
 		/* Make sure that the read of put occurs before the read of log data */
 		rmb();
@@ -140,7 +153,7 @@ int vdsp_log_alloc_buffer(struct xvp *xvp)
 	xvp_buf_kmap(xvp, xvp->log_buf);
 	s->log_vaddr = xvp_buf_get_vaddr(xvp->log_buf);
 
-	pr_debug("log buffer vdsp va:%lx\n", xvp_buf_get_vaddr(xvp->log_buf));
+	pr_debug("log buffer vdsp va:%p\n", xvp_buf_get_vaddr(xvp->log_buf));
 
 	return 0;
 }
@@ -248,7 +261,7 @@ int vdsp_log_init(struct xvp *xvp)
 	log->log_level = 5;	//vdsp log level
 	log->coredump_flag = COREDUMP_NONE;
 
-	pr_debug("log header addr:%lx, bank addr:%x,%x, bank_size %d\n",
+	pr_debug("log header addr:%p, bank addr:%x,%x, bank_size %d\n",
 		 s->log_vaddr, log->addr[0], log->addr[1], log->bank_size);
 	return 0;
 

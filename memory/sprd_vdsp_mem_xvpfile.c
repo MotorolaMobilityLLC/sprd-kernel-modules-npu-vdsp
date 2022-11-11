@@ -1,8 +1,17 @@
+/*
+ * SPDX-FileCopyrightText: 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd
+ * SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+ *
+ * Copyright 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+ * Licensed under the Unisoc General Software License, version 1.0 (the License);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+ * Software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+ * See the Unisoc General Software License, version 1.0 for more details.
+ */
 
-/*****************************************************************************
- * Copyright (C) 2020 Unisoc Inc.
- * SPDX-License-Identifier: GPL-2.0
- *****************************************************************************/
 #include <linux/types.h>
 #include "sprd_vdsp_mem_xvp_init.h"
 #include "sprd_vdsp_mem_xvpfile.h"
@@ -100,7 +109,7 @@ struct xvp_buf *xvpfile_buf_alloc_with_iommu(struct xvp_file *xvp_file,
 	mutex_unlock(&xvp_file->xvpfile_buf_list_lock);
 	return buf;
 err:
-	pr_err("Error: xvfilep_buf_alloc_with_iommu failed,buf name=%s\n");
+	pr_err("Error: xvfilep_buf_alloc_with_iommu failed,buf name=%s\n", name);
 	return NULL;
 }
 

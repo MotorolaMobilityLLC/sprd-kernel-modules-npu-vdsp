@@ -1,4 +1,6 @@
-
+/**
+ * Copyright (C) 2021-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ */
 /*****************************************************************************
  *
  * Copyright (c) Imagination Technologies Ltd.
@@ -39,6 +41,9 @@
  * "MIT_COPYING".
  *
  *****************************************************************************/
+/*
+ * This file has been modified by UNISOC to adapt vdsp driver to call.
+ */
 
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -106,7 +111,7 @@ static int anonymous_heap_import(struct device *device, struct heap *heap,
 		/* Sanity check if physical address is
 		 * accessible from the device PoV */
 		if (~dma_get_mask(device) & sg_phys(sgl)) {
-			pr_err("%0xllX physical address is out of dma_mask,"
+			pr_err("%#llx physical address is out of dma_mask,"
 				" and probably won't be accessible by the core!\n",
 				sg_phys(sgl));
 			ret = -ERANGE;

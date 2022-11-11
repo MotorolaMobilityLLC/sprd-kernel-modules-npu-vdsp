@@ -1,8 +1,16 @@
-
- /*****************************************************************************
- * Copyright (C) 2020 Unisoc Inc.
- * SPDX-License-Identifier: GPL-2.0
- *****************************************************************************/
+/*
+ * SPDX-FileCopyrightText: 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd
+ * SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+ *
+ * Copyright 2021-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+ * Licensed under the Unisoc General Software License, version 1.0 (the License);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+ * Software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+ * See the Unisoc General Software License, version 1.0 for more details.
+ */
 
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
@@ -27,9 +35,9 @@ void debug_print_iommu_dev(struct sprd_vdsp_iommu_dev *iommu_dev)
 	pr_debug(" name           :%s \n", iommu_dev->name);
 	pr_debug(" iommu_version  :%d \n", iommu_dev->iommu_version);
 	pr_debug(" iova_base      :0x%lx \n", iommu_dev->iova_base);
-	pr_debug(" iova_size      :0x%x \n", iommu_dev->iova_size);
+	pr_debug(" iova_size      :0x%zx \n", iommu_dev->iova_size);
 	pr_debug(" pgt_base       :0x%lx \n", iommu_dev->pgt_base);
-	pr_debug(" pgt_size       :0x%x \n", iommu_dev->pgt_size);
+	pr_debug(" pgt_size       :0x%zx \n", iommu_dev->pgt_size);
 	pr_debug(" ctrl_reg       :0x%lx \n", iommu_dev->ctrl_reg);
 	pr_debug(" pagt_base_ddr  :0x%lx \n", iommu_dev->pagt_base_ddr);
 	pr_debug(" pagt_base_virt :0x%lx \n", iommu_dev->pagt_base_virt);
@@ -49,25 +57,25 @@ int iommu_dump_pagetable(struct sprd_vdsp_iommu_dev *iommu_dev)
 		pr_err("Error: iommu_dev is NULL!\n");
 		return -EINVAL;
 	}
-	pr_debug("---------------start\n");
+	pr_debug("####start####\n");
 	pr_debug("pagetable addr =0x%lx\n", iommu_dev->pagt_base_virt);
 	pr_debug("pagetable size =0x%lx\n", iommu_dev->pagt_ddr_size);
 	addr = (unsigned long *)iommu_dev->pagt_base_virt;
 	for (index = 0; index < iommu_dev->pagt_ddr_size;) {
 		if (~(*addr) != 0) {
-			pr_debug("[index:%d][addr:0x%lx]:0x%0*lx\n",
+			pr_debug("[index:%ld][addr:0x%lx]:0x%0*lx\n",
 				index, (unsigned long)addr, field, *(addr));
 			unused_num = 0;
 		} else {
 			unused_num++;
 			if (unused_num == 1) {
-				pr_debug(".............................\n");
+				pr_debug("unused_num =1\n");
 			}
 		}
 		addr = addr + 1;
 		index = index + sizeof(*addr);
 	}
-	pr_debug("---------------end\n");
+	pr_debug("####end####\n");
 	return 0;
 }
 
@@ -88,7 +96,7 @@ void *alloc_sg_list(struct sg_table *sgt, size_t size)
 		return NULL;
 	pr_debug("vmalloc size = %ld\n", size);
 	n_pages = PAGE_ALIGN(size) >> PAGE_SHIFT;
-	pr_debug("n_pages  = %ld\n", n_pages);
+	pr_debug("n_pages  = %d\n", n_pages);
 	pages = kvmalloc_array(n_pages, sizeof(struct page *), GFP_KERNEL);
 	if (!pages) {
 		vfree(vaddr);
@@ -114,8 +122,8 @@ void *alloc_sg_list(struct sg_table *sgt, size_t size)
 		sg_len = sg_dma_len(sg_entry);
 		phy_addr = sg_phys(sg_entry);	//page_to_phys(sg_page(sg)) + sg->offset;
 		pr_debug("index=%d\n", si);
-		pr_debug("dma_addr=%x\n", dma_addr);
-		pr_debug("phy_addr=%x\n", phy_addr);
+		pr_debug("dma_addr=%llx\n", dma_addr);
+		pr_debug("phy_addr=%llx\n", phy_addr);
 		pr_debug("sg_len=%d\n", sg_len);
 		pr_debug("-----------------------------------------------\n");
 	}
@@ -142,7 +150,7 @@ void show_iommus_all_record(struct sprd_vdsp_iommus *iommus)
 		if (iommu_dev->status & (0x1 << 0)) {
 			iommu_dev->record_dev->ops->show_all(iommu_dev->record_dev);
 		} else {
-			pr_err("Error: iommu_dev=%#lx iommu_dev->status=%d\n", iommu_dev->status);
+			pr_err("Error:iommu_dev->status=%d\n", iommu_dev->status);
 		}
 	}
 }

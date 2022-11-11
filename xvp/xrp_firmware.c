@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ * Copyright (C) 2019-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
  */
 
 /*
@@ -28,6 +28,11 @@
  *
  * Alternatively you can use and distribute this file under the terms of
  * the GNU General Public License version 2 or later.
+ */
+
+/*
+ * This file has been modified by UNISOC to adapt ion memory device,
+ * to realize real device loading.
  */
 
 #include <linux/dma-mapping.h>
@@ -59,11 +64,11 @@ static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp, Elf32_Phdr *phdr)
 	void *fw_buf_vaddr = xvp_buf_get_vaddr(xvp->fw_buf);
 	u32 v32 = xvp_buf_get_iova(xvp->ipc_buf);
 
-	pr_debug("phdr->p_paddr:%lx, firmware viraddr:%lx\n",
-		( unsigned long) phdr->p_paddr, fw_buf_iova);
+	pr_debug("phdr->p_paddr:%x, firmware viraddr:%llx\n",
+		phdr->p_paddr, fw_buf_iova);
 
 	if (unlikely(phdr->p_paddr < fw_buf_iova)) {
-		pr_err("[ERROR]p_paddr:%lx , dsp_firmware_addr:%lx\n", phdr->p_paddr, fw_buf_iova);
+		pr_err("[ERROR]p_paddr:%x , dsp_firmware_addr:%llx\n", phdr->p_paddr, fw_buf_iova);
 		return -EFAULT;
 	}
 	offset = phdr->p_paddr - fw_buf_iova;

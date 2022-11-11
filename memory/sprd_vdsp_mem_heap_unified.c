@@ -1,4 +1,6 @@
-
+/**
+ * Copyright (C) 2021-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ */
 /*****************************************************************************
  *
  * Copyright (c) Imagination Technologies Ltd.
@@ -39,6 +41,9 @@
  * "MIT_COPYING".
  *
  *****************************************************************************/
+/*
+ * This file has been modified by UNISOC to adapt vdsp driver to call.
+ */
 
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -225,7 +230,7 @@ static int unified_end_cpu_access_dmabuf(struct dma_buf *buf,
 
 	buffer_data = buffer->priv;
 
-	pr_debug("%s:%d buffer %d (0x%p)\n", buffer->id, buffer);
+	pr_debug("buffer %d (0x%p)\n", buffer->id, buffer);
 
 	sgt = buffer_data->sgt;
 	dma_sync_sg_for_device(buffer->device, sgt->sgl, sgt->orig_nents, direction);

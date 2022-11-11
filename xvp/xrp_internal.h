@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2022 UNISOC Technologies Co.,Ltd.
+ * Copyright (C) 2019-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
  */
 
 /*
@@ -29,7 +29,10 @@
  * Alternatively you can use and distribute this file under the terms of
  * the GNU General Public License version 2 or later.
  */
-
+/*
+ * This file has been modified by UNISOC to add faceid, memory, iommu related define
+ * to realize real device driver.
+ */
 #ifndef XRP_INTERNAL_H
 #define XRP_INTERNAL_H
 

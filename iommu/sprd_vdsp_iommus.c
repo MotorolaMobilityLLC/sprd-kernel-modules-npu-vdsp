@@ -1,8 +1,16 @@
-
-/*****************************************************************************
- * Copyright (C) 2020 Unisoc Inc.
- * SPDX-License-Identifier: GPL-2.0
- *****************************************************************************/
+/*
+ * SPDX-FileCopyrightText: 2020-2022 Unisoc (Shanghai) Technologies Co., Ltd
+ * SPDX-License-Identifier: LicenseRef-Unisoc-General-1.0
+ *
+ * Copyright 2020-2022 Unisoc (Shanghai) Technologies Co., Ltd.
+ * Licensed under the Unisoc General Software License, version 1.0 (the License);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://www.unisoc.com/en_us/license/UNISOC_GENERAL_LICENSE_V1.0-EN_US
+ * Software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+ * See the Unisoc General Software License, version 1.0 for more details.
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -237,7 +245,7 @@ static int iommus_map_idx(struct sprd_vdsp_iommus *iommus,
 	}
 
 	if ((iommu_dev_id < 0) || (iommu_dev_id > SPRD_VDSP_IOMMU_MAX)) {
-		pr_err("Error: iommu_dev_id inval\n", iommu_dev_id);
+		pr_err("Error: iommu_dev_id inval [%d]\n", iommu_dev_id);
 		return -EINVAL;
 	}
 
@@ -332,7 +340,7 @@ static int iommus_unmap_idx(struct sprd_vdsp_iommus *iommus,
 		return -EINVAL;
 	}
 	if ((iommu_id < 0) || (iommu_id > SPRD_VDSP_IOMMU_MAX - 1)) {
-		pr_err("Error: iommu_id inval\n", iommu_id);
+		pr_err("Error: iommu_id inval[%d]\n", iommu_id);
 		return -EINVAL;
 	}
 

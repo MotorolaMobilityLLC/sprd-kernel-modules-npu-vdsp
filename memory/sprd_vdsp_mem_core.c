@@ -1,4 +1,6 @@
-
+/**
+ * Copyright (C) 2021-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ */
 /*****************************************************************************
  *
  * Copyright (c) Imagination Technologies Ltd.
@@ -39,6 +41,9 @@
  * "MIT_COPYING".
  *
  *****************************************************************************/
+/*
+ * This file has been modified by UNISOC to adapt vdsp driver to call.
+ */
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -1536,7 +1541,7 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id, int isfixed, uns
 		buffer->map_buf.isfixed = isfixed;
 		buffer->map_buf.fixed_data = fixed_data;
 
-		pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = %d\n",
+		pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = %ld\n",
 			buffer->map_buf.table, buffer->map_buf.buf,
 			buffer->map_buf.size, buffer->map_buf.isfixed,
 			buffer->map_buf.fixed_data);
