@@ -32,6 +32,7 @@
 #include "vdsp_qos.h"
 #include "xrp_internal.h"
 #include "xrp_kernel_defs.h"
+#include <sprd_camsys_domain.h>
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -485,7 +486,8 @@ static int enable(void *hw_arg)
 
 	pr_debug("vdsp enable\n");
 
-	ret = pm_runtime_get_sync(hw->xrp->dev);
+	ret = sprd_glb_mm_pw_on_cfg();
+	pm_runtime_get_sync(hw->xrp->dev);
 	if (ret < 0) {
 		pr_err("vdsp fail to power on cam sys\n");
 		goto err_cam_pw_on;
@@ -514,6 +516,7 @@ err_dsp_pw_on:
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2, RT_PMU);
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0, RT_PMU);
 err_cam_pw_on:
+	sprd_glb_mm_pw_off_cfg();
 	pm_runtime_put_sync(hw->xrp->dev);
 
 	return ret;
@@ -536,6 +539,7 @@ static int disable(void *hw_arg)
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_OFF], 0x2, RT_PMU);
 	vdsp_reg_update(&dts_info->regs[VDSPPLL_FORCE_ON], 0, RT_PMU);
 
+	sprd_glb_mm_pw_off_cfg();
 	pm_runtime_put_sync(hw->xrp->dev);
 
 	return ret;
