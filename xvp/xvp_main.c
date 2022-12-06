@@ -104,10 +104,10 @@
 #define pr_fmt(fmt) "sprd-vdsp: xvp_main %d %d %s : "\
 	fmt, current->pid, __LINE__, __func__
 
-#define XRP_DEFAULT_TIMEOUT 	200
+#define XRP_DEFAULT_TIMEOUT 	6
 static struct mutex xvp_global_lock;
 static unsigned long firmware_command_timeout = XRP_DEFAULT_TIMEOUT;
-static unsigned long firmware_boot_timeout = 25;
+static unsigned long firmware_boot_timeout = 5;
 
 module_param(firmware_command_timeout, ulong, 0644);
 MODULE_PARM_DESC(firmware_command_timeout, "Firmware command timeout in seconds.");
