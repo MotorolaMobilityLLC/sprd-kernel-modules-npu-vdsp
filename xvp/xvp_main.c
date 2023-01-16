@@ -486,7 +486,13 @@ static long xvp_complete_cmd_irq(struct xvp *xvp, struct xrp_comm *comm,
 	bool(*cmd_complete) (struct xrp_comm * p))
 {
 	long timeout = (long)((long)firmware_command_timeout * (long)HZ);
+	unsigned int debug_timeout;
 
+	debug_timeout = vdsp_debugfs_cmd_timeout();
+	if ( debug_timeout != 0) {
+		pr_info("debugfs cmd timout :%d\n", debug_timeout);
+		timeout = (long)((long)debug_timeout * (long)HZ);
+	}
 	if (cmd_complete(comm))
 		return 0;
 	if (xrp_panic_check(xvp)) {

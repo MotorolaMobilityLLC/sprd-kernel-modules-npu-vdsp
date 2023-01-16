@@ -11,6 +11,7 @@ unsigned int vdsp_debugfs_log_mode(void);
 unsigned int vdsp_debugfs_log_level(void);
 unsigned int vdsp_debugfs_dvfs_level(void);
 unsigned int vdsp_debugfs_trace_mem(void);
+unsigned int vdsp_debugfs_cmd_timeout(void);
 
 #endif
 

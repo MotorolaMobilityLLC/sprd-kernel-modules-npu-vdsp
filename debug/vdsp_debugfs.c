@@ -20,6 +20,7 @@ struct xrp_debug_para {
 	unsigned int vdsp_log_level;
 	unsigned int vdsp_dvfs_level;
 	unsigned int vdsp_trace_mem;
+	unsigned int vdsp_cmd_timeout;
 };
 
 static struct dentry *root_d;
@@ -39,6 +40,8 @@ int vdsp_debugfs_init(void)
 	debugfs_create_u32("log_level", 0664, root_d, &xrp_para.vdsp_log_level);
 	debugfs_create_u32("dvfs_level", 0664, root_d, &xrp_para.vdsp_dvfs_level);
 	debugfs_create_u32("trace_mem", 0664, root_d, &xrp_para.vdsp_trace_mem);
+	debugfs_create_u32("cmd_timeout", 0664, root_d, &xrp_para.vdsp_cmd_timeout);
+
 	return 0;
 }
 
@@ -60,6 +63,11 @@ unsigned int vdsp_debugfs_dvfs_level(void)
 unsigned int vdsp_debugfs_trace_mem(void)
 {
 	return xrp_para.vdsp_trace_mem;
+}
+
+unsigned int vdsp_debugfs_cmd_timeout(void)
+{
+	return xrp_para.vdsp_cmd_timeout;
 }
 
 void vdsp_debugfs_exit(void)

@@ -39,6 +39,8 @@ struct log_header {
 	volatile uint32_t reverse[6];
 };
 
+static uint32_t last_bank = 0;
+
 static int log_read_line(struct vdsp_log_state *s, int put, int get, char *addr)
 {
 	int i;
@@ -85,6 +87,7 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 		get += read_chars;
 	}
 	log->flag[bank] = BANK_BUSY;
+	last_bank = bank;
 	return;
 }
 
@@ -197,10 +200,10 @@ int vdsp_log_buf_iommu_unmap(struct xvp *xvp)
 
 int vdsp_log_init(struct xvp *xvp)
 {
-	struct vdsp_log_state *s;
 	int result;
-	struct log_header *log;
 	unsigned int cpu;
+	struct log_header *log;
+	struct vdsp_log_state *s;
 
 	s = kzalloc(sizeof(*s), GFP_KERNEL);
 	if (!s) {
@@ -272,8 +275,8 @@ error_alloc_state:
 
 int vdsp_log_deinit(struct xvp *xvp)
 {
-	struct vdsp_log_state *s;
 	unsigned int cpu;
+	struct vdsp_log_state *s;
 
 	s = xvp->log_state;
 	if (s) {
@@ -290,6 +293,39 @@ int vdsp_log_deinit(struct xvp *xvp)
 	}
 
 	return 0;
+}
+#define v_min(a, b) ((a) < (b) ? (a) :(b))
+void vdsp_log_buf_dump(struct xvp *xvp)
+{
+	struct vdsp_log_state *s = xvp->log_state;
+	struct log_header *log = (struct log_header *)s->log_vaddr;
+	uint32_t i, j;
+	uint32_t next_bank;
+	uint32_t size;
+	char *addr;
+	char c = '\0';
+	char line_buffer[256];
+
+	if (last_bank == 0)
+		next_bank = 1;
+	else
+		next_bank = 0;
+
+	addr = (char *)s->log_vaddr + sizeof(struct log_header) + log->bank_size * next_bank;
+	size = log->log_size[next_bank];
+
+	i = 0;
+	while (i < size)
+	{
+		//read one line
+		c = '\0';
+		for (j = 0; (j < v_min(size - i, 256 - 1)) && (c != '\n');)
+			line_buffer[j++] = c = addr[i++];
+		line_buffer[j] = '\0';
+
+		rmb();
+		pr_info("log buf dump: %s", line_buffer);
+	}
 }
 
 int vdsp_log_coredump(struct xvp *xvp)
@@ -313,6 +349,12 @@ int vdsp_log_coredump(struct xvp *xvp)
 		while (time_before(jiffies, deadline));
 	}
 	log->coredump_flag = COREDUMP_NONE;
-	pr_debug("dump end, process(-1/0):%d, data(-1/0):%d\n", res, dump_res);
+	pr_info("dump end, process(-1/0):%d, data(-1/0):%d\n", res, dump_res);
+	if (res != 0) {
+		vdsp_log_buf_dump(xvp);
+	}
 	return res;
 }
+
+
+
