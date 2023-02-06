@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ * SPDX-FileContributor: Add vdsp driver definition to implement hardware adaptation.
  */
 
 /*
@@ -29,10 +29,7 @@
  * Alternatively you can use and distribute this file under the terms of
  * the GNU General Public License version 2 or later.
  */
-/*
- * This file has been modified by UNISOC to add faceid, memory, dvfs related define
- * to realize real device driver.
- */
+
 #ifndef _XRP_KERNEL_DEFS_H
 #define _XRP_KERNEL_DEFS_H
 

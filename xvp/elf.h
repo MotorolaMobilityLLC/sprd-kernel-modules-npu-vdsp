@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2012 by Tensilica Inc. ALL RIGHTS RESERVED.
  *

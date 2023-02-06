@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ * SPDX-FileContributor: vdsp firmware process, implement hardware adaption.
  */
 
 /*
@@ -28,11 +28,6 @@
  *
  * Alternatively you can use and distribute this file under the terms of
  * the GNU General Public License version 2 or later.
- */
-
-/*
- * This file has been modified by UNISOC to adapt ion memory device,
- * to realize real device loading.
  */
 
 #include <linux/dma-mapping.h>

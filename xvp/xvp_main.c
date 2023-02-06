@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2022 UNISOC Technologies Co.,Ltd.
+ * SPDX-FileContributor: vdsp driver main process, implement hardware adptation, expand memory and dvfs function.
  */
 
 /*
@@ -28,11 +28,6 @@
  *
  * Alternatively you can use and distribute this file under the terms of
  * the GNU General Public License version 2 or later.
- */
-
-/*
- * This file has been modified by UNISOC to expanding communication module to
- * realize vdsp device communication and add memory,dvfs, faceid contol
  */
 
 #include <linux/version.h>

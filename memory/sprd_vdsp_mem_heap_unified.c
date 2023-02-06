@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2021-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ * SPDX-FileContributor: memory function, modify to adapt vdsp driver use.
  */
 /*****************************************************************************
  *
@@ -41,9 +41,6 @@
  * "MIT_COPYING".
  *
  *****************************************************************************/
-/*
- * This file has been modified by UNISOC to adapt vdsp driver to call.
- */
 
 #include <linux/module.h>
 #include <linux/mm.h>

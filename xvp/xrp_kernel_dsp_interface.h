@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ * SPDX-FileContributor: Modify XRP data structure to implement hardware adaptation.
  */
 
 /*
@@ -31,10 +31,6 @@
  * the GNU General Public License version 2 or later.
  */
 
-/*
- * This file has been modified by UNISOC to expanding communication module to
- * realize vdsp device communication.
- */
 
 #ifndef _XRP_KERNEL_DSP_INTERFACE_H
 #define _XRP_KERNEL_DSP_INTERFACE_H

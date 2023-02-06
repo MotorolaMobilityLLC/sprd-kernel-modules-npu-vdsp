@@ -1,6 +1,7 @@
 /**
- * Copyright (C) 2021-2022 UNISOC (Shanghai) Technologies Co.,Ltd.
+ * SPDX-FileContributor: memory function, modify to adapt vdsp driver use.
  */
+
 /*****************************************************************************
  *
  * Copyright (c) Imagination Technologies Ltd.
@@ -41,9 +42,6 @@
  * "MIT_COPYING".
  *
  *****************************************************************************/
-/*
- * This file has been modified by UNISOC to adapt vdsp driver to call.
- */
 
 #ifndef SPRD_VDSP_MEM_MAN_H
 #define SPRD_VDSP_MEM_MAN_H
