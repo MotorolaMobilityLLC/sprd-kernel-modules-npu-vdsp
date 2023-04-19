@@ -80,7 +80,7 @@ ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 ccflags-y += -I$(srctree)/drivers/devfreq/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/dvfs_driver/dvfs_reg_param/qogirn6pro/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/mmsys_comm/
-ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/os_adapt/linux
+ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/common/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/power/kernel/
 ccflags-y += -I$(KO_MODULE_PATH)/communication/mailbox/
 endif
