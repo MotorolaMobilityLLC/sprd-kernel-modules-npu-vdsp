@@ -11,30 +11,25 @@
 #include "sprd_vdsp_iommu_dev.h"
 #include "sprd_vdsp_iova.h"
 
-#ifdef MYL5
 enum sprd_vdsp_iommu_id {	//NOTE:This order must be consistent with the order in dts.
 	SPRD_VDSP_IOMMU_EPP = 0,
+#ifdef VDSP_IOMMU_EDP_ON
 	SPRD_VDSP_IOMMU_EDP,
+#endif
 	SPRD_VDSP_IOMMU_IDMA,
-//	SPRD_VDSP_IOMMU_VDMA,		//SPRD_VDSP_IOMMU_VDMA set int dts but not use.
+//	SPRD_VDSP_IOMMU_VDMA,	//SPRD_VDSP_IOMMU_VDMA set int dts but not use.
 	SPRD_VDSP_IOMMU_MAX,
 };
-#endif
-#ifdef MYN6
-enum sprd_vdsp_iommu_id {
-	SPRD_VDSP_IOMMU_EPP = 0,
-	SPRD_VDSP_IOMMU_IDMA,
-//	SPRD_VDSP_IOMMU_VDMA, 		//SPRD_VDSP_IOMMU_VDMA set int dts but not use.
-	SPRD_VDSP_IOMMU_MAX,
-};
-#endif
 
 #define VDSP_IOMMU_VERSION 12	//for iova version
+//there need check later
 enum VDSP_IOMMU_ID {		// For compatibility, use in cll.c cand dll.h file
-	VDSP_IOMMU_VAUL5P_EPP,
-	VDSP_IOMMU_VAUL5P_EDP,
-	VDSP_IOMMU_VAUL5P_IDMA,
-	VDSP_IOMMU_VAUL5P_VDMA,
+	VDSP_IOMMU_VAU_EPP,
+#ifdef VDSP_IOMMU_EDP_ON
+	VDSP_IOMMU_VAU_EDP,
+#endif
+	VDSP_IOMMU_VAU_IDMA,
+//	VDSP_IOMMU_VAU_VDMA,
 	VDSP_IOMMU_MAX,
 };
 
@@ -47,10 +42,10 @@ struct sprd_vdsp_iommus {
 	struct device *dev;
 	struct sprd_vdsp_iommu_dev *iommu_devs[SPRD_VDSP_IOMMU_MAX];
 	struct sprd_vdsp_iommus_ops *ops;
-	struct mutex mutex;	// for all iommu_dev
+	struct mutex mutex;		// for all iommu_dev
 #ifdef  VDSP_IOMMU_USE_SIGNAL_IOVA
 	unsigned long iova_base;	// iova base addr
-	size_t iova_size;	// iova range size
+	size_t iova_size;		// iova range size
 	struct sprd_vdsp_iommu_iova *iova_dev;	// iommu iova manager
 	struct sprd_vdsp_iommu_map_record *record_dev;	// iommu map record manager
 #endif

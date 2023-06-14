@@ -18,11 +18,11 @@ struct iova_reserve {
 
 struct sprd_vdsp_iommu_iova {
 	unsigned long iova_base;	// iova base addr
-	size_t iova_size;	        // iova range size
+	size_t iova_size;		// iova range size
 	struct gen_pool *pool;
 	struct iommu_iova_ops *ops;
-	struct iova_reserve *reserve_data; // reserve data
-	unsigned reserve_num;              // reserve num
+	struct iova_reserve *reserve_data;// reserve data
+	unsigned reserve_num;		// reserve num
 };
 
 struct iommu_iova_ops {

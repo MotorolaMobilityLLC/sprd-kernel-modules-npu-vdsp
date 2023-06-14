@@ -142,13 +142,14 @@ dma_buf_attach_failed:
 	dma_buf_put(data->dma_buf);
 dma_buf_get_failed:
 	kfree(data);
+	data = NULL;
 	return ret;
 }
 
 static void dmabuf_heap_free(struct heap *heap, struct buffer *buffer)
 {
 	struct buffer_data *data = buffer->priv;
-#ifdef K515_ENABLE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	struct dma_buf_map map = DMA_BUF_MAP_INIT_VADDR(buffer->kptr);
 #endif
 
@@ -158,7 +159,7 @@ static void dmabuf_heap_free(struct heap *heap, struct buffer *buffer)
 		struct dma_buf *dma_buf = data->dma_buf;
 
 		dma_buf_end_cpu_access(dma_buf, DMA_BIDIRECTIONAL);
-#ifdef K515_ENABLE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 		dma_buf_vunmap(dma_buf, &map);
 #else
 		dma_buf_vunmap(dma_buf, buffer->kptr);
@@ -173,7 +174,7 @@ static void dmabuf_heap_free(struct heap *heap, struct buffer *buffer)
 	dma_buf_detach(data->dma_buf, data->attach);
 	dma_buf_put(data->dma_buf);
 	kfree(data);
-
+	data = NULL;
 	pr_debug(" dmabuf heap free end\n");
 }
 
@@ -345,7 +346,7 @@ static int dmabuf_heap_map_km(struct heap *heap, struct buffer *buffer)
 {
 	struct buffer_data *data = buffer->priv;
 	struct dma_buf *dma_buf = data->dma_buf;
-#ifdef K515_ENABLE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	struct dma_buf_map map;
 #endif
 	int ret;
@@ -367,7 +368,7 @@ static int dmabuf_heap_map_km(struct heap *heap, struct buffer *buffer)
 		pr_err("begin_cpu_access failed for bufid %d\n", buffer->id);
 		return ret;
 	}
-#ifdef K515_ENABLE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	ret = dma_buf_vmap(dma_buf, &map);
 	if (ret) {
 		pr_err("dma buf vmap fail\n");
@@ -390,7 +391,8 @@ static int dmabuf_heap_unmap_km(struct heap *heap, struct buffer *buffer)
 {
 	struct buffer_data *data = buffer->priv;
 	struct dma_buf *dma_buf = data->dma_buf;
-#ifdef K515_ENABLE
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	struct dma_buf_map map = DMA_BUF_MAP_INIT_VADDR(buffer->kptr);
 #endif
 
@@ -407,7 +409,7 @@ static int dmabuf_heap_unmap_km(struct heap *heap, struct buffer *buffer)
 					buffer->actual_size,
 #endif
 					DMA_BIDIRECTIONAL);
-#ifdef K515_ENABLE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 	dma_buf_vunmap(dma_buf, &map);
 #else
 	dma_buf_vunmap(dma_buf, buffer->kptr);

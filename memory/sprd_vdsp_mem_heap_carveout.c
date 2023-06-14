@@ -199,7 +199,7 @@ static void *carveout_kmap_dmabuf(struct dma_buf *buf, unsigned long page)
 
 static int carveout_heap_map_km(struct heap *heap, struct buffer *buffer);
 static int carveout_heap_unmap_km(struct heap *heap, struct buffer *buffer);
-#ifndef K515_ENABLE
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
 static void *carveout_vmap_dmabuf(struct dma_buf *buf)
 {
 	struct buffer *buffer = buf->priv;
@@ -396,11 +396,13 @@ static int carveout_heap_alloc(struct device *device, struct heap *heap,
 	if (get_order(pages * sizeof(uint64_t)) >= MAX_ORDER) {
 		pr_err("buffer size is too big (%zu bytes)\n", size);
 		kfree(buffer_data);
+		buffer_data = NULL;
 		return -ENOMEM;
 	}
 	buffer_data->addrs = kmalloc_array(pages, sizeof(uint64_t), GFP_KERNEL);
 	if (!buffer_data->addrs) {
 		kfree(buffer_data);
+		buffer_data = NULL;
 		return -ENOMEM;
 	}
 
@@ -410,7 +412,9 @@ static int carveout_heap_alloc(struct device *device, struct heap *heap,
 	if (!buffer_data->addr) {
 		pr_err("gen_pool_alloc failed!\n");
 		kfree(buffer_data->addrs);
+		buffer_data->addrs = NULL;
 		kfree(buffer_data);
+		buffer_data = NULL;
 		return -ENOMEM;
 	}
 
@@ -462,7 +466,9 @@ static void carveout_heap_free(struct heap *heap, struct buffer *buffer)
 
 	gen_pool_free(heap_data->pool, buffer_data->addr, buffer->actual_size);
 	kfree(buffer_data->addrs);
+	buffer_data->addrs = NULL;
 	kfree(buffer_data);
+	buffer_data = NULL;
 }
 
 static void carveout_mmap_open(struct vm_area_struct *vma)
@@ -700,6 +706,7 @@ static void carveout_heap_destroy(struct heap *heap)
 
 	gen_pool_destroy(heap_data->pool);
 	kfree(heap_data);
+	heap_data = NULL;
 }
 
 static struct heap_ops carveout_heap_ops = {
@@ -800,5 +807,6 @@ pool_add_failed:
 	gen_pool_destroy(heap_data->pool);
 pool_create_failed:
 	kfree(heap_data);
+	heap_data = NULL;
 	return ret;
 }

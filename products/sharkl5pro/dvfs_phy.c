@@ -11,6 +11,7 @@
 #include "sprd_dvfs_vdsp.h"
 #include "vdsp_debugfs.h"
 #include "vdsp_hw.h"
+#include "vdsp_reg.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -18,8 +19,11 @@
 #define pr_fmt(fmt) "sprd-vdsp: dvfs-phy %d: %d %s:" \
 	fmt, current->pid, __LINE__, __func__
 
-#define vmin(a, b) ((a) < (b) ? (a) :(b))
-#define vmax(a, b) ((a) > (b) ? (a) :(b))
+#define MM_SYS_EN		(0x0)
+#define DVFS_EN			BIT(3) //GENMASK(23, 16)
+
+#define vmin(a, b) ((a) < (b) ? (a) : (b))
+#define vmax(a, b) ((a) > (b) ? (a) : (b))
 
 #define 	VDSP_CLK256M		256000000	//SHARKL5PRO_VDSP_CLK256M
 #define 	VDSP_CLK384M		384000000	//SHARKL5PRO_VDSP_CLK384M
@@ -28,17 +32,19 @@
 #define 	VDSP_CLK768M		768000000	//SHARKL5PRO_VDSP_CLK768M
 #define 	VDSP_CLK936M		936000000	//SHARKL5PRO_VDSP_CLK936M
 
-static void enable_phy(void *hw_arg)
+static int dvfs_phy_enable(void *hw_arg)
 {
 	(void)hw_arg;
+	return 0;
 }
 
-static void disable_phy(void *hw_arg)
+static int dvfs_phy_disable(void *hw_arg)
 {
 	(void)hw_arg;
+	return 0;
 }
 
-static uint32_t level_to_freq(uint32_t level)
+static uint32_t dvfs_phy_level_to_freq(uint32_t level)
 {
 	switch (level) {
 	case 1:	//VDSP_PWR_MIN
@@ -84,38 +90,12 @@ out:
 	return chip_id;
 }
 
-static void strategy(uint32_t *level, uint32_t max_level,
-	uint32_t percent, uint32_t last_percent)
-{
-	if ((last_percent > 50)) {
-		if (percent > 50)
-			*level = max_level;
-		else if ((percent <= 50) && (percent > 20))
-			*level = max_level - 2;
-		else
-			*level = max_level - 3;
-	} else if ((last_percent <= 50) && (last_percent > 20)) {
-		if (percent > 50)
-			*level = max_level;
-		else if ((percent <= 50) && (percent > 20))
-			*level = max_level - 2;
-		else
-			*level = max_level - 3;
-	} else {
-		if (percent > 50)
-			*level = max_level;
-		else if ((percent <= 50) && (percent > 20))
-			*level = max_level - 3;
-		else
-			*level = max_level - 3;
-	}
-}
-
-static void setdvfs_hw(uint32_t level)
+static int setdvfs_hw(void *hw_arg, uint32_t level)
 {
 	uint32_t freq;
 	unsigned int debugfs_dvfs_level;
 
+	(void)hw_arg;
 	/* chip check, t610 is max 768M support */
 	if (soc_ver_id_check() == CHIP_T610)
 		level = vmin(level, 5);	// 5: 768M
@@ -125,21 +105,23 @@ static void setdvfs_hw(uint32_t level)
 	if (debugfs_dvfs_level > 0)
 	{
 		level = debugfs_dvfs_level;
-		pr_info("debugfs force dvfs, level:%d, freq:%d\n", level, level_to_freq(level));
+		pr_info("debugfs force dvfs, level:%d\n", level);
 	}
 
-	freq = level_to_freq(level);
+	freq = dvfs_phy_level_to_freq(level);
 	pr_info("set vdsp dvfs, level:%d, freq:%d\n", level, freq);
 
 	vdsp_dvfs_notifier_call_chain(&freq);
+	return 0;
 }
 
 static struct dvfs_phy_ops vdsp_dvfs_ops = {
-	.enable = enable_phy,
-	.disable = disable_phy,
-	.level_to_freq = level_to_freq,
+	.enable = dvfs_phy_enable,
+	.disable = dvfs_phy_disable,
+	.level_to_freq = dvfs_phy_level_to_freq,
 	.setdvfs = setdvfs_hw,
-	.strategy = strategy,
+	.set_voltage = NULL,
+	.set_freq = NULL,
 };
 
 static struct dvfs_phy_desc sub_dvfs_phy_desc = {

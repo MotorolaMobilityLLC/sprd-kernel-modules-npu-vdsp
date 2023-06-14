@@ -137,11 +137,12 @@ static int anonymous_heap_import(struct device *device, struct heap *heap,
 
 dma_mask_check_failed:
 	kfree(data);
+	data = NULL;
 alloc_priv_failed:
 	sg_free_table(sgt);
 alloc_sgt_pages_failed:
 	kfree(sgt);
-
+	sgt = NULL;
 	return ret;
 }
 
@@ -176,7 +177,9 @@ static void anonymous_heap_free(struct heap *heap, struct buffer *buffer)
 
 	sg_free_table(sgt);
 	kfree(sgt);
+	sgt = NULL;
 	kfree(data);
+	data = NULL;
 }
 
 static int anonymous_heap_map_km(struct heap *heap, struct buffer *buffer)
@@ -217,13 +220,13 @@ static int anonymous_heap_map_km(struct heap *heap, struct buffer *buffer)
 
 	buffer->kptr = vmap(pages, num_pages, VM_MAP, prot);
 	kfree(pages);
+	pages = NULL;
 	if (!buffer->kptr) {
 		pr_err("vmap failed!\n");
 		return -EFAULT;
 	}
 
 	pr_debug("buffer %d vmap to 0x%p\n", buffer->id, buffer->kptr);
-
 	return 0;
 }
 

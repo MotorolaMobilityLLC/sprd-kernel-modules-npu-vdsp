@@ -32,7 +32,7 @@ static struct heap_config heap_configs[] = {
 		.type = SPRD_VDSP_MEM_HEAP_TYPE_ANONYMOUS,
 		.to_dev_addr = NULL,
 	},
-#ifdef FACEID_VDSP_FULL_TEE
+#ifdef RESERVE_MEM
 	{
 		.type = SPRD_VDSP_MEM_HEAP_TYPE_CARVEOUT,	//NOTE: for test can set static parameter
 		.to_dev_addr = NULL,
@@ -42,9 +42,9 @@ static struct heap_config heap_configs[] = {
 
 static int sprd_vdsp_parse_reserved_mem(struct heap_config *hc)
 {
-	struct device_node *np;
-	u32 out_values[4];
 	int ret;
+	u32 out_values[4] = {0};
+	struct device_node *np;
 
 	np = of_find_node_by_name(NULL, "vdsp-mem");
 	if (!np) {
@@ -52,7 +52,6 @@ static int sprd_vdsp_parse_reserved_mem(struct heap_config *hc)
 		return -ENOENT;
 	}
 	ret = of_property_read_u32_array(np, "reg", out_values, 4);
-
 	if (!ret) {
 		hc->options.carveout.phys = out_values[1];
 		hc->options.carveout.size = out_values[3];
@@ -81,7 +80,6 @@ int sprd_vdsp_mem_xvp_init(struct xvp *xvp)
 	xvp->mem_dev = kzalloc(sizeof(struct xvp_mem_dev), GFP_KERNEL);
 	xvp_mem_dev = xvp->mem_dev;
 	if (!xvp_mem_dev) {
-		ret = -ENOMEM;
 		pr_err("failed to alloc xvp_mem_dev!\n");
 		return -ENOMEM;
 	}
@@ -139,6 +137,7 @@ heap_add_failed:
 		sprd_vdsp_mem_del_heap(xvp_heap->id);
 		kfree(xvp_heap);
 	}
+	xvp_heap = NULL;
 	sprd_vdsp_mem_core_exit();
 
 	return ret;
@@ -156,15 +155,21 @@ int sprd_vdsp_mem_xvp_release(struct xvp_mem_dev *xvp_mem_dev)
 		sprd_vdsp_mem_del_heap(heap->id);
 		kfree(heap);
 	}
+	heap = NULL;
+
 	mutex_lock(&xvp_mem_dev->buf_list_mutex);
 	while (!list_empty(&xvp_mem_dev->buf_list)) {
 		buf = list_first_entry(&xvp_mem_dev->buf_list, struct xvp_buf, list_node);
 		list_del(&buf->list_node);
 		kfree(buf);
 	}
+	buf = NULL;
 	mutex_unlock(&xvp_mem_dev->buf_list_mutex);
+
 	sprd_vdsp_mem_core_exit();	//NOTE: now only one vdsp ip,so free with mem_man
 	kfree(xvp_mem_dev);
+	xvp_mem_dev = NULL;
+
 	return 0;
 }
 
@@ -242,7 +247,6 @@ struct xvp_buf *__xvp_buf_creat(struct xvp *xvp, char *name, uint64_t size,
 
 int __xvp_buf_destroy(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
-
 	struct xvp_mem_dev *mem_dev = NULL;
 
 	if (unlikely(!xvp)) {
@@ -266,9 +270,9 @@ int __xvp_buf_destroy(struct xvp *xvp, struct xvp_buf *xvp_buf)
 
 int __xvp_buf_alloc(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
+	int ret;
+	int heap_id;
 	struct mem_ctx *mem_ctx = NULL;
-	unsigned int heap_id = 0;
-	int ret = 0;
 
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
@@ -302,8 +306,8 @@ int __xvp_buf_alloc(struct xvp *xvp, struct xvp_buf *xvp_buf)
 
 int __xvp_buf_free(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
+	int ret;
 	struct mem_ctx *mem_ctx = NULL;
-	int ret = 0;
 
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
@@ -318,11 +322,10 @@ int __xvp_buf_free(struct xvp *xvp, struct xvp_buf *xvp_buf)
 
 int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
+	int ret;
 	struct mem_ctx *mem_ctx = NULL;
-	int ret = 0;
 
 	pr_debug("xvp buf kmap start\n");
-
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
 		pr_err("Error: input args EINVAL\n");
@@ -349,9 +352,8 @@ int xvp_buf_kmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 
 int xvp_buf_kunmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
-
+	int ret;
 	struct mem_ctx *mem_ctx = NULL;
-	int ret = 0;
 
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
@@ -374,8 +376,8 @@ int xvp_buf_kunmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 
 int xvp_buf_iommu_map(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
+	int ret;
 	struct mem_ctx *mem_ctx = NULL;
-	int ret = 0;
 
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
@@ -403,8 +405,8 @@ int xvp_buf_iommu_map(struct xvp *xvp, struct xvp_buf *xvp_buf)
 
 int xvp_buf_iommu_unmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 {
+	int ret;
 	struct mem_ctx *mem_ctx = NULL;
-	int ret = 0;
 
 	ret = xvp_mem_check_args(xvp, xvp_buf, &mem_ctx);
 	if (ret) {
@@ -433,9 +435,8 @@ int xvp_buf_iommu_unmap(struct xvp *xvp, struct xvp_buf *xvp_buf)
 struct xvp_buf *xvp_buf_alloc(struct xvp *xvp, char *name, uint64_t size,
 	uint32_t type, uint32_t attr)
 {
-
+	int ret;
 	struct xvp_buf *buf = NULL;
-	int ret = 0;
 	struct xvp_mem_dev *mem_dev = xvp->mem_dev;
 
 	pr_debug("xvp buf alloc, name[%s] size[%lld] type[%d] attr[%d]\n", name, size, type, attr);

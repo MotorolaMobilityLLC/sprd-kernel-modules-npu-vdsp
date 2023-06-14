@@ -23,25 +23,27 @@ enum {
 struct sprd_vdsp_iommu_init_param {
 	enum sprd_vdsp_iommu_type iommu_type;	//get_iommuvau_type(data->iommuex_rev, &chip);
 	enum VDSP_IOMMU_ID iommu_id;	//iommu_dev->id;
-	ulong master_reg_addr;	//iommu_dev->pgt_base;
+	ulong master_reg_addr;		//iommu_dev->pgt_base;
 	ulong base_reg_addr;
 	u32 pgt_size;
-	ulong ctrl_reg_addr;	//iommu_dev->ctrl_reg
-
-	ulong fm_base_addr;	//iommu_dev->iova_base
-	u32 fm_ram_size;	//iommu_dev->iova_size;
-	u64 faultpage_addr;	/* Enabel fault page function */// iommu_dev->fault_page;
-	u8 ram_clk_div;		/*Clock divisor */
+	ulong ctrl_reg_addr;		//iommu_dev->ctrl_reg
+	ulong vpn_base_addr;
+	u32 vpn_range;
+	u64 faultpage_addr;		/* Enabel fault page function */// iommu_dev->fault_page;
+	u8 ram_clk_div;			/*Clock divisor */
 	unsigned long pagt_base_ddr;	//iommu_dev->pagt_base_ddr;
 	unsigned long pagt_base_virt;	//iommu_dev->pagt_base_virt;
 	unsigned int pagt_ddr_size;	//iommu_dev->pagt_ddr_size;
 
-	/*for sharkl2/isharkl2 */
 	u64 mini_ppn1;
 	u64 ppn1_range;
 	u64 mini_ppn2;
 	u64 ppn2_range;
-	int chip;		//=chip
+	u64 mini_ppn3;
+	u64 ppn3_range;
+	u64 mini_ppn4;
+	u64 ppn4_range;
+	int chip;
 };
 
 struct sprd_iommu_map_param {
@@ -114,6 +116,10 @@ struct sprd_vdsp_iommuvau_priv {
 	ulong ppn1_range;
 	ulong mini_ppn2;
 	ulong ppn2_range;
+	ulong mini_ppn3;
+	ulong ppn3_range;
+	ulong mini_ppn4;
+	ulong ppn4_range;
 	/*iommu reserved memory of pf page table */
 	unsigned long pagt_base_ddr;
 	unsigned int pagt_ddr_size;

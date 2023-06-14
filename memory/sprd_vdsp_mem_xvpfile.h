@@ -20,8 +20,7 @@ int xvpfile_buf_kunmap(struct xvp_file *xvp_file, struct xvp_buf *buf);
 int xvpfile_buf_iommu_map(struct xvp_file *xvp_file, struct xvp_buf *xvp_buf);
 int xvpfile_buf_iommu_unmap(struct xvp_file *xvp_file, struct xvp_buf *xvp_buf);
 struct xvp_buf *xvpfile_buf_alloc_with_iommu(struct xvp_file *xvp_file,
-	char *name, uint64_t size,
-	uint32_t type, uint32_t attr);
+	char *name, uint64_t size, uint32_t type, uint32_t attr);
 int xvpfile_buf_free_with_iommu(struct xvp_file *xvp_file, struct xvp_buf *buf);
 
 struct xvp_buf *xvpfile_buf_get(struct xvp_file *xvp_file, uint32_t buf_id);

@@ -37,11 +37,8 @@ struct vdsp_log_state {
 	uint32_t get;
 
 	void *log_vaddr;
-	uint32_t log_ion_vdsp_addr;	// this is no use now
 	struct workqueue_struct *nop_wq;
 	struct vdsp_log_work __percpu *nop_works;
-	struct list_head nop_queue;					// no use
-	spinlock_t nop_lock;	/* protects nop_queue */ // no use now
 	char line_buffer[VDSP_LINE_BUFFER_SIZE];
 };
 

@@ -37,6 +37,7 @@
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include "vdsp_debugfs.h"
 #include "vdsp_hw.h"
 #include "xrp_internal.h"
 #include "xrp_firmware.h"
@@ -50,7 +51,6 @@
 
 static unsigned int vdsp_symbol_off;
 
-
 static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp, Elf32_Phdr *phdr)
 {
 	int32_t offset;
@@ -59,18 +59,24 @@ static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp, Elf32_Phdr *phdr)
 	void *fw_buf_vaddr = xvp_buf_get_vaddr(xvp->fw_buf);
 	u32 v32 = xvp_buf_get_iova(xvp->ipc_buf);
 
-	pr_debug("phdr->p_paddr:%x, firmware viraddr:%llx\n",
-		phdr->p_paddr, fw_buf_iova);
-
-	if (unlikely(phdr->p_paddr < fw_buf_iova)) {
+	if (vdsp_debugfs_trace_firmware()) {
+		pr_debug("phdr->p_paddr:0x%x\n", phdr->p_paddr);
+		pr_debug("phdr->p_memsz:0x%x\n", phdr->p_memsz);
+		pr_debug("phdr->p_filesz:0x%x\n", phdr->p_filesz);
+		pr_debug("phdr->p_offset:0x%x\n", phdr->p_offset);
+		pr_debug("phdr->p_paddr:0x%x\n", phdr->p_paddr);
+		pr_debug("fw_buf_iova:0x%llx\n", fw_buf_iova);
+	}
+	if (unlikely(phdr->p_paddr < (Elf32_Addr)fw_buf_iova)) {
 		pr_err("[ERROR]p_paddr:%x , dsp_firmware_addr:%llx\n", phdr->p_paddr, fw_buf_iova);
 		return -EFAULT;
 	}
-	offset = phdr->p_paddr - fw_buf_iova;
+	offset = phdr->p_paddr - (Elf32_Addr)fw_buf_iova;
 	virstart = ( uint8_t *) fw_buf_vaddr;
 
-	pr_debug("virstart:%p, offset:%x, poffset:%x, pmemsz:%x, pfilesz:%x\n",
-		virstart, offset, phdr->p_offset, phdr->p_memsz, phdr->p_filesz);
+	if (vdsp_debugfs_trace_firmware())
+		pr_debug("fw vaddr:0x%p, offset:0x%0x\n", virstart, offset);
+
 	memcpy(( void *) (virstart + offset), xvp->firmware->data + phdr->p_offset, phdr->p_filesz);
 	if (phdr->p_memsz > phdr->p_filesz) {
 		memset_io(( void *) (virstart + offset + phdr->p_filesz), 0, (phdr->p_memsz - phdr->p_filesz));
@@ -82,18 +88,36 @@ static int xrp_load_segment_to_sysmem_ion(struct xvp *xvp, Elf32_Phdr *phdr)
 		memcpy(( void *) (virstart + offset + vdsp_symbol_off - phdr->p_offset), &v32, sizeof(u32));
 	}
 	wmb();
+	if (vdsp_debugfs_trace_firmware())
+		pr_debug("load srom-sram done\n");
 
 	return 0;
 }
+
 static int xrp_load_segment_to_iomem(struct xvp *xvp, Elf32_Phdr *phdr)
 {
-	phys_addr_t pa = phdr->p_paddr;
-	void __iomem *p = ioremap(pa, phdr->p_memsz);
+	phys_addr_t pa;
+	void __iomem *p;
 
+	if (vdsp_debugfs_trace_firmware()) {
+		pr_debug("phdr->p_paddr:0x%x\n", phdr->p_paddr);
+		pr_debug("phdr->p_memsz:0x%x\n", phdr->p_memsz);
+		pr_debug("phdr->p_filesz:0x%x\n", phdr->p_filesz);
+		pr_debug("phdr->p_offset:0x%x\n", phdr->p_offset);
+		pr_debug("phdr->p_paddr:0x%x\n", phdr->p_paddr);
+	}
+#ifdef MYK8
+	pa = (phys_addr_t) (phdr->p_paddr + 0xC000000);	//40000000->34000000
+#else
+	pa = (phys_addr_t) (phdr->p_paddr);
+#endif
+
+	p = ioremap(pa, phdr->p_memsz);
 	if (unlikely(!p)) {
-		pr_err("couldn't ioremap %pap x 0x%08x\n", &pa, ( u32) phdr->p_memsz);
+		pr_err("couldn't ioremap 0x%llx-0x%08x\n", pa, ( u32) phdr->p_memsz);
 		return -EINVAL;
 	}
+
 	if (xvp->hw_ops->memcpy_tohw)
 		xvp->hw_ops->memcpy_tohw(p, ( void *) xvp->firmware->data + phdr->p_offset,
 			phdr->p_filesz);
@@ -108,6 +132,8 @@ static int xrp_load_segment_to_iomem(struct xvp *xvp, Elf32_Phdr *phdr)
 			ALIGN(phdr->p_memsz - ALIGN(phdr->p_filesz, 4), 4));
 
 	iounmap(p);
+	if (vdsp_debugfs_trace_firmware())
+		pr_debug("load dram done\n");
 
 	return 0;
 }
@@ -241,7 +267,8 @@ int xrp_firmware_fixup_symbol(struct xvp *xvp, const char *name, phys_addr_t v)
 		return -EINVAL;
 	}
 	vdsp_symbol_off = addr - ( void *) xvp->firmware->data;
-
+	if (vdsp_debugfs_trace_firmware())
+		pr_debug("vdsp_symbol_off:0x%x\n", vdsp_symbol_off);
 	return 0;
 }
 
@@ -255,6 +282,8 @@ static int xrp_load_firmware(struct xvp *xvp)
 	ipc_buf_iova = xvp_buf_get_iova(xvp->ipc_buf);
 	fw_buf_iova = xvp_buf_get_iova(xvp->fw_buf);
 
+	if (vdsp_debugfs_trace_firmware())
+		pr_debug("ipc_buf_iova:0x%llx, fw_buf_iova:0x%llx\n", ipc_buf_iova, fw_buf_iova);
 	if (unlikely(memcmp(ehdr->e_ident, ELFMAG, SELFMAG))) {
 		pr_err("bad firmware ELF magic\n");
 		return -EINVAL;
@@ -293,7 +322,8 @@ static int xrp_load_firmware(struct xvp *xvp)
 			pr_err("bad firmware ELF program header entry %d\n", i);
 			return -EINVAL;
 		}
-
+		if (vdsp_debugfs_trace_firmware())
+			pr_debug("phdr->p_paddr:0x%x\n", phdr->p_paddr);
 		if (phdr->p_paddr >= fw_buf_iova)
 			rc = xrp_load_segment_to_sysmem_ion(xvp, phdr);
 		else

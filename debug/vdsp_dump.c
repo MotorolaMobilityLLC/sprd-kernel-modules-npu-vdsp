@@ -52,7 +52,7 @@ int32_t xrp_dump_libraries(struct xvp *xvp)
 	hash_for_each(xvp->xrp_known_files, bkt, p, node) {
 		xvp_file = (struct xvp_file *)(((struct file *)(p->filp))->private_data);
 		list_for_each_entry_safe(libinfo, temp, &xvp_file->load_lib_list, node_libinfo) {
-			pr_debug("dump lib info, addr:%lx-libname:%s\n",
+			pr_debug("dump lib info, addr:%llx-libname:%s\n",
 				libinfo->ion_phy, libinfo->libname);
 		}
 	}

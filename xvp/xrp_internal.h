@@ -1,5 +1,5 @@
 /**
- * SPDX-FileContributor: Add faceid, memory, iommu related definitionto implement hardware adaptation.
+ * SPDX-FileContributor: Add memory, iommu related definitionto implement hardware adaptation.
  */
 
 /*
@@ -48,34 +48,11 @@ struct device;
 struct firmware;
 struct xrp_hw_ops;
 
-struct firmware_origin {
-	size_t size;
-	u8 *data;
-};
-
 struct xrp_comm {
 	struct mutex lock;
 	void __iomem *comm;
 	struct completion completion;
 	u32 priority;
-};
-
-struct faceid_mem_addr {
-#ifdef MYL5
-	struct xvp_buf *ion_fd_weights_p;
-	struct xvp_buf *ion_fd_weights_r;
-	struct xvp_buf *ion_fd_weights_o;
-	struct xvp_buf *ion_fp_weights;
-	struct xvp_buf *ion_flv_weights;
-	struct xvp_buf *ion_fo_weights;
-	struct xvp_buf *ion_fd_mem_pool;
-#endif
-#ifdef MYN6
-	struct xvp_buf *ion_fa_weights;
-	struct xvp_buf *ion_fp_weights;
-	struct xvp_buf *ion_foc_weights;
-	struct xvp_buf *ion_fd_mem_pool;
-#endif
 };
 
 struct xvp {
@@ -113,22 +90,5 @@ struct xvp {
 	struct xvp_buf *ipc_buf;
 	struct xvp_buf *log_buf;
 	struct xvp_buf *fw_buf;
-
-	//faceid
-	bool secmode;		/*used for faceID */
-	bool tee_con;		/*the status of connect TEE */
-	int irq_status;
-	uint32_t cur_opentype;
-	struct faceid_mem_addr faceid_pool;
-	const struct firmware *faceid_fw;
-	const struct firmware *firmware2_sign;	/*faceid sign fw */
-	const struct firmware *firmware_coeff;
-	struct xvp_buf *faceid_com_buf;
-	struct xvp_buf *faceid_fw_buf;
-	struct xvp_buf *faceid_fws_buf;
-#ifdef MYN6
-	struct xvp_buf *faceid_img_buf;
-	unsigned long faceid_addr_offset;
-#endif
 };
 #endif

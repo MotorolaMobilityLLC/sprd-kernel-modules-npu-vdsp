@@ -8,8 +8,6 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 
-#define XRP_IRQ_REG_OFFSET    0x00800000
-
 enum xrp_irq_mode {
 	XRP_IRQ_NONE,
 	XRP_IRQ_LEVEL,

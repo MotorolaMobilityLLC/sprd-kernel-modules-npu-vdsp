@@ -64,9 +64,9 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 		pr_debug("reg base:0x%x\n", val32);
 		pr_debug("reg size:0x%x\n", size32);
 
-		iommu_dev->pgt_base = (unsigned long)ioremap(val32, size32);	//0xf12f9000
+		iommu_dev->pgt_base = (unsigned long)ioremap(val32, size32);
 		iommu_dev->pgt_size = size32;
-		iommu_dev->ctrl_reg = (unsigned long)ioremap(val32, size32);	//0xf12fb000 Duplicate mapping
+		iommu_dev->ctrl_reg = (unsigned long)ioremap(val32, size32);
 	} else {
 		ret = of_property_read_u64_index(iommu_dev_of_node, "reg", 0, &val64);
 		if (ret < 0) {
@@ -82,9 +82,9 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 		pr_debug("reg base:0x%llx\n", val64);
 		pr_debug("reg size:0x%llx\n", size64);
 
-		iommu_dev->pgt_base = (unsigned long)ioremap(val64, size64);
+		iommu_dev->pgt_base = (unsigned long)ioremap(val64, size64);//0x40100000,here
 		iommu_dev->pgt_size = size64;
-		iommu_dev->ctrl_reg = (unsigned long)ioremap(val64, size64);
+		iommu_dev->ctrl_reg = (unsigned long)ioremap(val64, size64);//Duplicate mapping
 	}
 
 	BUG_ON(!iommu_dev->ctrl_reg);
@@ -107,6 +107,8 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 		}
 	}
 	iommu_dev->iova_size = val32;
+	iommu_dev->vpn_base_addr = iommu_dev->iova_base;
+	iommu_dev->vpn_range = iommu_dev->iova_size;
 	page = __get_free_page(GFP_KERNEL);
 	if (page)
 		iommu_dev->fault_page = virt_to_phys((void *)page);
@@ -115,6 +117,8 @@ static int iommu_dev_parse_dt(struct sprd_vdsp_iommu_dev *iommu_dev,
 
 	pr_debug("iova_base:0x%lx\n", iommu_dev->iova_base);
 	pr_debug("iova_size:0x%zx\n", iommu_dev->iova_size);
+	pr_debug("vpn_base_addr:0x%lx\n", iommu_dev->vpn_base_addr);
+	pr_debug("vpn_range:0x%zx\n", iommu_dev->vpn_range);
 	pr_debug("fault_page: 0x%lx\n", iommu_dev->fault_page);
 
 	return 0;
@@ -185,8 +189,8 @@ static int iommu_dev_pagetable_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 	}
 	pr_debug("iommu_dev_pagetable_init\n");
 
+	size = iommu_dev->vpn_range / MMU_MAPING_PAGESIZE * 4;
 	//pagt_base_ddr\pagt_base_virt
-	size = iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4;
 	iommu_dev->pagt_base_virt = (unsigned long)dma_alloc_coherent(iommu_dev->dev, size,
 		(dma_addr_t*) (&(iommu_dev->pagt_base_ddr)), GFP_DMA | GFP_KERNEL);
 	if (!(iommu_dev->pagt_base_virt)) {
@@ -197,8 +201,7 @@ static int iommu_dev_pagetable_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 
 	pr_debug("iommu %s : pgt virt 0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_virt);
 	pr_debug("iommu %s : pgt phy  0x%lx\n", iommu_dev->name, iommu_dev->pagt_base_ddr);
-	pr_debug("iommu %s : pgt size 0x%zx\n", iommu_dev->name,
-		(iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4));
+	pr_debug("iommu %s : pgt size 0x%zx\n", iommu_dev->name, iommu_dev->pagt_ddr_size);
 
 	spin_lock_init(&iommu_dev->pgt_lock);	// pagetable spinlock init
 	return 0;
@@ -209,7 +212,7 @@ static void iommu_dev_pagetable_release(struct sprd_vdsp_iommu_dev *iommu_dev)
 	unsigned long size = 0;
 
 	if (iommu_dev->pagt_base_virt) {
-		size = iommu_dev->iova_size / MMU_MAPING_PAGESIZE * 4;
+		size = iommu_dev->vpn_range / MMU_MAPING_PAGESIZE * 4;
 		dma_free_coherent(iommu_dev->dev, size, (void *)iommu_dev->pagt_base_virt,
 			iommu_dev->pagt_base_ddr);
 	}
@@ -236,8 +239,9 @@ static int iommu_dev_hw_init(struct sprd_vdsp_iommu_dev *iommu_dev)
 	/*iommu base reg */
 	iommu_init_param.ctrl_reg_addr = iommu_dev->ctrl_reg;
 	/*va base addr */
-	iommu_init_param.fm_base_addr = iommu_dev->iova_base;
-	iommu_init_param.fm_ram_size = iommu_dev->iova_size;
+	iommu_init_param.vpn_base_addr = iommu_dev->vpn_base_addr;
+	iommu_init_param.vpn_range = iommu_dev->vpn_range;
+
 	iommu_init_param.iommu_id = iommu_dev->id;
 	// iommu_init_param.faultpage_addr = iommu_dev->fault_page;
 

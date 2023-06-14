@@ -141,8 +141,6 @@ int sprd_vdsp_mem_add_heap(const struct heap_config *heap_cfg, int *heap_id)
 	int (*init_fn) (const struct heap_config *heap_cfg, struct heap *heap);
 	int ret;
 
-	pr_debug("add heap\n");
-
 	switch (heap_cfg->type) {
 	case SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED:
 		init_fn = sprd_vdsp_mem_unified_init;
@@ -207,6 +205,7 @@ alloc_id_failed:
 	mutex_unlock(&mem_man->mutex);
 lock_failed:
 	kfree(heap);
+	heap = NULL;
 	return ret;
 }
 
@@ -247,6 +246,7 @@ void sprd_vdsp_mem_del_heap(int heap_id)
 	mutex_unlock(&mem_man->mutex);
 
 	kfree(heap);
+	heap = NULL;
 }
 
 EXPORT_SYMBOL(sprd_vdsp_mem_del_heap);
@@ -256,7 +256,8 @@ int sprd_vdsp_mem_get_heap_info(int heap_id, uint8_t *type, uint32_t *attrs)
 	struct mem_man *mem_man = &mem_man_data;
 	struct heap *heap;
 
-	pr_debug("get heap %d\n", heap_id);
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("get heap %d\n", heap_id);
 
 	if (heap_id < SPRD_VDSP_MEM_MAN_MIN_HEAP
 		|| heap_id > SPRD_VDSP_MEM_MAN_MAX_HEAP) {
@@ -352,6 +353,7 @@ int sprd_vdsp_mem_create_proc_ctx(struct mem_ctx **new_ctx)
 
 idr_alloc_failed:
 	kfree(ctx);
+	ctx = NULL;
 	return ret;
 }
 
@@ -394,6 +396,7 @@ void sprd_vdsp_mem_destroy_proc_ctx(struct mem_ctx *ctx)
 	mutex_unlock(&mem_man->mutex);
 
 	kfree(ctx);
+	ctx = NULL;
 }
 
 EXPORT_SYMBOL(sprd_vdsp_mem_destroy_proc_ctx);
@@ -480,6 +483,7 @@ heap_alloc_failed:
 	idr_remove(&ctx->buffers, buffer->id);
 idr_alloc_failed:
 	kfree(buffer);
+	buffer = NULL;
 	return ret;
 }
 
@@ -610,6 +614,7 @@ heap_import_failed:
 	idr_remove(&ctx->buffers, buffer->id);
 idr_alloc_failed:
 	kfree(buffer);
+	buffer = NULL;
 	return ret;
 }
 
@@ -622,6 +627,7 @@ static void _sprd_vdsp_mem_put_pages(size_t size, struct page **pages)
 		if (pages[i])
 			put_page(pages[i]);
 	kfree(pages);
+	pages = NULL;
 }
 
 static int _sprd_vdsp_mem_get_user_pages(size_t size, uint64_t cpu_ptr,
@@ -832,7 +838,7 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 	pr_debug("mapping %d, mmu_idx %d\n", buffer->mapping, buffer->mmu_idx);
 	if ((BUFFER_MAPPING == buffer->mapping)
 		&& (buffer->mmu_idx < SPRD_VDSP_IOMMU_MAX)
-		&& (buffer->mmu_idx >= SPRD_VDSP_IOMMU_EPP)) {
+		&& (buffer->mmu_idx >= 0)) {
 		pr_warn("found mapping for buffer %d (size %zu)\n", buffer->id, buffer->actual_size);
 		_sprd_vdsp_mem_unmap_iova(iommus, &buffer->map_buf);
 		buffer->mapping = BUFFER_NO_MAPPING;
@@ -848,6 +854,7 @@ static void _sprd_vdsp_mem_free(struct buffer *buffer)
 	pr_debug("-- Freeing buffer id:%d  size:%zu\n", buffer->id, buffer->actual_size);
 
 	kfree(buffer);
+	buffer = NULL;
 }
 
 void sprd_vdsp_mem_free(struct mem_ctx *ctx, int buf_id)
@@ -1539,7 +1546,7 @@ int sprd_vdsp_mem_map_iova(struct mem_ctx *mem_ctx, int buf_id, int isfixed, uns
 		buffer->map_buf.isfixed = isfixed;
 		buffer->map_buf.fixed_data = fixed_data;
 
-		pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = %ld\n",
+		pr_debug("sgt =%p, buffer =%p, size =%zu, isfixed = %d,fixed_data = 0x%lx\n",
 			buffer->map_buf.table, buffer->map_buf.buf,
 			buffer->map_buf.size, buffer->map_buf.isfixed,
 			buffer->map_buf.fixed_data);

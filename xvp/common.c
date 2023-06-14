@@ -23,11 +23,6 @@
 #include "elf.h"
 #include "xt_library_loader.h"
 #include "loader_internal.h"
-
-#ifdef __XTENSA__
-#include <xtensa/hal.h>
-#include <xtensa/core-macros.h>
-#endif
 #include <linux/bsearch.h>
 #include <linux/device.h>
 #include <linux/of.h>
@@ -106,16 +101,8 @@ void xtlib_load_seg(Elf32_Phdr *pheader, void *src_addr, xt_ptr dst_addr,
 	xt_ptr zero_addr = 0;
 	void *zero_addr_ap = pindex + bytes_to_copy;
 
-	//pr_debug("dst addr:%x , user:%p, bytes to copy:%d\n", dst_addr, user, bytes_to_copy);
 	if (bytes_to_copy > 0) {
 		mcpy(dst_addr, src_addr, bytes_to_copy, user);
-
-#ifdef __XTENSA__
-		if (pheader->p_flags & PF_X) {
-			xthal_dcache_region_writeback(dst_addr, bytes_to_copy);
-			xthal_icache_region_invalidate(dst_addr, bytes_to_copy);
-		}
-#endif
 	}
 
 	if (bytes_to_zero > 0)
@@ -141,32 +128,3 @@ Elf32_Word xtlib_host_word(Elf32_Word v)
 	return v;
 }
 
-#ifdef __XTENSA__
-
-/* Synchronize caches and memory. We've just loaded code and possibly
-   patched some of it. All changes need to be flushed out of dcache
-   and the corresponding sections need to be invalidated in icache.
-   */
-void xtlib_sync()
-{
-	/* we don't know exactly how much to writeback and/or invalidate
-	   so do all. Possible optimization later.
-	 */
-	xthal_dcache_all_writeback();
-	xthal_icache_all_invalidate();
-#if XCHAL_HAVE_LOOPS
-	asm __volatile__("movi a7, 0\n wsr.lcount a7");
-#endif
-}
-
-xt_ptr xtlib_user_memcpy(xt_ptr dest, const void *src, unsigned int n, void *user)
-{
-	return ((user_funcs *) user)->mcpy(dest, src, n);
-}
-
-xt_ptr xtlib_user_memset(xt_ptr s, int c, unsigned int n, void *user)
-{
-	return ((user_funcs *) user)->mset(s, c, n);
-}
-
-#endif /* __XTENSA__ */

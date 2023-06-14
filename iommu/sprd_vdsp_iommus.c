@@ -11,6 +11,7 @@
 #include "sprd_vdsp_iommuvau_register.h"
 #include "sprd_vdsp_iommuvau_cll.h"
 #include "sprd_vdsp_iommu_record.h"
+#include "vdsp_debugfs.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -45,7 +46,10 @@ static int iommus_iova_init(struct sprd_vdsp_iommus *iommus)
 	iommus->iova_base = iommus->iommu_devs[0]->iova_base;
 	iommus->iova_size = iommus->iommu_devs[0]->iova_size;
 	ret = iova->ops->iova_init(iova, iommus->iova_base, iommus->iova_size, 12);
-	pr_debug("iommus_iova_init sucess\n");
+	if (ret)
+		pr_err("iommus_iova_init fail\n");
+	else
+		pr_debug("iommus_iova_init sucess\n");
 	return ret;
 }
 
@@ -234,7 +238,7 @@ static int iommus_map_idx(struct sprd_vdsp_iommus *iommus,
 		return -EINVAL;
 	}
 
-	if ((iommu_dev_id < 0) || (iommu_dev_id > SPRD_VDSP_IOMMU_MAX)) {
+	if ((iommu_dev_id < 0) || (iommu_dev_id >= SPRD_VDSP_IOMMU_MAX)) {
 		pr_err("Error: iommu_dev_id inval [%d]\n", iommu_dev_id);
 		return -EINVAL;
 	}
@@ -274,11 +278,15 @@ static int iommus_map_all(struct sprd_vdsp_iommus *iommus,
 		pr_err("Error: use signal iova but iommus->iova_dev=NULL\n");
 		return -1;
 	}
+	if (vdsp_debugfs_trace_iommu())
+		pr_debug("iova_dev->iova_base: 0x%lx\n", iova_dev->iova_base);
 	if (map_conf->isfixed == 1 || map_conf->isfixed == 2) {
 		iova = map_conf->fixed_data;
 		if (map_conf->isfixed == 1) { // 1:fixed offset 2:fixed addr
 			iova = iova + iova_dev->iova_base;
 		}
+		if (vdsp_debugfs_trace_iommu())
+			pr_debug("iova:0x%lx-0x%zx\n", iova, map_conf->iova_size);
 		ret = iova_dev->ops->iova_alloc_fixed(iova_dev, &iova, map_conf->iova_size);
 		if (ret) {
 			pr_err("Error: iommus iova_alloc_fixed failed\n");
@@ -329,7 +337,7 @@ static int iommus_unmap_idx(struct sprd_vdsp_iommus *iommus,
 		pr_err("Error: iommu_dev_list or unmap_conf is NULL!\n");
 		return -EINVAL;
 	}
-	if ((iommu_id < 0) || (iommu_id > SPRD_VDSP_IOMMU_MAX - 1)) {
+	if ((iommu_id < 0) || (iommu_id >= SPRD_VDSP_IOMMU_MAX)) {
 		pr_err("Error: iommu_id inval[%d]\n", iommu_id);
 		return -EINVAL;
 	}

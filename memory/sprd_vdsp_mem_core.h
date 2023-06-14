@@ -77,23 +77,23 @@ union heap_options {
 		/* Optional hooks to obtain kernel mapping dynamically */
 		void *(*get_kptr) (phys_addr_t addr, size_t size, enum sprd_vdsp_mem_attr mattr);
 		int (*put_kptr) (void *);
-		phys_addr_t phys;		/* physical address start of memory */
-		size_t size;			/* size of memory */
+		phys_addr_t phys;	/* physical address start of memory */
+		size_t size;		/* size of memory */
 		unsigned long offs;	/* optional offset of the start of memory as seen from device, zero by default */
 		int pool_order;		/* allocation order */
 	} carveout;
 #endif
 	struct {
-		bool use_sg_dma;  /* Forces sg_dma physical address instead of CPU physical address*/
+		bool use_sg_dma;	/* Forces sg_dma physical address instead of CPU physical address*/
 	} dmabuf;
 
 	struct {
-		gfp_t gfp_flags;		/* for buffer allocations */
+		gfp_t gfp_flags;	/* for buffer allocations */
 	} coherent;
 
 	struct {
-		phys_addr_t phys;		/* physical address start of memory */
-		size_t size;			/* size of memory */
+		phys_addr_t phys;	/* physical address start of memory */
+		size_t size;		/* size of memory */
 	} ocm;
 };
 

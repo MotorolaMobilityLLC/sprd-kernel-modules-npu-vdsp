@@ -11,6 +11,7 @@
 #include "mmsys_dvfs_comm.h"
 #include "vdsp_debugfs.h"
 #include "vdsp_hw.h"
+#include "vdsp_reg.h"
 
 #ifdef pr_fmt
 #undef pr_fmt
@@ -18,17 +19,18 @@
 #define pr_fmt(fmt) "sprd-vdsp: dvfs-phy %d: %d %s:" \
 	fmt, current->pid, __LINE__, __func__
 
-#define vmin(a, b) ((a) < (b) ? (a) :(b))
-#define vmax(a, b) ((a) > (b) ? (a) :(b))
+#define MM_SYS_EN		(0x0)
+#define DVFS_EN			BIT(3) //GENMASK(23, 16)
 
-static void __iomem *mm_clk_config;
+#define vmin(a, b) ((a) < (b) ? (a) : (b))
+#define vmax(a, b) ((a) > (b) ? (a) : (b))
 
 struct vdsp_dvfs_table {
-	uint32_t power_level;
+	uint32_t dvfs_level;
 	uint32_t voltage;
 	uint32_t voltage_index;
-	uint32_t clk;
-	uint32_t clk_index;
+	uint32_t freq;
+	uint32_t freq_index;
 };
 
 static struct vdsp_dvfs_table vdsp_table[7] = {
@@ -41,31 +43,37 @@ static struct vdsp_dvfs_table vdsp_table[7] = {
 	{6, 750, 4, 1014000000, 5},	//power level max
 };
 
-static void enable_phy(void *hw_arg)
+static int dvfs_phy_enable(void *hw_arg)
 {
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	if (!(hw->mm_ahb)) {
 		pr_err("Invalid argument\n");
-		return;
+		return -1;
 	}
-	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, DVFS_EN, RT_MMSYS))
+	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, DVFS_EN, RT_MMSYS)) {
 		pr_err("error enable dvfs\n");
+		return -1;
+	}
+	return 0;
 }
 
-static void disable_phy(void *hw_arg)
+static int dvfs_phy_disable(void *hw_arg)
 {
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	if (!(hw->mm_ahb)) {
 		pr_err("Invalid argument\n");
-		return;
+		return -1;
 	}
-	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, 0, RT_MMSYS))
+	if (vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, 0, RT_MMSYS)) {
 		pr_err("error disable dvfs\n");
+		return -1;
+	}
+	return 0;
 }
 
-static uint32_t level_to_freq(uint32_t level)
+static uint32_t dvfs_phy_level_to_freq(uint32_t level)
 {
 	switch (level) {
 	case 1:	//VDSP_PWR_MIN
@@ -116,33 +124,6 @@ end:
 	return ver_id;
 }
 
-static void strategy(uint32_t *level, uint32_t max_level,
-	uint32_t percent, uint32_t last_percent)
-{
-	if ((last_percent > 50)) {
-		if (percent > 50)
-			*level = max_level;
-		else if ((percent <= 50) && (percent > 20))
-			*level = max_level - 2;
-		else
-			*level = max_level - 3;
-	} else if ((last_percent <= 50) && (last_percent > 20)) {
-		if (percent > 50)
-			*level = max_level;
-		else if ((percent <= 50) && (percent > 20))
-			*level = max_level - 2;
-		else
-			*level = max_level - 3;
-	} else {
-		if (percent > 50)
-			*level = max_level;
-		else if ((percent <= 50) && (percent > 20))
-			*level = max_level - 3;
-		else
-			*level = max_level - 3;
-	}
-}
-
 #if 1 /* software config */
 static inline void reg_write32_setbit_h(void *addr, u32 v)
 {
@@ -160,31 +141,41 @@ static inline void reg_write32_clearbit_h(void *addr, u32 v)
 	__raw_writel(value, addr);
 }
 
-static int set_clk_index(uint32_t clk_index)
+static int set_work_freq_sw(void *hw_arg, uint32_t clk_index)
 {
-	reg_write32_setbit_h((void *)(mm_clk_config + 0x28), clk_index);
-	return 0;
-}
+	void __iomem *mm_clk_config;
 
-static int set_work_freq_sw(uint32_t clk_index)
-{
+	(void)hw_arg;
 	pr_debug("[sw workaround] dvfs clk index:%d, -> register [0x30010028]\n", clk_index);
 
 	mm_clk_config = ioremap(0x30010000, 0x1000);
-	set_clk_index(clk_index);
+	reg_write32_setbit_h((void *)(mm_clk_config + 0x28), clk_index);
 	iounmap(mm_clk_config);
 	return 0;
 }
 #endif
 
-static void setdvfs_hw(uint32_t freq)
+static int set_work_freq_hw(void *hw_arg, uint32_t freq)
 {
+	uint32_t val = 0;
 	struct ip_dvfs_ops *vdsp_dvfs_ops_ptr = get_vdsp_dvfs_ops();
+	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
-	vdsp_dvfs_ops_ptr->set_work_freq(NULL, freq);
+	if (!vdsp_dvfs_ops_ptr || !(vdsp_dvfs_ops_ptr->set_work_freq)) {
+		pr_err("dvfs_phy: set_work_freq operation not supported");
+		return -1;
+	}
+	if (vdsp_regmap_read_mask(hw->mm_ahb, MM_SYS_EN, DVFS_EN, &val)) {
+		if (val == 0) {
+			pr_warn("dvfs not enable, vdsp to enable\n");
+			vdsp_regmap_update_bits(hw->mm_ahb, MM_SYS_EN, DVFS_EN, DVFS_EN, RT_MMSYS);
+		}
+		vdsp_dvfs_ops_ptr->set_work_freq(NULL, freq);
+	}
+	return 0;
 }
 
-static void setdvfs(uint32_t level)
+int setdvfs_hw(void *hw_arg, uint32_t level)
 {
 	unsigned int debugfs_dvfs_level;
 
@@ -192,7 +183,7 @@ static void setdvfs(uint32_t level)
 	if (debugfs_dvfs_level > 0)
 	{
 		level = debugfs_dvfs_level;
-		pr_info("debugfs force dvfs, level:%d, freq:%d\n", level, vdsp_table[level].clk);
+		pr_info("debugfs force dvfs, level:%d, freq:%d\n", level, vdsp_table[level].freq);
 	}
 
 	level = vmin(level, 6);		//vdsp table index max, 6-1014M
@@ -203,21 +194,39 @@ static void setdvfs(uint32_t level)
 	pr_info("APOLLO version, level[%d]\n", level);
 #endif
 
-	pr_info("level:%d, freq:%d\n", level, vdsp_table[level].clk);
+	pr_info("level:%d, freq:%d\n", level, vdsp_table[level].freq);
+
 	// AB chip
 	if (1 == soc_ver_id_check()) {
-		setdvfs_hw(vdsp_table[level].clk);
+		return set_work_freq_hw(hw_arg, vdsp_table[level].freq);
 	} else {
-		set_work_freq_sw(vdsp_table[level].clk_index);
+		return set_work_freq_sw(hw_arg, vdsp_table[level].freq_index);
 	}
 }
 
+int setdvfs_sw(void *hw_arg, uint32_t level)
+{
+	unsigned int debugfs_dvfs_level;
+
+	debugfs_dvfs_level = vdsp_debugfs_dvfs_level();
+	if (debugfs_dvfs_level > 0) {
+		level = debugfs_dvfs_level;
+		pr_info("debugfs force dvfs, level:%d, freq:%d\n", level, vdsp_table[level].freq);
+	}
+
+	level = vmin(level, 6);		//vdsp table index max, 6-1014M
+	pr_info("level:%d, freq:%d\n", level, vdsp_table[level].freq);
+
+	return set_work_freq_sw(hw_arg, vdsp_table[level].freq_index);
+}
+
 static struct dvfs_phy_ops vdsp_dvfs_ops = {
-	.enable = enable_phy,
-	.disable = disable_phy,
-	.level_to_freq = level_to_freq,
-	.setdvfs = setdvfs,
-	.strategy = strategy,
+	.enable = dvfs_phy_enable,
+	.disable = dvfs_phy_disable,
+	.level_to_freq = dvfs_phy_level_to_freq,
+	.setdvfs = setdvfs_hw,	// only test need use sw
+	.set_voltage = NULL,
+	.set_freq = NULL,
 };
 
 static struct dvfs_phy_desc sub_dvfs_phy_desc = {

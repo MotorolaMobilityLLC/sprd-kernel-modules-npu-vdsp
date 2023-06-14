@@ -47,7 +47,6 @@ int xvpfile_buf_deinit(struct xvp_file *xvp_file)
 struct xvp_buf *xvpfile_buf_alloc(struct xvp_file *xvp_file, char *name,
 	uint64_t size, uint32_t type, uint32_t attr)
 {
-
 	struct xvp_buf *buf = NULL;
 
 	buf = xvp_buf_alloc(xvp_file->xvp, name, size, type, attr);
@@ -67,12 +66,15 @@ err:
 
 int xvpfile_buf_free(struct xvp_file *xvp_file, struct xvp_buf *buf)
 {
-
 	struct xvp *xvp = NULL;
 
 	xvp = xvp_file->xvp;
 	if (!xvp) {
 		pr_err("Error xvp is NULL\n");
+		return -EINVAL;
+	}
+	if (!buf) {
+		pr_err("Error xvp_buf is NULL\n");
 		return -EINVAL;
 	}
 	mutex_lock(&xvp_file->xvpfile_buf_list_lock);
@@ -212,7 +214,6 @@ err_vdsp_mem_import:
 
 int xvpfile_buf_export(struct xvp_file *xvp_file, struct xvp_buf *buf)
 {
-
 	struct xvp *xvp = NULL;
 
 	xvp = xvp_file->xvp;

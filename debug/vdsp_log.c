@@ -91,7 +91,7 @@ static void vdsp_dump_logs(struct vdsp_log_state *s)
 	return;
 }
 
-irqreturn_t vdsp_log_irq_handler(int irq, void *private)
+irqreturn_t vdsp_log_irq_handler(void *private)
 {
 	struct xvp *xvp = (struct xvp *)private;
 	struct vdsp_log_state *s;
@@ -269,6 +269,7 @@ err_alloc_works:
 	destroy_workqueue(s->nop_wq);
 err_create_nop_wq:
 	kfree(s);
+	s = NULL;
 error_alloc_state:
 	return result;
 }
@@ -289,6 +290,7 @@ int vdsp_log_deinit(struct xvp *xvp)
 		destroy_workqueue(s->nop_wq);
 		vdsp_log_free_buffer(xvp);
 		kfree(s);
+		s = NULL;
 		xvp->log_state = NULL;
 	}
 
@@ -315,8 +317,7 @@ void vdsp_log_buf_dump(struct xvp *xvp)
 	size = log->log_size[next_bank];
 
 	i = 0;
-	while (i < size)
-	{
+	while (i < size) {
 		//read one line
 		c = '\0';
 		for (j = 0; (j < v_min(size - i, 256 - 1)) && (c != '\n');)
@@ -333,7 +334,7 @@ int vdsp_log_coredump(struct xvp *xvp)
 	int res = -1;
 	int dump_res = -1;
 	struct log_header *log = (struct log_header *)xvp->log_state->log_vaddr;
-	unsigned long deadline = jiffies + 5 * HZ;	//5s
+	unsigned long deadline = jiffies + 1 * HZ;	// 1s
 
 	pr_debug("dump start,flag:%d \n", log->coredump_flag);
 	if (log->coredump_flag == COREDUMP_START) {
@@ -355,6 +356,3 @@ int vdsp_log_coredump(struct xvp *xvp)
 	}
 	return res;
 }
-
-
-

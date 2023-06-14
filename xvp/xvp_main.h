@@ -56,9 +56,9 @@ struct xrp_known_file {
 struct xrp_request {
 	struct xrp_ioctl_queue ioctl_queue;
 	size_t n_buffers;
-	struct xvp_buf *in_buf;	// in buf
-	struct xvp_buf *out_buf;	// out buf
-	struct xvp_buf *dsp_buf;	// buf list
+	struct xvp_buf *in_buf;  // in buf
+	struct xvp_buf *out_buf; // out buf
+	struct xvp_buf *dsp_buf; // buf list
 	int *id_dsp_pool;
 	union {
 		u8 in_data[XRP_DSP_CMD_INLINE_DATA_SIZE];

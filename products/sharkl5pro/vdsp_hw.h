@@ -9,27 +9,29 @@
 #include <linux/platform_device.h>
 #include <linux/types.h>
 #include "vdsp_ipi_drv.h"
+#include "vdsp_reg.h"
 
-#define VDSP_FIRMWIRE_SIZE			(1024*1024*6)
-#define VDSP_DRAM_ADDR				(0x7f000000)
-#define VDSP_DRAM_SIZE				(256*1024)
+#define VDSP_FIRMWIRE_SIZE (1024*1024*6)
+#define VDSP_DRAM_ADDR     (0x7f000000)
+#define VDSP_DRAM_SIZE     (256*1024)
 
-#define DRIVER_NAME             "vdsp"
-#define REG_RESET               (0x04)
-#define REG_RUNSTALL            (0x3084)	//not support set/clr
-#define REG_LP_CTL              (0x3090)	//not support set/clr
-#define REG_VDSP_INT_CTL        (0x3094)	//not support set/clr
-#define REG_QOS_THRESHOLD       (0xBC)
-#define REG_QOS_3               (0xD4)
-#define REG_QOS_SEL3            (0xD8)
+#define DRIVER_NAME        "vdsp"
+#define REG_RESET          (0x04)
+#define REG_RUNSTALL       (0x3084) //not support set/clr
+#define REG_LP_CTL         (0x3090) //not support set/clr
+#define REG_VDSP_INT_CTL   (0x3094) //not support set/clr
+#define REG_QOS_THRESHOLD  (0xBC)
+#define REG_QOS_3          (0xD4)
+#define REG_QOS_SEL3       (0xD8)
 
-#define REG_PD_AP_VDSP_CFG                (0x7e4)
-#define REG_PD_AP_VDSP_CORE_INT_DISABLE   (0x7f8)
-#define REG_PD_AP_VDSP_DLSP_ENA           (0x804)
-#define REG_ISPPLL_REL_CFG                (0x8c)
+#define REG_PD_AP_VDSP_CFG              (0x7e4)
+#define REG_PD_AP_VDSP_CORE_INT_DISABLE (0x7f8)
+#define REG_PD_AP_VDSP_DLSP_ENA         (0x804)
+#define REG_ISPPLL_REL_CFG              (0x8c)
 
-#define REG_AP_DFS_EN_CTL        (0x8)
+#define REG_AP_DFS_EN_CTL               (0x8)
 
+#define VDSP_PWAITMODE     (1 << 5)
 
 #define APAHB_HREG_MWR(reg, msk, val) \
 		(REG_WR((reg), \
@@ -52,12 +54,6 @@ enum vdsp_init_flags {
 	XRP_INIT_USE_HOST_IRQ = 0x1,
 };
 
-enum reg_type{
-	RT_PMU = 0,
-	RT_APAHB,
-	RT_NO_SET_CLR,
-};
-
 struct xvp;
 
 struct qos_info {
@@ -76,10 +72,11 @@ struct vdsp_hw {
 	struct xvp *xrp;
 	struct regmap *ahb_regmap;
 	struct regmap *pmu_regmap;
+	struct qos_info qos;
+
 	phys_addr_t ipi_phys;
 	void __iomem *ipi;
-	phys_addr_t clk_phys;
-	void __iomem *clk;
+	struct vdsp_ipi_ctx_desc *vdsp_ipi_desc;
 
 	/* how IRQ is used to notify the device of incoming data */
 	enum xrp_irq_mode device_irq_mode;
@@ -100,9 +97,6 @@ struct vdsp_hw {
 	u32 host_irq[2];
 
 	s32 client_irq;
-
-	struct vdsp_ipi_ctx_desc *vdsp_ipi_desc;
-	struct qos_info qos;
 };
 
 struct vdsp_side_sync_data {
@@ -137,7 +131,7 @@ struct xrp_hw_ops {
 	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
 	 *                time
 	 */
-	void (*disable) (void *hw_arg);
+	int (*disable) (void *hw_arg);
 	/*!
 	 * Reset the core.
 	 *
@@ -175,34 +169,7 @@ struct xrp_hw_ops {
 	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
 	 *                time
 	 */
-	void (*send_irq) (void *hw_arg);
-
-	/*!
-	 * Check whether region of physical memory may be handled by
-	 * dma_sync_* operations
-	 *
-	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
-	 *                time
-	 */
-	bool(*cacheable) (void *hw_arg, unsigned long pfn, unsigned long n_pages);
-	/*!
-	 * Synchronize region of memory for DSP access.
-	 *
-	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
-	 *                time
-	 * \param flags: XRP_FLAG_{READ,WRITE,READWRITE}
-	 */
-	void (*dma_sync_for_device) (void *hw_arg, void *vaddr, phys_addr_t paddr,
-		unsigned long sz, unsigned flags);
-	/*!
-	 * Synchronize region of memory for host access.
-	 *
-	 * \param hw_arg: opaque parameter passed to xrp_init at initialization
-	 *                time
-	 * \param flags: XRP_FLAG_{READ,WRITE,READWRITE}
-	 */
-	void (*dma_sync_for_cpu) (void *hw_arg, void *vaddr, phys_addr_t paddr,
-		unsigned long sz, unsigned flags);
+	int (*send_irq) (void *hw_arg);
 
 	/*!
 	 * memcpy data/code to device-specific memory.
@@ -229,6 +196,8 @@ struct xrp_hw_ops {
 
 	/*free irq */
 	void (*vdsp_free_irq) (void *xvp_arg, void *hw_arg);
+
+	int (*stop_vdsp) (void *hw_arg);
 };
 
 long sprd_vdsp_init(struct platform_device *pdev, enum vdsp_init_flags flags,
@@ -238,17 +207,16 @@ int sprd_vdsp_deinit(struct platform_device *pdev);
 /*!
  * Notify generic XRP driver of possible IRQ from the DSP.
  *
- * \param irq: IRQ number
  * \param xvp: pointer to struct xvp returned from xrp_init* call
  * \return whether IRQ was recognized and handled
  */
-irqreturn_t xrp_irq_handler(int irq, struct xvp *xvp);
-irqreturn_t vdsp_log_irq_handler(int irq, void *private);
+irqreturn_t xrp_irq_handler(struct xvp *xvp);
+irqreturn_t vdsp_log_irq_handler(void *private);
+
+int vdsp_hw_irq_register(void *data);
+int vdsp_hw_irq_unregister(void);
 
 int vdsp_runtime_resume(struct device *dev);
 int vdsp_runtime_suspend(struct device *dev);
-
-int vdsp_regmap_update_bits(struct regmap *regmap, uint32_t offset,
-	uint32_t mask, uint32_t val, enum reg_type rt);
 
 #endif

@@ -51,7 +51,11 @@ static void mbox_raw_recv(struct mbox_fifo_data_tag *fifo)
 	pr_debug("id =%d, msg_l = 0x%x, msg_h = 0x%x\n", target_id, (u32)msg_l, (u32)msg_h);
 
 	fifo->msg = (msg_h << 32) | msg_l;
-	fifo->core_id = target_id & MBOX_MAX_CORE_MASK;
+	fifo->core_id = (u8) (target_id & MBOX_MAX_CORE_MASK);
+	if (fifo->core_id >= mbox_cfg.core_cnt) {
+		pr_err("[error]core id exceed max hw config\n");
+		return;
+	}
 	g_recv_cnt[fifo->core_id]++;
 	reg_write32((void *)(vdsp_outbox_base + MBOX_TRI), TRIGGER);
 }
@@ -95,7 +99,7 @@ static u8 mbox_read_all_fifo_msg(void)
 
 static irqreturn_t mbox_recv_irq(int irq, void *dev)
 {
-	u8 target_id;
+	u8 core_id;
 	u8 fifo_len;
 	u32 irq_status;
 	int i = 0;
@@ -107,15 +111,13 @@ static irqreturn_t mbox_recv_irq(int irq, void *dev)
 	(void)irq;
 	spin_lock_irqsave(&ctx->mbox_spinlock, flags);
 	if (!ctx->mbox_active) {
-		pr_err("mbox is not active\n");
+		pr_err("[error]mbox is not active\n");
 		spin_unlock_irqrestore(&ctx->mbox_spinlock, flags);
 		return IRQ_HANDLED;
 	}
-	/* get fifo status */
+	/* get irq status */
 	irq_status = reg_read32((void *)(vdsp_outbox_base + MBOX_IRQ_STS));
-	//clear irq
 	irq_status = irq_status & (OUTBOX_CLR_IRQ_BIT | FIFO_CLR_WR_IRQ_BIT);
-
 	pr_debug("irq_status =0x%08x\n", irq_status);
 
 	fifo_len = mbox_read_all_fifo_msg();	/* mail save in mbox_fifo */
@@ -125,24 +127,24 @@ static irqreturn_t mbox_recv_irq(int irq, void *dev)
 	reg_write32((void *)(vdsp_outbox_base + MBOX_IRQ_STS), irq_status);
 
 	for (i = 0; i < fifo_len; i++) {
-		target_id = mbox_fifo[i].core_id;
-		if (target_id >= mbox_cfg.core_cnt) {
-			pr_err("target_id >= mbox_cfg.core_cnt\n");
+		core_id = mbox_fifo[i].core_id;
+		if (core_id >= mbox_cfg.core_cnt) {
+			pr_err("[error]core id >= mbox_cfg.core_cnt\n");
 			spin_unlock_irqrestore(&ctx->mbox_spinlock, flags);
 			return IRQ_NONE;
 		}
-
-		if (mbox_chns[target_id].mbox_smsg_handler) {
-			pr_debug("msg handle,index = %d, id = %d\n", i, target_id);
-			priv_data = mbox_chns[target_id].mbox_priv_data;
-			mbox_chns[target_id].mbox_smsg_handler(&mbox_fifo[i].msg, priv_data);
-		} else if (mbox_fifo_bak_len < MAX_SMSG_BAK) {
-			pr_debug("msg bak here,index =%d, id = %d\n", i, target_id);
+		if (mbox_chns[core_id].mbox_smsg_handler) {
+			priv_data = mbox_chns[core_id].mbox_priv_data;
+			mbox_chns[core_id].mbox_smsg_handler(&mbox_fifo[i].msg, priv_data);
+		}
+		else if (mbox_fifo_bak_len < MAX_SMSG_BAK) {
+			pr_debug("msg bak here,index =%d, core id = %d\n", i, core_id);
 			memcpy(&mbox_fifo_bak[mbox_fifo_bak_len], &mbox_fifo[i],
 				sizeof(struct mbox_fifo_data_tag));
 			mbox_fifo_bak_len++;
-		} else {
-			pr_err("msg drop here,index =%d, id = %d\n", i, target_id);
+		}
+		else {
+			pr_err("[error]msg drop here,index =%d, id = %d\n", i, core_id);
 		}
 	}
 
@@ -154,25 +156,25 @@ static void mbox_process_bak_msg(void)
 {
 	int i;
 	int cnt = 0;
-	int target_id = 0;
+	int core_id = 0;
 	void *priv_data;
 
 	for (i = 0; i < mbox_fifo_bak_len; i++) {
-		target_id = mbox_fifo_bak[i].core_id;
+		core_id = mbox_fifo_bak[i].core_id;
 		/* has been procced */
-		if (target_id == MBOX_MAX_CORE_CNT) {	/*hww doubt */
+		if (core_id == MBOX_MAX_CORE_CNT) {	/*hww doubt */
 			cnt++;
 			continue;
 		}
-		if (mbox_chns[target_id].mbox_smsg_handler) {
-			pr_debug("index = %d, id = %d\n", i, target_id);
-			priv_data = mbox_chns[target_id].mbox_priv_data;
-			mbox_chns[target_id].mbox_smsg_handler(&mbox_fifo_bak[i].msg, priv_data);
+		if (mbox_chns[core_id].mbox_smsg_handler) {
+			pr_debug("index = %d, core id = %d\n", i, core_id);
+			priv_data = mbox_chns[core_id].mbox_priv_data;
+			mbox_chns[core_id].mbox_smsg_handler(&mbox_fifo_bak[i].msg, priv_data);
 			/* set a mask indicate the bak msg is been procced */
 			mbox_fifo_bak[i].core_id = MBOX_MAX_CORE_CNT;
 			cnt++;
 		} else {
-			pr_err("mbox_smsg_handler NULL,index = %d, id = %d\n", i, target_id);
+			pr_err("[error]mbox_smsg_handler NULL,index = %d, id = %d\n", i, core_id);
 		}
 	}
 
@@ -181,30 +183,29 @@ static void mbox_process_bak_msg(void)
 		mbox_fifo_bak_len = 0;
 }
 
-static int mbox_register_irq(u8 target_id, mbox_handle handler, void *data)
+static int mbox_register_irq(u8 core_id, mbox_handle handler, void *data)
 {
-	if (target_id >= mbox_cfg.core_cnt) {
-		pr_err("invalid target_id:%d\n", target_id);
+	if (core_id >= mbox_cfg.core_cnt) {
+		pr_err("[error]invalid core_id:%d\n", core_id);
 		return -EINVAL;
 	}
-
-	mbox_chns[target_id].mbox_smsg_handler = handler;
-	mbox_chns[target_id].mbox_priv_data = data;
+	mbox_chns[core_id].mbox_smsg_handler = handler;
+	mbox_chns[core_id].mbox_priv_data = data;
 
 	return 0;
 }
 
-static int mbox_unregister_irq(u8 target_id)
+static int mbox_unregister_irq(u8 core_id)
 {
-	if (target_id >= mbox_cfg.core_cnt) {
-		pr_err("invalid target_id:%d\n", target_id);
+	if (core_id >= mbox_cfg.core_cnt) {
+		pr_err("[error]invalid core_id:%d\n", core_id);
 		return -EINVAL;
 	}
-	if (!mbox_chns[target_id].mbox_smsg_handler) {
-		pr_err("handler is NULL already\n");
+	if (!mbox_chns[core_id].mbox_smsg_handler) {
+		pr_err("[error]handler is NULL already\n");
 		return -EINVAL;
 	}
-	mbox_chns[target_id].mbox_smsg_handler = NULL;
+	mbox_chns[core_id].mbox_smsg_handler = NULL;
 	return 0;
 }
 
@@ -213,15 +214,16 @@ static int mbox_send(u8 core_id, u64 msg)
 	u32 l_msg = (u32) msg;
 	u32 h_msg = (u32) (msg >> 32);
 	u32 fifo_sts_1, fifo_sts_2, block, recv_flag;
-	unsigned long recv_flag_cnt;
 
-	pr_debug("core_id=%d\n", (u32) core_id);
+	pr_debug("core_id=%d\n", core_id);
+	if (core_id >= mbox_cfg.core_cnt) {
+		pr_err("[error]invalid core_id:%d\n", core_id);
+		return -EINVAL;
+	}
 
 	/* wait outbox recv flag, until flag is 0 (mail be send to outbox will clear it)*/
-	recv_flag_cnt = 0;
 	recv_flag = 1 << (core_id + IN_OUTBOX_RECEIVING_FLAG_SHIFT);
 	do {
-		recv_flag_cnt++;
 		fifo_sts_1 = reg_read32((void *)(vdsp_inbox_base + MBOX_FIFO_INBOX_STS_1));
 		fifo_sts_2 = reg_read32((void *)(vdsp_inbox_base + MBOX_FIFO_INBOX_STS_2));
 		block = ((fifo_sts_2 & IN_OUTBOX_BLOCK_FLAG) >> IN_OUTBOX_BLOCK_FLAG_SHIFT);
@@ -233,9 +235,6 @@ static int mbox_send(u8 core_id, u64 msg)
 		if (block & (1 << core_id))
 			goto block_exit;
 	} while (fifo_sts_1 & recv_flag);
-
-	if (mbox_chns[core_id].max_recv_flag_cnt < recv_flag_cnt)
-		mbox_chns[core_id].max_recv_flag_cnt = recv_flag_cnt;
 
 	reg_write32((void *)(vdsp_inbox_base + MBOX_MSG_L), l_msg);
 	reg_write32((void *)(vdsp_inbox_base + MBOX_MSG_H), h_msg);
@@ -253,14 +252,11 @@ block_exit:
 static void debug_mbox_cfg_printf(struct mbox_cfg_tag *mb)
 {
 	pr_debug("(base)inbox = 0x%x, outbox = 0x%x\n", mb->inbox_base, mb->outbox_base);
-	pr_debug("(range)inbox = 0x%x, outbox = 0x%x\n", mb->inbox_range, mb->outbox_range);
 	pr_debug("(fifo size)inbox = %d, outbox = %d\n", mb->inbox_fifo_size, mb->outbox_fifo_size);
 	pr_debug("(irq_mask)inbox= 0x%x, outbox= 0x%x\n", mb->inbox_irq_mask, mb->outbox_irq_mask);
-	pr_debug("sensor_core = %d\n", mb->sensor_core);
 	pr_debug("rd_bit = %d, rd_mask = %d\n", mb->rd_bit, mb->rd_mask);
 	pr_debug("wr_bit = %d, wr_mask = %d\n", mb->wr_bit, mb->wr_mask);
 	pr_debug("enable_reg = 0x%x, mask_bit = 0x%x\n", mb->enable_reg, mb->mask_bit);
-	pr_debug("prior_low = %d, prior_high = %d\n", mb->prior_low, mb->prior_high);
 	pr_debug("core_cnt = %d, version = %d\n", mb->core_cnt, mb->version);
 }
 
@@ -288,7 +284,6 @@ static int mbox_cfg_init(struct mbox_dts_cfg_tag *mbox_dts, u8 * mbox_inited)
 	/* init irq */
 	mbox_cfg.inbox_irq = mbox_dts->inbox_irq;
 	mbox_cfg.outbox_irq = mbox_dts->outbox_irq;
-	mbox_cfg.outbox_sensor_irq = mbox_dts->outbox_sensor_irq;
 
 	/* init core cnt */
 	if (mbox_dts->core_cnt > MBOX_MAX_CORE_CNT) {
@@ -309,10 +304,6 @@ static int mbox_cfg_init(struct mbox_dts_cfg_tag *mbox_dts, u8 * mbox_inited)
 	/* init fifo write ptr */
 	mbox_cfg.wr_bit = FIFO_WR_PTR_BIT;
 	mbox_cfg.wr_mask = MBOX_V2_WRITE_PT_SHIFT;
-
-	/* init core range */
-	mbox_cfg.inbox_range = MBOX_V2_INBOX_CORE_SIZE;
-	mbox_cfg.outbox_range = MBOX_V2_OUTBOX_CORE_SIZE;
 
 	/* init irq mask */
 	mbox_cfg.inbox_irq_mask = MBOX_V2_INBOX_IRQ_MASK;
@@ -337,7 +328,7 @@ static int mbox_enable(void *ctx)
 	spin_lock_irqsave(&context->mbox_spinlock, flags);
 
 	/*power domain on follow cam sys */
-	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, ~((uint32_t) 0), RT_MMSYS);
+	vdsp_regmap_update_bits(context->mbox_en_cfg, 0, MM_AHB_MBOX_EB, ~((uint32_t) 0), RT_MMSYS);
 	reg_write32((void *)(vdsp_outbox_base + MBOX_FIFO_RST), FIFO_RESET_BIT);
 	reg_write32((void *)(vdsp_inbox_base + MBOX_IRQ_MSK), mbox_cfg.inbox_irq_mask);
 	reg_write32((void *)(vdsp_outbox_base + MBOX_IRQ_MSK), mbox_cfg.outbox_irq_mask);
@@ -361,7 +352,7 @@ static int mbox_disable(void *ctx)
 	//clear irq
 	reg_write32((void *)(vdsp_outbox_base + MBOX_IRQ_STS), OUTBOX_CLR_IRQ_BIT);
 	/*power domain off follow cam sys */
-	vdsp_regmap_update_bits(context->mm_ahb, 0, MM_AHB_MBOX_EB, 0, RT_MMSYS);
+	vdsp_regmap_update_bits(context->mbox_en_cfg, 0, MM_AHB_MBOX_EB, 0, RT_MMSYS);
 
 	context->mbox_active = 0;
 	spin_unlock_irqrestore(&context->mbox_spinlock, flags);

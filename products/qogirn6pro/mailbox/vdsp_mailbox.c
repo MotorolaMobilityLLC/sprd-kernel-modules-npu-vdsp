@@ -22,20 +22,19 @@ static u8 g_mbox_inited;
 
 static spinlock_t mbox_lock;
 
-static int vdsp_mbox_register_irq_handle(u8 target_id, mbox_handle handler,
-	void *data)
+static int vdsp_mbox_register_irq_handle(u8 core_id, mbox_handle handler, void *data)
 {
 	unsigned long flags;
 	int ret;
 
-	pr_debug("target_id =%d\n", target_id);
+	pr_debug("core_id =%d\n", core_id);
 	if (!g_mbox_inited) {
 		pr_err("[error] mbox not inited\n");
 		return -EINVAL;
 	}
 
 	spin_lock_irqsave(&mbox_lock, flags);
-	ret = mbox_ops->fops->phy_register_irq_handle(target_id, handler, data);
+	ret = mbox_ops->fops->phy_register_irq_handle(core_id, handler, data);
 	spin_unlock_irqrestore(&mbox_lock, flags);
 	if (ret) {
 		pr_err("[error]mbox register irq fail, ret:%d\n", ret);
@@ -47,7 +46,7 @@ static int vdsp_mbox_register_irq_handle(u8 target_id, mbox_handle handler,
 	return ret;
 }
 
-static int vdsp_mbox_unregister_irq_handle(u8 target_id)
+static int vdsp_mbox_unregister_irq_handle(u8 core_id)
 {
 	int ret;
 
@@ -56,7 +55,7 @@ static int vdsp_mbox_unregister_irq_handle(u8 target_id)
 		return -EINVAL;
 	}
 	spin_lock(&mbox_lock);
-	ret = mbox_ops->fops->phy_unregister_irq_handle(target_id);
+	ret = mbox_ops->fops->phy_unregister_irq_handle(core_id);
 	spin_unlock(&mbox_lock);
 
 	return ret;
@@ -111,12 +110,14 @@ static int vdsp_mbox_init(void)
 
 	ret = mbox_parse_dts();
 	if (ret != 0) {
+		pr_err("[error]mbox parse dts fail\n");
 		return -EINVAL;
 	}
 	mbox_get_phy_device(&mbox_ops);
 	spin_lock_init(&mbox_lock);
 	ret = mbox_ops->fops->cfg_init(&mbox_dts, &g_mbox_inited);
 	if (ret != 0) {
+		pr_err("[error]mbox config init fail\n");
 		return -EINVAL;
 	}
 	return 0;

@@ -6,13 +6,11 @@
 
 static int uart_enable(struct vdsp_uart_desc *ctx)
 {
-
 	return 0;
 }
 
 static int uart_disable(struct vdsp_uart_desc *ctx)
 {
-
 	return 0;
 }
 

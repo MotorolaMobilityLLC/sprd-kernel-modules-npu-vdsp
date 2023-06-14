@@ -7,13 +7,13 @@
 #include <linux/mutex.h>
 #include <linux/fs.h>
 
-#define LIST_NO_MEM  -2
-#define LIST_ERROR   -1
-#define LIST_SUCCESS  0
+#define LIST_NO_MEM		(-2)
+#define LIST_ERROR		(-1)
+#define LIST_SUCCESS		(0)
 
-#define LIB_RESULT_OK         0
-#define LIB_RESULT_LOADED     1
-#define LIB_RESULT_ERROR      2
+#define LIB_RESULT_OK		(0)
+#define LIB_RESULT_LOADED	(1)
+#define LIB_RESULT_ERROR	(2)
 
 enum load_unload_flag {
 	XRP_NOT_LOAD_UNLOAD = 0,
@@ -39,7 +39,7 @@ struct xrp_unload_cmdinfo {
 struct loadlib_info {
 	enum library_state lib_state;	/*valid_flag 0 is invalid may because vdsp side error , 1 is valid */
 	uint32_t lib_processing_count;
-	char libname[32];	/*libname , load_flag ==1 is valid, load_flag ==0 is invalid */
+	char libname[32];	/*libname, load_flag ==1 is valid, load_flag ==0 is invalid */
 	uint32_t length;	/*library length bytes */
 	int handle;		/*mem fd */
 	int pil_handle;
@@ -66,7 +66,6 @@ int post_process_request(struct file *filp, struct xrp_request *rq,
 	const char *libname, enum load_unload_flag load_flag, int32_t resultflag);
 int32_t xrp_library_release_all(struct xvp *xvp);
 int32_t xrp_library_decrease(struct file *filp, const char *libname);
-//int32_t xrp_library_setall_missstate(struct xvp *xvp); no use
 int32_t xrp_create_unload_cmd(struct file *filp, struct loadlib_info *libinfo,
 	struct xrp_unload_cmdinfo *info);
 int32_t xrp_free_unload_cmd(struct file *filp, struct xrp_unload_cmdinfo *info);

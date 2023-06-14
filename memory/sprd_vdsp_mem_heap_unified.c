@@ -142,6 +142,7 @@ err_free_sgt:
 	sg_free_table(sgt);
 err_free:
 	kfree(sgt);
+	sgt = NULL;
 	return NULL;
 }
 
@@ -157,6 +158,7 @@ static void unified_unmap_dmabuf(struct dma_buf_attachment *attach,
 	dma_unmap_sg(attach->dev, sgt->sgl, sgt->orig_nents, dir);
 	sg_free_table(sgt);
 	kfree(sgt);
+	sgt = NULL;
 }
 
 /* Called when when ref counter reaches zero! */
@@ -300,7 +302,7 @@ static void *unified_kmap_dmabuf(struct dma_buf *buf, unsigned long page)
 static int unified_map_km(struct heap *heap, struct buffer *buffer);
 static int unified_unmap_km(struct heap *heap, struct buffer *buffer);
 
-#ifndef K515_ENABLE
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
 static void *unified_vmap_dmabuf(struct dma_buf *buf)
 {
 	struct buffer *buffer = buf->priv;
@@ -339,36 +341,41 @@ static int unified_vmap_dmabuf(struct dma_buf *buf, struct dma_buf_map *map)
 {
 	struct buffer *buffer = buf->priv;
 	struct heap *heap;
+	int ret = 0;
 
-	if (!buffer)
-		return -1;
+	if (!buffer || !map)
+		return -EINVAL;
 
 	heap = buffer->heap;
-
-	if (unified_map_km(heap, buffer))
-		return -1;
+	ret = unified_map_km(heap, buffer);
+	if (ret)
+		return ret;
 
 	pr_debug("buffer %d kptr 0x%p\n", buffer->id, buffer->kptr);
 	dma_buf_map_set_vaddr(map, buffer->kptr);
-	return 0;
+
+	return ret;
 }
 
 static void unified_vunmap_dmabuf(struct dma_buf *buf, struct dma_buf_map *map)
 {
 	struct buffer *buffer = buf->priv;
 	struct heap *heap;
-	void *kptr = map->vaddr;
 
-	if (!buffer)
+	if (!buffer || !map)
 		return;
 
 	heap = buffer->heap;
-	pr_debug("buffer %d buffer kptr 0x%p - kptr 0x%p\n", buffer->id, buffer->kptr, kptr);
-	if (buffer->kptr == kptr)
+
+	pr_debug("%s:%d buffer %d kptr 0x%p (0x%p)\n", __func__, __LINE__,
+		buffer->id, buffer->kptr, map->vaddr);
+
+	if (buffer->kptr == map->vaddr)
 		unified_unmap_km(heap, buffer);
 	dma_buf_map_clear(map);
 }
 #endif
+
 static const struct dma_buf_ops unified_dmabuf_ops = {
 	.map_dma_buf = unified_map_dmabuf,
 	.unmap_dma_buf = unified_unmap_dmabuf,
@@ -596,6 +603,7 @@ alloc_buffer_data_failed:
 	sg_free_table(sgt);
 sg_alloc_table_failed:
 	kfree(sgt);
+	sgt = NULL;
 alloc_pages_failed:
 	list_for_each_entry_safe(page, tmp_page, &pages_list, lru) {
 		set_page_cache(page, SPRD_VDSP_MEM_ATTR_CACHED);
@@ -674,7 +682,9 @@ static void unified_free(struct heap *heap, struct buffer *buffer)
 	}
 	sg_free_table(sgt);
 	kfree(sgt);
+	sgt = NULL;
 	kfree(buffer_data);
+	buffer_data = NULL;
 }
 
 static void unified_mmap_open(struct vm_area_struct *vma)
@@ -754,9 +764,8 @@ static int unified_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			pr_err("no page!\n");
 			return VM_FAULT_SIGBUS;
 		}
-
-		pr_debug("vmf addr %lx page_address:%p phys:%#llx\n",
-			addr, page, (unsigned long long)page_to_phys(page));
+		//pr_debug("vmf addr %lx page_address:%p phys:%#llx\n",
+		//	addr, page, (unsigned long long)page_to_phys(page));
 
 		err = vm_insert_page(vma, addr, page);
 		switch (err) {

@@ -4,6 +4,13 @@
 
 #include <linux/types.h>
 #include "sprd_vdsp_iommuvau_register.h"
+#include "vdsp_debugfs.h"
+
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+#define pr_fmt(fmt) "sprd-vdsp: [iommu_register]: %d %d %s: "\
+        fmt, current->pid, __LINE__, __func__
 
 void putbit(ulong reg_addr, u32 dst_value, u8 pos)
 {
@@ -38,10 +45,6 @@ void mmu_vau_enable(ulong ctrl_base_addr, u32 iommu_id, u32 mmu_enable)
 	putbit(reg_addr, mmu_enable, 0);
 }
 
-/*
- * sharkl3 dpu register is shadowed to internal ram, so we have to set
- * vaorbypass, clkgate and enable in a single function.
- */
 void mmu_vau_vaorbypass_clkgate_enable_combined(ulong ctrl_base_addr,
 	u32 iommu_id)
 {
@@ -168,6 +171,46 @@ void mmu_vau_ppn2_range(ulong ctrl_base_addr, u32 iommu_id, ulong ppn2_range)
 	reg_write_dword(reg_addr, (ppn2_range >> 20));
 }
 
+void mmu_vau_mini_ppn3(ulong ctrl_base_addr, u32 iommu_id, ulong ppn3)
+{
+	ulong reg_addr = 0;
+
+	(void)iommu_id;
+
+	reg_addr = ctrl_base_addr + MINI_PPN3_OFFSET;
+	reg_write_dword(reg_addr, (ppn3 >> 20));
+}
+
+void mmu_vau_ppn3_range(ulong ctrl_base_addr, u32 iommu_id, ulong ppn3_range)
+{
+	ulong reg_addr = 0;
+
+	(void)iommu_id;
+
+	reg_addr = ctrl_base_addr + PPN3_RANGE_OFFSET;
+	reg_write_dword(reg_addr, (ppn3_range >> 20));
+}
+
+void mmu_vau_mini_ppn4(ulong ctrl_base_addr, u32 iommu_id, ulong ppn4)
+{
+	ulong reg_addr = 0;
+
+	(void)iommu_id;
+
+	reg_addr = ctrl_base_addr + MINI_PPN4_OFFSET;
+	reg_write_dword(reg_addr, (ppn4 >> 20));
+}
+
+void mmu_vau_ppn4_range(ulong ctrl_base_addr, u32 iommu_id, ulong ppn4_range)
+{
+	ulong reg_addr = 0;
+
+	(void)iommu_id;
+
+	reg_addr = ctrl_base_addr + PPN4_RANGE_OFFSET;
+	reg_write_dword(reg_addr, (ppn4_range >> 20));
+}
+
 void mmu_vau_reg_authority(ulong ctrl_base_addr, u32 iommu_id, ulong reg_ctrl)
 {
 	ulong reg_addr = ctrl_base_addr;
@@ -183,6 +226,8 @@ void mmu_vau_write_pate_totable(ulong pgt_base_addr,
 {
 	ulong pgt_addr = pgt_base_addr + entry_index * 4;
 
+	if (vdsp_debugfs_trace_mem())
+		pr_debug("pgt_addr:0x%lx, map addr:0x%x\n", pgt_addr, ppn_addr);
 	reg_write_dword(pgt_addr, ppn_addr);
 }
 

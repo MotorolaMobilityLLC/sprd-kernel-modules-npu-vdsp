@@ -15,11 +15,11 @@ enum sg_pool_status {
 
 struct sprd_iommu_map_slot {
 	unsigned long sg_table_addr;	// sg_table addr
-	unsigned long buf_addr;	// buf of mem core addr
+	unsigned long buf_addr;		// buf of mem core addr
 	unsigned long iova_addr;	// iova addr
 	unsigned long iova_size;
 	enum sg_pool_status status;	// slot status
-	int map_usrs;		// map counter
+	int map_usrs;			// map counter
 };
 
 struct sprd_vdsp_iommu_map_record {

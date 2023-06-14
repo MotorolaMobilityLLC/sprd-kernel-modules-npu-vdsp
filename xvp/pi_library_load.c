@@ -233,18 +233,18 @@ static int validate_dynamic_splitload(Elf32_Ehdr * header)
 	return XTLIB_NO_ERR;
 }
 
-unsigned int xtlib_pi_library_size(xtlib_packaged_library * library)
+int xtlib_pi_library_size(xtlib_packaged_library * library)
 {
 	int seg, num;
-	unsigned int bytes = 0;
-	unsigned int size;
+	int bytes = 0;
+	int size;
 	Elf32_Phdr *pheader;
 	Elf32_Ehdr *header = (Elf32_Ehdr *) library;
 
 	int err = validate_dynamic(header);
 
 	if (err != XTLIB_NO_ERR) {
-		pr_err("[ERROR]return -1\n");
+		pr_err("[ERROR]elf file header is not valid\n");
 		xtlib_globals.err = err;
 		return -1;
 	}
@@ -253,7 +253,7 @@ unsigned int xtlib_pi_library_size(xtlib_packaged_library * library)
 	pheader = (Elf32_Phdr *) ((char *)library + xtlib_host_word(header->e_phoff));
 	while (seg < num) {
 		if (xtlib_host_word(pheader[seg].p_type) == PT_LOAD) {
-			size = xtlib_host_word(pheader[seg].p_paddr) + xtlib_host_word(pheader[seg].p_memsz);
+			size = (int)(xtlib_host_word(pheader[seg].p_paddr) + xtlib_host_word(pheader[seg].p_memsz));
 			if (size > bytes)
 				bytes = size;
 		}

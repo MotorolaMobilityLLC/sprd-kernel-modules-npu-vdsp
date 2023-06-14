@@ -20,6 +20,9 @@ struct xrp_debug_para {
 	unsigned int vdsp_log_level;
 	unsigned int vdsp_dvfs_level;
 	unsigned int vdsp_trace_mem;
+	unsigned int vdsp_trace_iommu;
+	unsigned int vdsp_trace_firmware;
+	unsigned int vdsp_trace_hw;
 	unsigned int vdsp_cmd_timeout;
 };
 
@@ -40,6 +43,9 @@ int vdsp_debugfs_init(void)
 	debugfs_create_u32("log_level", 0664, root_d, &xrp_para.vdsp_log_level);
 	debugfs_create_u32("dvfs_level", 0664, root_d, &xrp_para.vdsp_dvfs_level);
 	debugfs_create_u32("trace_mem", 0664, root_d, &xrp_para.vdsp_trace_mem);
+	debugfs_create_u32("trace_iommu", 0664, root_d, &xrp_para.vdsp_trace_iommu);
+	debugfs_create_u32("trace_hw", 0664, root_d, &xrp_para.vdsp_trace_hw);
+	debugfs_create_u32("trace_firmware", 0664, root_d, &xrp_para.vdsp_trace_firmware);
 	debugfs_create_u32("cmd_timeout", 0664, root_d, &xrp_para.vdsp_cmd_timeout);
 
 	return 0;
@@ -65,6 +71,21 @@ unsigned int vdsp_debugfs_trace_mem(void)
 	return xrp_para.vdsp_trace_mem;
 }
 
+unsigned int vdsp_debugfs_trace_iommu(void)
+{
+	return xrp_para.vdsp_trace_iommu;
+}
+
+unsigned int vdsp_debugfs_trace_hw(void)
+{
+	return xrp_para.vdsp_trace_hw;
+}
+
+unsigned int vdsp_debugfs_trace_firmware(void)
+{
+	return xrp_para.vdsp_trace_firmware;
+}
+
 unsigned int vdsp_debugfs_cmd_timeout(void)
 {
 	return xrp_para.vdsp_cmd_timeout;
@@ -74,7 +95,7 @@ void vdsp_debugfs_exit(void)
 {
 	pr_debug("vdsp_debugfs: exiting...\n");
 	if (root_d)
-#if 1//(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
 		debugfs_remove(root_d);
 #else
 		debugfs_remove_recursive(root_d);

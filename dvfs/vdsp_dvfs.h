@@ -2,8 +2,8 @@
  * SPDX-FileContributor: vdsp dvfs function, dynamically adjust frequency voltage .
  */
 
-#ifndef _SPRD_VDSP_DRIVER_DVFS_H_
-#define _SPRD_VDSP_DRIVER_DVFS_H_
+#ifndef _VDSP_DVFS_H_
+#define _VDSP_DVFS_H_
 #include "vdsp_hw.h"
 
 typedef enum {
@@ -14,12 +14,12 @@ typedef enum {
 
 typedef enum {
 	VDSP_PWR_DVFS = 0,
-	VDSP_PWR_MIN,
-	VDSP_PWR_2,
-	VDSP_PWR_3,
-	VDSP_PWR_4,
-	VDSP_PWR_5,
-	VDSP_PWR_MAX,
+	VDSP_PWR_MIN,	//26M (n6pro)
+	VDSP_PWR_2,	//307.2M
+	VDSP_PWR_3,	//512M
+	VDSP_PWR_4,	//614.4M
+	VDSP_PWR_5,	//819.2M
+	VDSP_PWR_MAX,	//1014M
 	VDSP_PWR_NUM,	// total power level numbers
 }vdsp_power_level;	// power level
 
@@ -45,14 +45,16 @@ struct vdsp_powerhint {
 
 struct vdsp_dvfs_ops {
 	int (*init)(void *data);
-	void (*deinit)(void *data);
-	int32_t (*set_powerhint)(void *data, int32_t level, uint32_t flag);
-	void (*preprocess)(void *data);
-	void (*postprocess)(void *data);
-	void (*release_powerhint)(void *filp);
-	void (*setdvfs)(void *hw_arg, uint32_t level);
-	void (*enable)(void *hw_arg);
-	void (*disable)(void *hw_arg);
+	int (*deinit)(void *data);
+	int (*enable)(void *hw_arg);
+	int (*disable)(void *hw_arg);
+	int (*preprocess)(void *data);
+	int (*postprocess)(void *data);
+	int (*release_powerhint)(void *filp);
+	int (*set_powerhint)(void *data, int32_t level, uint32_t flag);
+	int (*setdvfs)(void *hw_arg, uint32_t level);
+	int (*set_voltage) (void *hw_arg, uint32_t voltage);
+	int (*set_freq) (void *hw_arg, uint32_t freq);
 };
 
 struct vdsp_dvfs_desc {

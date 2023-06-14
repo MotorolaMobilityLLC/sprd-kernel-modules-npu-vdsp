@@ -129,19 +129,14 @@ char *debug_get_ioctl_cmd_name(unsigned int cmd)
 
 void debug_print_xrp_ioctl_queue(struct xrp_ioctl_queue *q)
 {
-
 	pr_debug("================================\n");
 	pr_debug("xrp_ioctl_queue->flags        =%d\n", q->flags);
-
 	pr_debug("xrp_ioctl_queue->in_data_fd   =%d\n", q->in_data_fd);
 	pr_debug("xrp_ioctl_queue->in_data_addr =%#llx\n", q->in_data_addr);
 	pr_debug("xrp_ioctl_queue->in_data_size =%d\n", q->in_data_size);
-
 	pr_debug("xrp_ioctl_queue->out_data_fd  =%d\n", q->out_data_fd);
 	pr_debug("xrp_ioctl_queue->out_data_addr=%#llx\n", q->out_data_addr);
 	pr_debug("xrp_ioctl_queue->out_data_size=%d\n", q->out_data_size);
-
 	pr_debug("xrp_ioctl_queue->buffer_addr  =%#llx\n", q->buffer_addr);
 	pr_debug("xrp_ioctl_queue->buffer_size  =%d\n", q->buffer_size);
-	// pr_debug("xrp_ioctl_queue->nsid_addr    =%s\n"  ,(char *)q->nsid_addr);
 }

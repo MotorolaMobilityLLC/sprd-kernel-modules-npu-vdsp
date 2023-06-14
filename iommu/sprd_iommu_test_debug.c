@@ -26,6 +26,8 @@ void debug_print_iommu_dev(struct sprd_vdsp_iommu_dev *iommu_dev)
 	pr_debug(" iommu_version  :%d \n", iommu_dev->iommu_version);
 	pr_debug(" iova_base      :0x%lx \n", iommu_dev->iova_base);
 	pr_debug(" iova_size      :0x%zx \n", iommu_dev->iova_size);
+	pr_debug(" vpn_base_addr      :0x%lx \n", iommu_dev->vpn_base_addr);
+	pr_debug(" vpn_range      :0x%zx \n", iommu_dev->vpn_range);
 	pr_debug(" pgt_base       :0x%lx \n", iommu_dev->pgt_base);
 	pr_debug(" pgt_size       :0x%zx \n", iommu_dev->pgt_size);
 	pr_debug(" ctrl_reg       :0x%lx \n", iommu_dev->ctrl_reg);

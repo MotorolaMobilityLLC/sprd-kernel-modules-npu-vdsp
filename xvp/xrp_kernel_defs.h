@@ -34,30 +34,24 @@
 #define _XRP_KERNEL_DEFS_H
 
 #define XRP_IOCTL_MAGIC 'r'
-#define XRP_IOCTL_ALLOC		_IO(XRP_IOCTL_MAGIC, 1)
-#define XRP_IOCTL_FREE		_IO(XRP_IOCTL_MAGIC, 2)
-#define XRP_IOCTL_QUEUE		_IO(XRP_IOCTL_MAGIC, 3)
-#define XRP_IOCTL_QUEUE_NS	_IO(XRP_IOCTL_MAGIC, 4)
-#define XRP_IOCTL_SET_DVFS      _IO(XRP_IOCTL_MAGIC,5)
-#define XRP_IOCTL_FACEID_CMD    _IO(XRP_IOCTL_MAGIC,6)
-#define XRP_IOCTL_SET_POWERHINT _IO(XRP_IOCTL_MAGIC,7)
-#define XRP_IOCTL_MEM_QUERY  _IO(XRP_IOCTL_MAGIC,8)
-#define XRP_IOCTL_MEM_IMPORT _IO(XRP_IOCTL_MAGIC,9)
-#define XRP_IOCTL_MEM_EXPORT _IO(XRP_IOCTL_MAGIC,10)
-#define XRP_IOCTL_MEM_ALLOC  _IO(XRP_IOCTL_MAGIC,11)
-#define XRP_IOCTL_MEM_FREE   _IO(XRP_IOCTL_MAGIC,12)
-#define XRP_IOCTL_MEM_IOMMU_MAP    _IO(XRP_IOCTL_MAGIC,13)
-#define XRP_IOCTL_MEM_IOMMU_UNMAP  _IO(XRP_IOCTL_MAGIC,14)
-#define XRP_IOCTL_MEM_CPU_TO_DEVICE  _IO(XRP_IOCTL_MAGIC,15)
-#define XRP_IOCTL_MEM_DEVICE_TO_CPU  _IO(XRP_IOCTL_MAGIC,16)
+#define XRP_IOCTL_ALLOC			_IO(XRP_IOCTL_MAGIC,1)
+#define XRP_IOCTL_FREE			_IO(XRP_IOCTL_MAGIC,2)
+#define XRP_IOCTL_QUEUE			_IO(XRP_IOCTL_MAGIC,3)
+#define XRP_IOCTL_QUEUE_NS		_IO(XRP_IOCTL_MAGIC,4)
+#define XRP_IOCTL_SET_DVFS		_IO(XRP_IOCTL_MAGIC,5)
+#define XRP_IOCTL_FACEID_CMD		_IO(XRP_IOCTL_MAGIC,6)
+#define XRP_IOCTL_SET_POWERHINT		_IO(XRP_IOCTL_MAGIC,7)
+#define XRP_IOCTL_MEM_QUERY		_IO(XRP_IOCTL_MAGIC,8)
+#define XRP_IOCTL_MEM_IMPORT		_IO(XRP_IOCTL_MAGIC,9)
+#define XRP_IOCTL_MEM_EXPORT		_IO(XRP_IOCTL_MAGIC,10)
+#define XRP_IOCTL_MEM_ALLOC		_IO(XRP_IOCTL_MAGIC,11)
+#define XRP_IOCTL_MEM_FREE		_IO(XRP_IOCTL_MAGIC,12)
+#define XRP_IOCTL_MEM_IOMMU_MAP		_IO(XRP_IOCTL_MAGIC,13)
+#define XRP_IOCTL_MEM_IOMMU_UNMAP	_IO(XRP_IOCTL_MAGIC,14)
+#define XRP_IOCTL_MEM_CPU_TO_DEVICE	_IO(XRP_IOCTL_MAGIC,15)
+#define XRP_IOCTL_MEM_DEVICE_TO_CPU	_IO(XRP_IOCTL_MAGIC,16)
 
 #define XRP_NAMESPACE_ID_SIZE   32
-
-struct xrp_ioctl_alloc {
-	__u32 size;
-	__u32 align;
-	__u64 addr;
-};
 
 enum {
 	XRP_FLAG_READ = 0x1,
@@ -69,7 +63,7 @@ struct xrp_ioctl_buffer {
 	__u32 flags;
 	__u32 size;
 	__u64 addr;
-	int fd;			/*add ion fd */
+	int fd;		/*add ion fd */
 };
 
 enum {
@@ -106,18 +100,13 @@ struct xrp_powerhint_ctrl {
 	__u32 flag;
 };
 
-struct xrp_faceid_ctrl {
-	__u32 inout_fd;
-	__u32 img_fd;
-};
-
 /* response returned when querying for heaps */
 struct xrp_heap_data {
 	__u32 id;		/* Heap ID   */
 	__u32 type;		/* Heap type */
 	__u32 attributes;	/* Heap attributes
-				   defining capabilities that user may treat as hint
-				   when selecting the heap id during allocation/importing */
+				defining capabilities that user may treat as hint
+				when selecting the heap id during allocation/importing */
 };
 
 #define SPRD_MAX_HEAPS 16
@@ -129,7 +118,7 @@ struct xrp_heaps_ctrl {
 /* parameters to allocate a device buffer */
 struct xrp_alloc_ctrl {
 	__u64 size;		/* [IN] Size of device memory (in bytes) */
-	__u32 heap_id;	/* [IN] Heap ID of allocator */
+	__u32 heap_id;		/* [IN] Heap ID of allocator */
 	__u32 attributes;	/* [IN] Attributes of buffer */
 	char name[8];		/* [IN] short name for buffer */
 	__u32 buf_id;		/* [OUT] Generated buffer ID */
@@ -140,8 +129,8 @@ struct xrp_import_ctrl {
 	__u64 size;		/* [IN] Size of device memory (in bytes)    */
 	//__u64 buf_hnd;	/* [IN] File descriptor/cpu pointer of buffer to import */
 	__u64 buf_fd;		/* [IN] File descriptor */
-	__u64 cpu_ptr;	/* [IN] Cpu pointer of buffer to import */
-	__u32 heap_id;	/* [IN] Heap ID of allocator  */
+	__u64 cpu_ptr;		/* [IN] Cpu pointer of buffer to import */
+	__u32 heap_id;		/* [IN] Heap ID of allocator  */
 	__u32 attributes;	/* [IN] Attributes of buffer */
 	char name[8];		/* [IN] short name for buffer */
 	__u32 buf_id;		/* [OUT] Generated buffer ID */
@@ -152,7 +141,7 @@ struct xrp_export_ctrl {
 	__u32 buf_id;		/* [IN] Buffer ID to be exported */
 	__u64 size;		/* [IN] Size to be exported */
 	__u32 attributes;	/* [IN] Attributes of buffer */
-	__u64 buf_hnd;	/* [OUT] Buffer handle (file descriptor) */
+	__u64 buf_hnd;		/* [OUT] Buffer handle (file descriptor) */
 } __attribute__ ((aligned(8)));
 
 struct xrp_free_ctrl {
@@ -177,10 +166,4 @@ struct xrp_sync_device_to_cpu_ctrl {
 	__u32 buf_id;		/* [IN] ID of device buffer to sync */
 } __attribute__ ((aligned(8)));
 
-#if 0
-struct xrp_faceid_ctrl {
-	__u32 in_fd;
-	__u32 out_fd;
-};
-#endif
 #endif

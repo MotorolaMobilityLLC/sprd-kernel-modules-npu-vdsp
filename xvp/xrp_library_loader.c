@@ -23,10 +23,12 @@
 #define LIBRARY_CMD_PIL_INFO_OFFSET   40
 #define LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE 44
 
-//need to ---
 #define XRP_SYS_NSID_INITIALIZER \
 {0x73, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x20, 0x63, \
-        0x6d, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+        0x6d, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+
 #define LIBRARY_LOAD_UNLOAD_NSID (unsigned char [])XRP_SYS_NSID_INITIALIZER
 
 #ifdef pr_fmt
@@ -178,21 +180,22 @@ static int32_t xrp_library_load_internal(struct file *filp, const char *buffer,
 	unsigned int result;
 	struct xvp_buf *lib_buf = NULL;
 	struct xvp_buf *libinfo_buf = NULL;
-
 	struct xvp_file *xvp_file = (struct xvp_file *)(filp->private_data);
 
 	char *name = NULL;
+	int lib_size;
 	uint64_t size = 0;
 	uint32_t heap_type = 0;
 	uint32_t attr = 0;
 
 	/*load library to ddr */
-	size = xtlib_pi_library_size((xtlib_packaged_library *) buffer);
-	pr_debug("libname:%s, library size:%lld\n", libname, size);
-	if (size <= 0) {
+	lib_size = xtlib_pi_library_size((xtlib_packaged_library *) buffer);
+	if (lib_size < 0) {
 		pr_err("library size is invaild\n");
 		return -EFAULT;
 	}
+	size = (uint64_t)lib_size;
+	pr_debug("libname:%s, library size:%lld\n", libname, size);
 	/*alloc lib buffer */
 	name = "xvp lib_buffer";
 	heap_type = SPRD_VDSP_MEM_HEAP_TYPE_UNIFIED;
@@ -282,7 +285,7 @@ enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request 
 	void *tempsrc = NULL;
 
 	indata_size = rq->ioctl_queue.in_data_size;
-	if (0 == memcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID, sizeof(LIBRARY_LOAD_UNLOAD_NSID))) {
+	if (0 == memcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID, XRP_DSP_CMD_NAMESPACE_ID_SIZE)) {
 		if (indata_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
 			tempsrc = (void *)(rq->ioctl_queue.in_data_addr);
 		else
@@ -299,10 +302,12 @@ enum load_unload_flag xrp_check_load_unload(struct xvp *xvp, struct xrp_request 
 			memset(tempbuffer, 0, indata_size);
 			if (unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
 				vfree(tempbuffer);
+				tempbuffer = NULL;
 				return -EFAULT;	//there return -EFAULT, it different from enum load_unload_flag
 			}
 			load_flag = *tempbuffer;
 			vfree(tempbuffer);
+			tempbuffer= NULL;
 		}
 		pr_debug("load flag:%d\n", load_flag);
 		return load_flag;
@@ -502,6 +507,7 @@ int32_t xrp_library_decrease(struct file *filp, const char *libname)
 				/*remove this lib element */
 				list_del(&libinfo->node_libinfo);
 				vfree(libinfo);
+				libinfo = NULL;
 				release = 1;
 			} else {
 				pr_debug("warning libname:%s loadcount:%d\n", libname, libinfo->load_count);
@@ -534,7 +540,7 @@ static int32_t xrp_library_getloadunload_libname(struct xvp *xvp,
 
 	indata_size = rq->ioctl_queue.in_data_size;
 
-	if (likely(0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID))) {
+	if (likely(0 == memcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID, XRP_DSP_CMD_NAMESPACE_ID_SIZE))) {
 		/*check libname */
 		if (indata_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
 			tempsrc = ( void *) (rq->ioctl_queue.in_data_addr);
@@ -557,6 +563,7 @@ static int32_t xrp_library_getloadunload_libname(struct xvp *xvp,
 				snprintf(outlibname, XRP_NAMESPACE_ID_SIZE, "%s", tempbuffer + 1);
 			}
 			vfree(tempbuffer);
+			tempbuffer = NULL;
 		}
 	} else {
 		ret = -EINVAL;
@@ -581,7 +588,7 @@ static int32_t xrp_library_unload_prepare(struct file *filp, struct xrp_request 
 		return ret;
 	}
 	indata_size = rq->ioctl_queue.in_data_size;
-	if (likely(0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID)
+	if (likely(0 == memcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID, XRP_DSP_CMD_NAMESPACE_ID_SIZE)
 		&& (indata_size >= LIBRARY_CMD_LOAD_UNLOAD_INPUTSIZE))) {
 		libinfo = xrp_library_getlibinfo(filp, libname);
 		if (likely(libinfo != NULL)) {
@@ -635,7 +642,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 	*outlibinfo = NULL;
 	indata_size = rq->ioctl_queue.in_data_size;
 	/*check whether load cmd */
-	if (0 == strcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID)) {
+	if (0 == memcmp(rq->nsid, LIBRARY_LOAD_UNLOAD_NSID, XRP_DSP_CMD_NAMESPACE_ID_SIZE)) {
 		/*check libname */
 		if (indata_size > XRP_DSP_CMD_INLINE_DATA_SIZE)
 			tempsrc = ( void *) (rq->ioctl_queue.in_data_addr);
@@ -651,6 +658,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 		if (unlikely(copy_from_user(tempbuffer, tempsrc, indata_size))) {
 			pr_err("[ERROR]copy from user failed\n");
 			vfree(tempbuffer);
+			tempbuffer = NULL;
 			return -EFAULT;
 		}
 		input_ptr = tempbuffer;
@@ -672,6 +680,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 				ret = xvpfile_buf_kmap(xvp_file, buf);
 				if (ret) {
 					vfree(tempbuffer);
+					tempbuffer = NULL;
 					pr_err("Error: xvpfile_buf_kmap failed\n");
 					return -EFAULT;
 				}
@@ -681,6 +690,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 					pr_err("[ERROR]xrp_library_load_internal ret:%d\n", ret);
 					xvpfile_buf_kunmap(xvp_file, buf);
 					vfree(tempbuffer);
+					tempbuffer = NULL;
 					ret = -ENOMEM;
 					return ret;
 				}
@@ -694,6 +704,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 					pr_err("[ERROR]xrp_library_getlibinfo NULL\n");
 					xrp_library_decrease(filp, libname);
 					vfree(tempbuffer);
+					tempbuffer = NULL;
 					ret = -ENOMEM;
 					return ret;
 				} else {
@@ -705,6 +716,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 				if (ret) {
 					xrp_library_decrease(filp, libname);
 					vfree(tempbuffer);
+					tempbuffer = NULL;
 					pr_err("Error: xvpfile_buf_kmap failed\n");
 					return -EFAULT;
 				}
@@ -718,6 +730,7 @@ static int32_t xrp_library_load_prepare(struct file *filp, struct xrp_request *r
 			ret = -EINVAL;
 		}
 		vfree(tempbuffer);
+		tempbuffer = NULL;
 		return ret;
 	} else {
 		return 0;
@@ -747,6 +760,7 @@ int32_t xrp_library_release_all(struct xvp *xvp)
 				}
 				list_del(&libinfo->node_libinfo);
 				vfree(libinfo);
+				libinfo = NULL;
 			}
 		}
 	}
@@ -972,20 +986,26 @@ error_kmap:
 	xvpfile_buf_free_with_iommu(xvp_file, buf);
 alloc_lib_input_mem_failed:
 	vfree(rq);
+	rq = NULL;
 rq_failed:
 	return -EFAULT;
 }
 
 int32_t xrp_free_unload_cmd(struct file *filp, struct xrp_unload_cmdinfo *info)
 {
+	int32_t ret = LIB_RESULT_ERROR;
 	struct xvp_file *xvp_file = filp->private_data;
+	struct xvp_buf *pbuf = xvpfile_buf_get(xvp_file, info->input_mem_fd);
 
-	xvpfile_buf_kunmap(xvp_file, xvpfile_buf_get(xvp_file, info->input_mem_fd));
-	xvpfile_buf_free_with_iommu(xvp_file, xvpfile_buf_get(xvp_file, info->input_mem_fd));
-
+	if (pbuf != NULL) {
+		xvpfile_buf_kunmap(xvp_file, pbuf);
+		xvpfile_buf_free_with_iommu(xvp_file, pbuf);
+		ret = LIB_RESULT_OK;
+	}
 	vfree(info->rq);
+	info->rq = NULL;
 	info->input_mem_fd = 0;
-	pr_debug("free unload cmd\n");
-	return LIB_RESULT_OK;
+	pr_debug("free unload cmd:%d\n", ret);
+	return ret;
 }
 

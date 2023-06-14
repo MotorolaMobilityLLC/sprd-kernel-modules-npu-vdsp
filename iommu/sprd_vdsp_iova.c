@@ -25,6 +25,7 @@ static int genalloc_iova_init(struct sprd_vdsp_iommu_iova *iova,
 	}
 	iova->iova_base = iova_base;
 	iova->iova_size = iova_size;
+
 	iova->pool = gen_pool_create(min_alloc_order, -1);
 	if (!iova->pool) {
 		pr_err("gen_pool_create error\n");
@@ -37,6 +38,7 @@ static int genalloc_iova_init(struct sprd_vdsp_iommu_iova *iova,
 	}
 	pr_debug("iova init success,iova->iova_base=0x%lx,iova->iova_size=0x%zx",
 		iova->iova_base, iova->iova_size);
+
 	return 0;
 }
 
@@ -106,10 +108,12 @@ static int genalloc_reserve_init(struct sprd_vdsp_iommu_iova *iova,
 			}
 			reserve[i].iova_addr = iova_addr;
 			reserve[i].status = 0;
+			pr_debug("iova reserve[%d]: iova_addr :0x%lx,size :0x%zx\n", i, iova_addr, reserve[i].size);
 		}
 	}
 	iova->reserve_data = reserve;
 	iova->reserve_num = reserve_num;
+
 	pr_debug("iova_reserve_init sucessed\n");
 	return 0;
 
@@ -120,6 +124,7 @@ error_alloc_faied:
 		}
 	}
 	kfree(reserve);
+	reserve = NULL;
 	return -1;
 }
 
@@ -152,6 +157,7 @@ static int genalloc_iova_alloc_fixed(struct sprd_vdsp_iommu_iova *iova,
 	int matchflag = 0;
 	struct genpool_data_fixed fixed;
 
+	pr_debug("iova_start:0x%lx, iova->iova_base:0x%lx, iova_length:0x%zx\n", iova_start, iova->iova_base, iova_length);
 	if ((iova_start < iova->iova_base)
 		|| (iova_start + iova_length > iova->iova_base + iova->iova_size)) {
 		pr_err("Error: input parameter error\n");
@@ -161,6 +167,7 @@ static int genalloc_iova_alloc_fixed(struct sprd_vdsp_iommu_iova *iova,
 	if (iova->reserve_data != NULL) {
 		for (i = 0; i < iova->reserve_num; i++) {
 			res = &iova->reserve_data[i];
+			pr_debug("res->iova_addr:0x%lx\n", res->iova_addr);
 			// if(strcmp(res->name,name)==0){
 			if ((res->iova_addr == iova_start) && (res->size == iova_length)) {
 				pr_debug("iova match %s\n", res->name);
@@ -178,8 +185,8 @@ static int genalloc_iova_alloc_fixed(struct sprd_vdsp_iommu_iova *iova,
 			return 0;
 		}
 	} else {		// try fixed alloc
-		pr_warn("Warning: reserve iova match failed,try fixed alloc\n");
 		fixed.offset = iova_start - iova->iova_base;
+		pr_warn("Warning: reserve iova match failed,try fixed alloc,offset:0x%lx\n", fixed.offset);
 		if (gen_pool_alloc_algo(iova->pool, iova_length, gen_pool_fixed_alloc, &fixed)) {
 			pr_debug("fixed alloc sucessed\n");
 			return 0;

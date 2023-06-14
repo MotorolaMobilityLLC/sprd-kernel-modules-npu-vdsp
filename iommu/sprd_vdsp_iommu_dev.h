@@ -8,36 +8,36 @@
 #include <linux/of.h>
 
 struct sprd_vdsp_iommu_map_conf {
-
 	unsigned long buf_addr;
 	struct sg_table *table;
-	// enum sprd_iommu_chtype ch_type;
 	unsigned int sg_offset;
 	unsigned long iova_addr;	/*output */
 	size_t iova_size;
-	int isfixed;                // flag for fixed map, 0: no 1:fixed_offset 2:fixed_addr
-	unsigned long fixed_data;   // fixed map addr or offset
+	int isfixed;		 // flag for fixed map, 0: no 1:fixed_offset 2:fixed_addr
+	unsigned long fixed_data;	// fixed map addr or offset
 };
 
 struct sprd_vdsp_iommu_unmap_conf {
-
 	unsigned long buf_addr;
 	unsigned long iova_addr;
 	size_t iova_size;
 };
 
 struct sprd_vdsp_iommu_dev {
-	int id;			// iommu id
-	const char *name;	// iommu name
+	int id;				// iommu id
+	const char *name;		// iommu name
 	unsigned int iommu_version;	// iommu revison
-	unsigned int status;	// iommu status 0:init status
+	unsigned int status;		// iommu status 0:init status
 
 	unsigned long iova_base;	// iova base addr
-	size_t iova_size;	// iova range size
-	unsigned long pgt_base;	// page table base address :flow origine duplicate ctrl_reg ioremap dtb set
-	size_t pgt_size;	// page table array size   :flow origine duplicate ctrl_reg size det set
-	spinlock_t pgt_lock;	// page table spinlock
-	unsigned long ctrl_reg;	// control register base
+	size_t iova_size;		// iova range size
+	unsigned long pgt_base;		// page table base address :flow origine duplicate ctrl_reg ioremap dtb set
+	size_t pgt_size;		// page table array size   :flow origine duplicate ctrl_reg size det set
+	unsigned long vpn_base_addr;
+	size_t vpn_range;
+
+	spinlock_t pgt_lock;		// page table spinlock
+	unsigned long ctrl_reg;		// control register base
 
 	unsigned long pagt_base_ddr;	// page table phy base address dma_alloc_coherent return parameter
 	unsigned long pagt_base_virt;	// page table vir base address dma_alloc_coherent return val
@@ -46,23 +46,21 @@ struct sprd_vdsp_iommu_dev {
 	struct device *dev;
 	struct sprd_vdsp_iommu_dev_ops *ops;	//iommu ops
 	struct sprd_vdsp_iommu_iova *iova_dev;	// iommu iova manager
-	struct sprd_vdsp_iommus *iommus;      //parent iommus
+	struct sprd_vdsp_iommus *iommus;	//parent iommus
 
-	// struct sprd_vdsp_iommu_hw_ops *hw_ops; // iommu hw ops
+	// struct sprd_vdsp_iommu_hw_ops *hw_ops;	// iommu hw ops
 	struct sprd_vdsp_iommu_widget *iommu_hw_dev;	// iommu hw dev
 	struct sprd_vdsp_iommu_map_record *record_dev;	// iommu map record manager
-	struct xvp *xvp;	// parent xvp
-	struct mutex mutex;	// lock for iommu_dev
+	struct xvp *xvp;		// parent xvp
+	struct mutex mutex;		// lock for iommu_dev
 	void *private;
 	unsigned long fault_page;	// compatible with the original version, not use
 };
 
 struct sprd_vdsp_iommu_dev_ops {
-
 	int (*init) (struct sprd_vdsp_iommu_dev * iommu_dev,
 		     struct device_node * of_node, struct device * dev);
 	void (*release) (struct sprd_vdsp_iommu_dev * iommu_dev);
-
 	int (*map) (struct sprd_vdsp_iommu_dev * iommu_dev,
 		    struct sprd_vdsp_iommu_map_conf * map_conf);
 	int (*unmap) (struct sprd_vdsp_iommu_dev * iommu_dev,

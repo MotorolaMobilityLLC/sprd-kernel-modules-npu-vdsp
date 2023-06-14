@@ -47,20 +47,3 @@ Elf32_Word xtlib_host_word(Elf32_Word v);
 #define xtlib_xt_half  xtlib_host_half
 #define xtlib_xt_word  xtlib_host_word
 
-#ifdef  __XTENSA__
-
-void xtlib_sync();
-
-/* xtlib_user_memcpy and xtlib_user_memset are helper functions
-   with memcpy_func_ex and memset_func_ex signature. They are
-   expecting <user> to point at user_funcs structure and
-   they call appropriate member of this structure.
- */
-
-xt_ptr xtlib_user_memcpy(xt_ptr dest, const void *src, unsigned int n, void *user);
-
-xt_ptr xtlib_user_memset(xt_ptr s, int c, unsigned int n, void *user);
-
-int xtlib_relocate_pi_lib(xtlib_pil_info *lib_info);
-
-#endif

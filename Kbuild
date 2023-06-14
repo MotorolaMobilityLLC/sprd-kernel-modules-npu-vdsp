@@ -13,12 +13,13 @@
 #
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),sharkl5pro)
 PROJ_DIR := sharkl5pro
-VERSION_DIR := v1
 ccflags-y += -DMYL5
+ccflags-y += -DVDSP_IOMMU_EDP_ON
+ccflags-y += -DVDSP_DVFS_MONITOR
 else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 PROJ_DIR := qogirn6pro
-VERSION_DIR := v2
 ccflags-y += -DMYN6
+ccflags-y += -DVDSP_DVFS_MONITOR
 endif
 
 ifeq ($(BSP_VDSP_TARGET_DTB),ums9620_3c10) #Apollo
@@ -27,18 +28,16 @@ endif
 
 #ccflags-y += -DDEBUG
 ccflags-y += -g
-ccflags-y += -DIOMMUANDMEM
-ccflags-y += -DK515_ENABLE
+
+#reserve mem
+#ccflags-y += -DRESERVE_MEM
+
 # iommu dirver use signal iova
 ccflags-y += -DVDSP_IOMMU_USE_SIGNAL_IOVA
 
 ifeq ($(CONFIG_COMPAT),y)
 ccflags-y += -DCONFIG_COMPAT
 endif
-
-# FaceID build options
-# ccflags-y += -DFACEID_VDSP
-# ccflags-y += -DFACEID_VDSP_FULL_TEE
 
 #
 # Source List
@@ -52,12 +51,11 @@ KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/xvp/*.c)
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/debug/*.c)
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/products/$(PROJ_DIR)/*.c)
 KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/dvfs/*.c)
-# KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/trusty/$(VERSION_DIR)/*.c)
 
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),sharkl5pro) # sharkl5pro
-KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/ipi/*.c)
+KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/products/$(PROJ_DIR)/ipi/*.c)
 else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro) # qogirn6pro
-KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/communication/mailbox/*.c)
+KO_MODULE_SRC += $(wildcard $(KO_MODULE_PATH)/products/$(PROJ_DIR)/mailbox/*.c)
 endif
 
 #
@@ -69,12 +67,12 @@ ccflags-y += -I$(KO_MODULE_PATH)/memory/
 ccflags-y += -I$(KO_MODULE_PATH)/debug/
 ccflags-y += -I$(KO_MODULE_PATH)/products/$(PROJ_DIR)/
 ccflags-y += -I$(KO_MODULE_PATH)/dvfs/
-#ccflags-y += -I$(KO_MODULE_PATH)/trusty/v2/
 
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),sharkl5pro)
 ccflags-y += -I$(srctree)/drivers/devfreq/apsys/
 ccflags-y += -I$(srctree)/drivers/devfreq/apsys/vdsp/
-ccflags-y += -I$(KO_MODULE_PATH)/communication/ipi/
+ccflags-y += -I$(KO_MODULE_PATH)/products/$(PROJ_DIR)/ipi/
+
 endif
 ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 ccflags-y += -I$(srctree)/drivers/devfreq/
@@ -82,9 +80,8 @@ ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/dvfs_driver/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/mmdvfs/r2p0/mmsys_comm/
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/os_adapt/linux
 ccflags-y += -I$(KO_MODULE_PATH)/../../../common/camera/power/kernel/
-ccflags-y += -I$(KO_MODULE_PATH)/communication/mailbox/
+ccflags-y += -I$(KO_MODULE_PATH)/products/$(PROJ_DIR)/mailbox/
 endif
-
 #
 # Final Objects
 #
