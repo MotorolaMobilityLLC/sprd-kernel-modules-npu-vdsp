@@ -57,8 +57,10 @@ u32 sprd_vdsp_iommuvau_cll_init(struct sprd_vdsp_iommu_init_param *p_init_param,
 	} else {
 		p_iommu_priv->pagt_base_ddr = ( ulong) ioremap(p_iommu_priv->pagt_base_phy_ddr,
 			p_iommu_priv->pagt_ddr_size);
-		if (p_iommu_priv->pagt_base_ddr == 0)
+		if (p_iommu_priv->pagt_base_ddr == 0) {
+			kfree(p_iommu_priv);
 			return -1;
+		}
 	}
 
 	p_iommu_priv->pgt_size = pagt_size;
