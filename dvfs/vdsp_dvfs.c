@@ -431,11 +431,7 @@ static int dvfs_init(void *data)
 	xvp->dvfs_info.totaltime = 0;
 	xvp->dvfs_info.piece_starttime = 0;
 	xvp->dvfs_info.last_powerhint_level = VDSP_PWR_DVFS;
-	xvp->dvfs_info.last_dvfs_level = 0;
-
-	/*when open init to max freq*/
-	dvfs_set(xvp->hw_arg, VDSP_PWR_5);
-	xvp->dvfs_info.last_dvfs_level = VDSP_PWR_5;
+	xvp->dvfs_info.last_dvfs_level = VDSP_PWR_MIN;
 
 	xvp->dvfs_info.dvfs_thread = kthread_run(vdsp_dvfs_thread, xvp, "vdsp_dvfs_thread");
 	if (IS_ERR(xvp->dvfs_info.dvfs_thread)) {
@@ -444,7 +440,7 @@ static int dvfs_init(void *data)
 		return -1;
 	}
 #else
-	dvfs_set(xvp->hw_arg, VDSP_PWR_5);
+	dvfs_set(xvp->hw_arg, VDSP_PWR_MAX);
 #endif
 	xvp->dvfs_info.dvfs_init = 1;
 	mutex_unlock(&(xvp->dvfs_info.dvfs_lock));
