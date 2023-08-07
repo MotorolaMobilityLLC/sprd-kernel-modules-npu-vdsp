@@ -15,6 +15,6 @@ unsigned int vdsp_debugfs_trace_iommu(void);
 unsigned int vdsp_debugfs_trace_hw(void);
 unsigned int vdsp_debugfs_trace_firmware(void);
 unsigned int vdsp_debugfs_cmd_timeout(void);
-
+unsigned int vdsp_debugfs_dvfs_en(void);
 #endif
 

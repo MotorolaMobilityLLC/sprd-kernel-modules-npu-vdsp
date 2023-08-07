@@ -165,6 +165,12 @@ static int set_work_freq_hw(void *hw_arg, uint32_t freq)
 		pr_err("dvfs_phy: set_work_freq operation not supported");
 		return -1;
 	}
+
+	if (vdsp_debugfs_dvfs_en() == 0) {
+		pr_info("skip setting vdsp dvfs[%d]\n", freq);
+		return 0;
+	}
+
 	if (!vdsp_regmap_read_mask(hw->mm_ahb, MM_SYS_EN, DVFS_EN, &val)) {
 		if (val == 0) {
 			pr_warn("dvfs not enable, vdsp skip to set dvfs\n");
