@@ -129,7 +129,7 @@ static int enable(void *hw_arg)
 	ret = vdsp_wait_stable_power_state(hw_arg, PD_VDSP_WAKEUP);
 
 	/* IPI &vdma enable */
-	vdsp_regmap_update_bits(hw->ahb_regmap, 0x0, (0x1 << 6) | (0x1 << 3), (0x1 << 6) | (0x1 << 3), RT_APAHB);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_AHB_EN, (0x1 << 6) | (0x1 << 3), (0x1 << 6) | (0x1 << 3), RT_APAHB);
 	/*vdsp_all_int_mask = 0 */
 	vdsp_regmap_update_bits(hw->ahb_regmap, REG_VDSP_INT_CTL, (0x1 << 13), 0, RT_NO_SET_CLR);
 
@@ -142,7 +142,7 @@ static int disable(void *hw_arg)
 	struct vdsp_hw *hw = (struct vdsp_hw *)hw_arg;
 
 	/*vdma&IPI  disable */
-	vdsp_regmap_update_bits(hw->ahb_regmap, 0x0, (0x1 << 3) | (0x1 << 6), 0, RT_APAHB);
+	vdsp_regmap_update_bits(hw->ahb_regmap, REG_AHB_EN, (0x1 << 3) | (0x1 << 6), 0, RT_APAHB);
 	/*vdsp_stop_en = 1 */
 	vdsp_regmap_update_bits(hw->ahb_regmap, REG_LP_CTL, (0x1 << 2), (0x1 << 2), RT_NO_SET_CLR);
 	/*mask all int */
@@ -298,7 +298,7 @@ static int sprd_vdsp_parse_hw_dt(struct platform_device *pdev,
 		return -EINVAL;
 	}
 	hw->pmu_regmap = syscon_regmap_lookup_by_phandle(np, "sprd,syscon-pmu");
-	if (IS_ERR(hw->ahb_regmap)) {
+	if (IS_ERR(hw->pmu_regmap)) {
 		pr_err("can not get pmu_regmap regmap struct!\n");
 		return -EINVAL;
 	}

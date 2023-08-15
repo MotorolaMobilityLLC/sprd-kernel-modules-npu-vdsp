@@ -123,7 +123,7 @@ static int vdsp_ipi_ctx_init(struct vdsp_ipi_ctx_desc *ctx)
 {
 	unsigned long flags;
 
-	vdsp_regmap_update_bits(ctx->base_addr, 0x0, (1 << 6), (1 << 6), RT_NO_SET_CLR);
+	vdsp_regmap_update_bits(ctx->base_addr, REG_AHB_EN, (1 << 6), (1 << 6), RT_APAHB);
 	udelay(1);
 	vdsp_regmap_update_bits(ctx->base_addr, REG_VDSP_INT_CTL, 0x1ffff, 0xd85f, RT_NO_SET_CLR);
 	IPI_HREG_OWR((ctx->ipi_addr + 8), 0xFF);
@@ -142,7 +142,7 @@ static int vdsp_ipi_ctx_deinit(struct vdsp_ipi_ctx_desc *ctx)
 	ctx->ipi_active = 0;
 	IPI_HREG_OWR((ctx->ipi_addr + 8), 0xFF);
 
-	vdsp_regmap_update_bits(ctx->base_addr, 0x0, (1 << 6), 0, RT_NO_SET_CLR);
+	vdsp_regmap_update_bits(ctx->base_addr, REG_AHB_EN, (1 << 6), 0, RT_APAHB);
 	vdsp_regmap_update_bits(ctx->base_addr, REG_VDSP_INT_CTL, 0x1ffff, 0x1ffff, RT_NO_SET_CLR);
 	spin_unlock_irqrestore(&ctx->ipi_spinlock, flags);
 	return 0;

@@ -16,13 +16,14 @@
 #define VDSP_DRAM_SIZE     (256*1024)
 
 #define DRIVER_NAME        "vdsp"
-#define REG_RESET          (0x04)
-#define REG_RUNSTALL       (0x3084) //not support set/clr
-#define REG_LP_CTL         (0x3090) //not support set/clr
-#define REG_VDSP_INT_CTL   (0x3094) //not support set/clr
-#define REG_QOS_THRESHOLD  (0xBC)
-#define REG_QOS_3          (0xD4)
-#define REG_QOS_SEL3       (0xD8)
+#define REG_AHB_EN         (0x0)        //set/clear (AHB_EN)
+#define REG_RESET          (0x04)       //set/clear (AHB_RST)
+#define REG_RUNSTALL       (0x3084)     //not support set/clr(VDSP_FUNC_CTRL)
+#define REG_LP_CTL         (0x3090)     //not support set/clr(VDSP_LP_CTRL)
+#define REG_VDSP_INT_CTL   (0x3094)     //not support set/clr
+#define REG_QOS_THRESHOLD  (0xBC)       //not support set/clr
+#define REG_QOS_3          (0xD4)       //not support set/clr
+#define REG_QOS_SEL3       (0xD8)       //not support set/clr
 
 #define REG_PD_AP_VDSP_CFG              (0x7e4)
 #define REG_PD_AP_VDSP_CORE_INT_DISABLE (0x7f8)
