@@ -24,7 +24,6 @@ struct xrp_debug_para {
 	unsigned int vdsp_trace_firmware;
 	unsigned int vdsp_trace_hw;
 	unsigned int vdsp_cmd_timeout;
-	unsigned int vdsp_dvfs_en;
 };
 
 static struct dentry *root_d;
@@ -48,7 +47,7 @@ int vdsp_debugfs_init(void)
 	debugfs_create_u32("trace_hw", 0664, root_d, &xrp_para.vdsp_trace_hw);
 	debugfs_create_u32("trace_firmware", 0664, root_d, &xrp_para.vdsp_trace_firmware);
 	debugfs_create_u32("cmd_timeout", 0664, root_d, &xrp_para.vdsp_cmd_timeout);
-	debugfs_create_u32("dvfs_en", 0664, root_d, &xrp_para.vdsp_dvfs_en);
+
 	return 0;
 }
 
@@ -90,11 +89,6 @@ unsigned int vdsp_debugfs_trace_firmware(void)
 unsigned int vdsp_debugfs_cmd_timeout(void)
 {
 	return xrp_para.vdsp_cmd_timeout;
-}
-
-unsigned int vdsp_debugfs_dvfs_en(void)
-{
-	return xrp_para.vdsp_dvfs_en;
 }
 
 void vdsp_debugfs_exit(void)

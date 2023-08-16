@@ -34,12 +34,8 @@
 #define _XRP_KERNEL_DEFS_H
 
 #define XRP_IOCTL_MAGIC 'r'
-#define XRP_IOCTL_ALLOC			_IO(XRP_IOCTL_MAGIC,1)
-#define XRP_IOCTL_FREE			_IO(XRP_IOCTL_MAGIC,2)
 #define XRP_IOCTL_QUEUE			_IO(XRP_IOCTL_MAGIC,3)
 #define XRP_IOCTL_QUEUE_NS		_IO(XRP_IOCTL_MAGIC,4)
-#define XRP_IOCTL_SET_DVFS		_IO(XRP_IOCTL_MAGIC,5)
-#define XRP_IOCTL_FACEID_CMD		_IO(XRP_IOCTL_MAGIC,6)
 #define XRP_IOCTL_SET_POWERHINT		_IO(XRP_IOCTL_MAGIC,7)
 #define XRP_IOCTL_MEM_QUERY		_IO(XRP_IOCTL_MAGIC,8)
 #define XRP_IOCTL_MEM_IMPORT		_IO(XRP_IOCTL_MAGIC,9)
@@ -85,14 +81,6 @@ struct xrp_ioctl_queue {
 	int out_data_fd;
 	__u64 buffer_addr;
 	__u64 nsid_addr;
-};
-
-struct xrp_dvfs_ctrl {
-	__u32 en_ctl_flag;
-	union {
-		__u32 enable;
-		__u32 level;
-	};
 };
 
 struct xrp_powerhint_ctrl {

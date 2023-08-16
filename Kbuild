@@ -15,11 +15,9 @@ ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),sharkl5pro)
 PROJ_DIR := sharkl5pro
 ccflags-y += -DMYL5
 ccflags-y += -DVDSP_IOMMU_EDP_ON
-ccflags-y += -DVDSP_DVFS_MONITOR
 else ifeq ($(BSP_BOARD_PRODUCT_USING_VDSP),qogirn6pro)
 PROJ_DIR := qogirn6pro
 ccflags-y += -DMYN6
-ccflags-y += -DVDSP_DVFS_MONITOR
 endif
 
 ifeq ($(BSP_VDSP_TARGET_DTB),ums9620_3c10) #Apollo

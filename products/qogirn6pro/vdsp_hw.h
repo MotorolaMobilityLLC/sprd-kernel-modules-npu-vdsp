@@ -18,43 +18,69 @@
 #define DRIVER_NAME        "vdsp"
 
 /*CAMSYS AHB 0x30000000*/
-#define MM_SYS_EN         (0x0)
-#define VDSP_BLK_EN       (0x8)
-#define VDSP_INT_MASK     (0x18)  //not support set/clr
-#define VDSP_CORE_CFG     (0xBC)  //not support set/clr
-#define REG_RESET         (0xd4)
+#define MM_SYS_EN		(0x0)
+#define VDSP_BLK_EN		(0x8)
+/*
+[31:13]	Reserved		RO	19'h0
+[12]	Ivau_en		RW	1'b0	Set/Clear		not in use
+[11]	Dvau_en		RW	1'b0	Set/Clear		VDSP MSTD VAU enable: 1'b0 disable; 1'b1, enable
+[10]	iDvau_en		RW	1'b0	Set/Clear		VDSP iDMA VAU enable: 1'b0 disable; 1'b1, enable
+[9]	vdsp_mst_busmon_en	RW	1'b0	set/clear	VDSP axi master bus monitor enable: 1'b0 disable; 1'b1, enable
+[8]	vdsp_slv_busmon_en	RW	1'b0	set/clear	VDSP slave config bus monitor enable: 1'b0 disable; 1'b1, enable
+[7]	vdsp_blk_en	RW	1'b0	set/clear		not in use
+[6]	uart_en		RW	1'h0	set/clear		uart enalbe: 1'b0 disable; 1'b1, enable
+[5]	vdsp_blk_cfg_en	RW	1'h0	set/clear		not in use
+[4]	vdsp_mtx_data	RW	1'h0	set/clear		not in use
+[3]	vdsp_tck_en	RW	1'h0	set/clear		vdsp djtag tck enalbe: 1'b0 disable; 1'b1, enable
+[2]	vdma_en		RW	1'h0	set/clear		vdma enalbe: 1'b0 disable; 1'b1, enable
+[1]	vdsp_m_en	RW	1'h0	set/clear		vdsp_m (VDSP bus) clock enable:  1'b0 disable; 1'b1, enable
+[0]	vdsp_en		RW	1'h0	set/clear
+*/
+#define VDSP_INT_MASK		(0x18)
+/*
+[5]	vdsp_mailbox_int_mask	RW	1'h0	set/clear
+[4]	vdsp_idma_vau_int_mask	RW	1'h0	set/clear
+[3]	vdsp_mstd_vau_int_mask	RW	1'h0	set/clear
+[2]	vdsp_uart_int_mask	RW	1'h0	set/clear
+[1]	vdsp_vdma_int_mask	RW	1'h0	set/clear
+[0]	vdsp_vdma_vau_int_mask	RW	1'h0	set/clear
+*/
+#define VDSP_CORE_CFG		(0xBC)
+/*
+[31:16]	PRID		RW	16'h0	VDSP processor ID: the value is latched at reset
+[15:13]	Reserved		RO	3'h0	Reserved
+[12]	vdsp_pwaitmode	RO	1'b0	indicate VDSP core is in sleep mode: 1'b0, normal mode; 1'b1, sleep mode
+[11]	DBGEN		RW	1'b0	Non-secure, invasive debug enable: 1'b0, disable; 1'b1, enable
+[10]	NIDEN		RW	1'b0	Non-secure, non-invasive debug enable: 1'b0, disable; 1'b1, enable
+[9]	SPIDEN		RW	1'b0	Decure, invasive debug enable: 1'b0, disable; 1'b1, enable
+[8]	SPNIDEN		RW	1'b0	Secure, non-invasive debug enable: 1'b0, disable; 1'b1, enable
+[7:6]	vdsp_trigout_idma	RO	2'd0	"Indicates the completion of an iDMA descriptor that is configured to sendtrigger out upon finish."
+[5:4]	vdsp_trigin_idma	RW	2'h0	The trigger input that increases the iDMA trigger count when it is asserted.
+[3]	stat_vector_sel	RW	1'b0	boot address select, latched at reset: 1'b0: 0x8000_0000; 1'b1: 0x4000_0000
+[2]	runstallonreset	RW	1'b1	run or stall the VDSP: 1'b0, run; 1'b1, stall
+[1:0]	dcache_dram_flush	RW	2'd0	not in use
+*/
+#define VDSP_PWAITMODE    	(1U << 12) // BIT(12)
+#define VDSP_RUNSTALL     	(1U << 2) // BIT(2)
 
-/*MM_SYS_EN (0x0)*/
-#define DVFS_EN           BIT(3)  //GENMASK(23, 16)
+#define VDSP_FATAL_INFO_LOW	(0xc0) //not support set/clr
+#define VDSP_FATAL_INFO_HIGH	(0xc4) //not support set/clr
+#define REG_RESET		(0xd4) //set/clr, (VDSP_BLK_SOFTRST)
+/*
+[5]	vdsp_soft_rst		RW	1'b0	set/clear
+[4]	vdsp_debug_soft_rst	RW	1'b1	set/clear
+[3]	vdsp_idma_vau_soft_rst	RW	1'b0	set/clear
+[2]	vdsp_mstd_vau_soft_rst	RW	1'b0	set/clear
+[1]	vdma_soft_rst		RW	1'b0	set/clear
+[0]	vdma_vau_soft_rst		RW	1'b0	set/clear
+*/
+#define VDSP_RESET        		(1U << 5) //BIT(5)
 
-/*PUM REG*/
-#define PD_STATUS         (0x510)
-#define DSLP_ENA          (0x1FC)
-#define CORE_INT_DISABLE  (0x25C)
-#define PD_CAMERA_CFG_0   (0x2E8)
-#define PD_CFG_0          (0x2FC)
-
-/*PD_VDSP_BLK_CFG_0*/
-#define PD_SEL            (1U << 27)
-#define PD_FORCE_SHUTDOWN (1U << 25)
-#define PD_AUTO_SHUTDOWN  (1U << 24)
-
-/*VDSP_CORE_CFG*/
-#define VDSP_PWAITMODE    (1U << 12)  /* OFFSET 0xBC */
-#define VDSP_RUNSTALL     (1U << 2)
-
-/*MM_RESET*/
-#define VDSP_RESET        (1U << 5)
-
-#define APAHB_HREG_MWR(reg, msk, val) \
-		(REG_WR((reg), \
-		((val) & (msk)) | \
-		(REG_RD((reg)) & \
-		(~(msk)))))
-
-#define APAHB_HREG_OWR(reg, val) \
-		(REG_WR((reg), \
-		(REG_RD(reg) | (val))))
+/*PMU REG (0x6491_0000): offset */
+#define DSLP_ENA                           (0x1FC)  //set/clr (VDSP_BLK_DSLP_ENA)
+#define CORE_INT_DISABLE            (0x25C)  //set/clr(VDSP_BLK_CORE_INT_DISABLE)
+#define PD_CFG_0		(0x2FC)  //set/clr(PD_VDSP_BLK_CFG_0)
+#define PD_STATUS                         (0x510)  //not support set/clr (PWR_STATUS_DBG_8)
 
 enum {
 	XRP_DSP_SYNC_IRQ_MODE_NONE = 0x0,

@@ -684,28 +684,6 @@ static inline int vdsp_dvfs_set_powerhint(void *filp, int32_t level, uint32_t fl
 	return dvfs->ops->set_powerhint(filp, level, flag);
 }
 
-static inline int vdsp_dvfs_preprocess(struct xvp *xvp)
-{
-	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
-
-	if (!dvfs->ops || !dvfs->ops->preprocess) {
-		//pr_warn("dvfs: preprocess operation not supported");
-		return -1;
-	}
-	return dvfs->ops->preprocess(xvp);
-}
-
-static inline int vdsp_dvfs_postprocess(struct xvp *xvp)
-{
-	struct vdsp_dvfs_desc *dvfs = get_vdsp_dvfs_desc();
-
-	if (!dvfs->ops || !dvfs->ops->postprocess) {
-		//pr_warn("dvfs: postprocess operation not supported");
-		return -1;
-	}
-	return dvfs->ops->postprocess(xvp);
-}
-
 static int xvp_file_release_list(struct file *filp)
 {
 	uint32_t find = 0;
@@ -1262,27 +1240,6 @@ retry:
 	return ret;
 }
 
-static long xrp_ioctl_set_dvfs(struct file *filp, struct xrp_dvfs_ctrl __user *arg)
-{
-	struct xrp_dvfs_ctrl dvfs;
-	struct xvp_file *xvp_file = filp->private_data;
-	struct xvp *xvp = xvp_file->xvp;
-
-	if (unlikely(copy_from_user(&dvfs, arg, sizeof(struct xrp_dvfs_ctrl)))) {
-		pr_err("[ERROR]copy from user failed\n");
-		return -EFAULT;
-	}
-	if (0 == dvfs.en_ctl_flag) {
-		vdsp_dvfs_set(xvp, dvfs.level);
-	} else {
-		if (dvfs.enable)
-			vdsp_dvfs_enable(xvp);
-		else
-			vdsp_dvfs_disable(xvp);
-	}
-	return 0;
-}
-
 static long xrp_ioctl_set_powerhint(struct file *filp, struct xrp_powerhint_ctrl __user * arg)
 {
 	struct xrp_powerhint_ctrl powerhint;
@@ -1536,19 +1493,9 @@ static long xvp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	mutex_unlock(&xvp_global_lock);
 
 	switch (cmd) {
-		case XRP_IOCTL_ALLOC:
-		case XRP_IOCTL_FREE:
-			break;
-
 		case XRP_IOCTL_QUEUE:
 		case XRP_IOCTL_QUEUE_NS:
-			vdsp_dvfs_preprocess(((struct xvp_file *)(filp->private_data))->xvp);
 			retval = xrp_ioctl_submit_sync(filp, (struct xrp_ioctl_queue __user *) arg, NULL);
-			vdsp_dvfs_postprocess(((struct xvp_file *)(filp->private_data))->xvp);
-			break;
-
-		case XRP_IOCTL_SET_DVFS:
-			retval = xrp_ioctl_set_dvfs(filp, (struct xrp_dvfs_ctrl __user *) arg);
 			break;
 
 		case XRP_IOCTL_SET_POWERHINT:
@@ -2094,11 +2041,9 @@ static long vdsp_init_common(struct platform_device *pdev,
 
 	/* other parameters */
 	mutex_init(&(xvp->load_lib.libload_mutex));
-	mutex_init(&(xvp->dvfs_info.dvfs_lock));
 	mutex_init(&xvp_global_lock);
 	init_files_know_info(xvp);
 	xvp->open_count = 0;
-	xvp->dvfs_info.dvfs_init = 0;
 	xvp->dev = &pdev->dev;
 	xvp->hw_ops = hw_ops;
 	xvp->hw_arg = hw_arg;

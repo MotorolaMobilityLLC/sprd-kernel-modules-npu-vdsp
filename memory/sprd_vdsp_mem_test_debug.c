@@ -24,12 +24,12 @@ static unsigned long debug_show_all_counut = 0;
 
 static char *cmd_array[20] = {
 	"                            ",	//0
-	"XRP_IOCTL_ALLOC             ",	//1
-	"XRP_IOCTL_FREE              ",	//2
+	"XRP_IOCTL_NULL             ",	//1
+	"XRP_IOCTL_NULL              ",	//2
 	"XRP_IOCTL_QUEUE             ",	//3
 	"XRP_IOCTL_QUEUE_NS          ",	//4
-	"XRP_IOCTL_SET_DVFS          ",	//5
-	"XRP_IOCTL_FACEID_CMD        ",	//6
+	"XRP_IOCTL_NULL          ",	//5
+	"XRP_IOCTL_NULL        ",	//6
 	"XRP_IOCTL_SET_POWERHINT     ",	//7
 	"XRP_IOCTL_MEM_QUERY         ",	//8
 	"XRP_IOCTL_MEM_IMPORT        ",	//9

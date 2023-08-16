@@ -19,9 +19,6 @@
 #define pr_fmt(fmt) "sprd-vdsp: dvfs-phy %d: %d %s:" \
 	fmt, current->pid, __LINE__, __func__
 
-#define MM_SYS_EN		(0x0)
-#define DVFS_EN			BIT(3) //GENMASK(23, 16)
-
 #define vmin(a, b) ((a) < (b) ? (a) : (b))
 #define vmax(a, b) ((a) > (b) ? (a) : (b))
 
@@ -47,17 +44,17 @@ static int dvfs_phy_disable(void *hw_arg)
 static uint32_t dvfs_phy_level_to_freq(uint32_t level)
 {
 	switch (level) {
-	case 1:	//VDSP_PWR_MIN
+	case 0:	//VDSP_PWR_MIN
 		return VDSP_CLK256M;
-	case 2:
+	case 1:
 		return VDSP_CLK384M;
-	case 3:
+	case 2:
 		return VDSP_CLK512M;
-	case 4:
+	case 3:
 		return VDSP_CLK614M4;
-	case 5:
+	case 4:
 		return VDSP_CLK768M;
-	case 6:	//VDSP_PWR_MAX
+	case 5:	//VDSP_PWR_MAX
 		return VDSP_CLK936M;
 	default:
 		return VDSP_CLK256M;
@@ -98,7 +95,7 @@ static int setdvfs_hw(void *hw_arg, uint32_t level)
 	(void)hw_arg;
 	/* chip check, t610 is max 768M support */
 	if (soc_ver_id_check() == CHIP_T610)
-		level = vmin(level, 5);	// 5: 768M
+		level = vmin(level, 4);	// 4: 768M
 
 	/* debugfs for dvfs debug */
 	debugfs_dvfs_level = vdsp_debugfs_dvfs_level();

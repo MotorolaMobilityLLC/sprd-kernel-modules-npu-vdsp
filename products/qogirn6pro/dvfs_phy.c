@@ -26,21 +26,19 @@
 #define vmax(a, b) ((a) > (b) ? (a) : (b))
 
 struct vdsp_dvfs_table {
-	uint32_t dvfs_level;
 	uint32_t voltage;
 	uint32_t voltage_index;
 	uint32_t freq;
 	uint32_t freq_index;
 };
 
-static struct vdsp_dvfs_table vdsp_table[7] = {
-	{0, 600, 1, 26000000, 0},	//power level dvfs no use.
-	{1, 600, 1, 26000000, 0},	//power level min
-	{2, 600, 1, 307200000, 1},
-	{3, 600, 1, 512000000, 2},
-	{4, 650, 2, 614400000, 3},
-	{5, 700, 3, 819200000, 4},
-	{6, 750, 4, 1014000000, 5},	//power level max
+static struct vdsp_dvfs_table vdsp_table[6] = {
+	{600, 1, 26000000, 0},	//power level min
+	{600, 1, 307200000, 1},
+	{600, 1, 512000000, 2},
+	{650, 2, 614400000, 3},
+	{700, 3, 819200000, 4},
+	{750, 4, 1014000000, 5},	//power level max
 };
 
 static int dvfs_phy_enable(void *hw_arg)
@@ -75,22 +73,11 @@ static int dvfs_phy_disable(void *hw_arg)
 
 static uint32_t dvfs_phy_level_to_freq(uint32_t level)
 {
-	switch (level) {
-	case 1:	//VDSP_PWR_MIN
-		return VDSP_CLK260;
-	case 2:
-		return VDSP_CLK3072;
-	case 3:
-		return VDSP_CLK5120;
-	case 4:
-		return VDSP_CLK6144;
-	case 5:
-		return VDSP_CLK8192;
-	case 6:	//VDSP_PWR_MAX
-		return VDSP_CLK10140;
-	default:
-		return VDSP_CLK260;
+	if (level > 5) {
+		level = 5;
+		pr_err("dvfs level exceed range:%d\n", level);
 	}
+	return vdsp_table[level].freq;
 }
 
 static uint32_t soc_ver_id_check(void)
@@ -165,12 +152,6 @@ static int set_work_freq_hw(void *hw_arg, uint32_t freq)
 		pr_err("dvfs_phy: set_work_freq operation not supported");
 		return -1;
 	}
-
-	if (vdsp_debugfs_dvfs_en() == 0) {
-		pr_info("skip setting vdsp dvfs[%d]\n", freq);
-		return 0;
-	}
-
 	if (!vdsp_regmap_read_mask(hw->mm_ahb, MM_SYS_EN, DVFS_EN, &val)) {
 		if (val == 0) {
 			pr_warn("dvfs not enable, vdsp skip to set dvfs\n");
@@ -194,16 +175,12 @@ int setdvfs_hw(void *hw_arg, uint32_t level)
 		pr_info("debugfs force dvfs, level:%d, freq:%d\n", level, vdsp_table[level].freq);
 	}
 
-	level = vmin(level, 6);		//vdsp table index max, 6-1014M
-//	level = vmin(level, 5);		//vdsp table index max, 5-8192M (power requirements)
-
+	level = vmin(level, 5);		//vdsp table index max, 5-1014M
 #ifdef DVFS_HIGH_FREQ_RANGE		// APOLLO version, high performance, no low freq
-	level = vmax(level, 5);		// 5-819.2M
+	level = vmax(level, 4);		// 4-819.2M
 	pr_info("APOLLO version, level[%d]\n", level);
 #endif
-
 	pr_info("level:%d, freq:%d\n", level, vdsp_table[level].freq);
-
 	// AB chip
 	if (1 == soc_ver_id_check()) {
 		return set_work_freq_hw(hw_arg, vdsp_table[level].freq);
@@ -222,7 +199,7 @@ int setdvfs_sw(void *hw_arg, uint32_t level)
 		pr_info("debugfs force dvfs, level:%d, freq:%d\n", level, vdsp_table[level].freq);
 	}
 
-	level = vmin(level, 6);		//vdsp table index max, 6-1014M
+	level = vmin(level, 5);		//vdsp table index max, 5-1014M
 	pr_info("level:%d, freq:%d\n", level, vdsp_table[level].freq);
 
 	return set_work_freq_sw(hw_arg, vdsp_table[level].freq_index);
